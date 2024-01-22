@@ -1,0 +1,46 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="updown_studio.cpp" />
+    <ClCompile Include="pch.cpp">
+      <Filter>Precompiled Headers</Filter>
+    </ClCompile>
+    <ClCompile Include="SimpleMath.cpp">
+      <Filter>External Sources</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Precompiled Headers">
+      <UniqueIdentifier>{3aab767c-37c5-441b-a44e-d1ab6547e6c8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="External Sources">
+      <UniqueIdentifier>{2a4c4a61-42fa-46c7-a545-6fe2054977ec}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Utility Sources">
+      <UniqueIdentifier>{b297e601-7f28-49fb-822e-cc2b76964f1f}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="pch.h">
+      <Filter>Precompiled Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="updown_studio.h" />
+    <ClInclude Include="SimpleMath.h">
+      <Filter>External Sources</Filter>
+    </ClInclude>
+    <ClInclude Include="custom_math.h">
+      <Filter>Utility Sources</Filter>
+    </ClInclude>
+    <ClInclude Include="singleton.h">
+      <Filter>Utility Sources</Filter>
+    </ClInclude>
+    <ClInclude Include="define.h">
+      <Filter>Utility Sources</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="SimpleMath.inl">
+      <Filter>External Sources</Filter>
+    </None>
+  </ItemGroup>
+</Project>
