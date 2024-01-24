@@ -2,12 +2,13 @@
 
 #include "pch.h"
 
-#define INSTANCE(T) T::GetInstance()
-
-typedef DirectX::SimpleMath::Vector2 Vector2;
-typedef DirectX::SimpleMath::Vector3 Vector3;
-typedef DirectX::SimpleMath::Vector4 Vector4;
-typedef DirectX::SimpleMath::Color Color;
-typedef DirectX::SimpleMath::Plane Plane;
-typedef DirectX::SimpleMath::Quaternion Quaternion;
-typedef DirectX::SimpleMath::Matrix Matrix4x4;
+namespace udsdx
+{
+	using Vector2 = DirectX::SimpleMath::Vector2;
+	using Vector3 = DirectX::SimpleMath::Vector3;
+	using Vector4 = DirectX::SimpleMath::Vector4;
+	using Color = DirectX::SimpleMath::Color;
+	using Plane = DirectX::SimpleMath::Plane;
+	using Quaternion = DirectX::SimpleMath::Quaternion;
+	using Matrix4x4 = DirectX::SimpleMath::Matrix;
+}

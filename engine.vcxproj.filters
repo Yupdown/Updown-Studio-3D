@@ -8,6 +8,7 @@
     <ClCompile Include="SimpleMath.cpp">
       <Filter>External Sources</Filter>
     </ClCompile>
+    <ClCompile Include="Input.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Precompiled Headers">
@@ -37,6 +38,7 @@
     <ClInclude Include="define.h">
       <Filter>Utility Sources</Filter>
     </ClInclude>
+    <ClInclude Include="Input.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="SimpleMath.inl">

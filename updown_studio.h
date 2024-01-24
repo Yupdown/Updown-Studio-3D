@@ -1,10 +1,10 @@
 #pragma once
 
-#include "singleton.h"
+#include "pch.h"
 
-namespace udstd
+namespace udsdx
 {
-	class UpdownStudio : public Singleton<UpdownStudio>
+	class UpdownStudio
 	{
 	public:
 		UpdownStudio();
@@ -13,5 +13,6 @@ namespace udstd
 	public:
 		static void Initialize();
 		static void Update();
+		static bool ProcessMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 	};
 }

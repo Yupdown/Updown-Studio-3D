@@ -2,39 +2,40 @@
 
 #include "pch.h"
 
-template <typename T>
+#define INSTANCE(T) Singleton<T>::GetInstance()
+
+template <typename T> requires std::default_initializable<T>
 class Singleton
 {
 private:
-	static Singleton* instance;
+	static T* instance;
 
 public:
 	static T* GetInstance()
 	{
 		if (instance == nullptr)
-			instance = new T();
+			CreateInstance();
 
-		return static_cast<T*>(instance);
+		return instance;
+	}
+
+	template <typename Derived_T = T> requires std::derived_from<Derived_T, T>
+	static void CreateInstance()
+	{
+		instance = new Derived_T();
 	}
 
 	static void DestroyInstance()
 	{
-		if (instance != nullptr)
-		{
-			delete instance;
-			instance = nullptr;
-		}
+		delete instance;
+		instance = nullptr;
 	}
 
-public:
-	Singleton()
+	static bool HasInstance()
 	{
-		assert(instance == nullptr);
-		instance = static_cast<T*>(this);
-	}
-
-	virtual ~Singleton()
-	{
-
+		return instance != nullptr;
 	}
 };
+
+template <typename T> requires std::default_initializable<T>
+T* Singleton<T>::instance = nullptr;
