@@ -133,21 +133,34 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="Input.cpp" />
+    <ClCompile Include="input.cpp" />
+    <ClCompile Include="material.cpp" />
+    <ClCompile Include="mesh.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="resource.cpp" />
+    <ClCompile Include="resource_object.cpp" />
+    <ClCompile Include="shader.cpp" />
     <ClCompile Include="SimpleMath.cpp" />
+    <ClCompile Include="texture.cpp" />
     <ClCompile Include="updown_studio.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="custom_math.h" />
     <ClInclude Include="define.h" />
-    <ClInclude Include="Input.h" />
+    <ClInclude Include="input.h" />
+    <ClInclude Include="material.h" />
+    <ClInclude Include="mesh.h" />
     <ClInclude Include="pch.h" />
+    <ClInclude Include="resource.h" />
+    <ClInclude Include="resource_object.h" />
+    <ClInclude Include="shader.h" />
     <ClInclude Include="SimpleMath.h" />
     <ClInclude Include="singleton.h" />
+    <ClInclude Include="stb_image.h" />
+    <ClInclude Include="texture.h" />
     <ClInclude Include="updown_studio.h" />
   </ItemGroup>
   <ItemGroup>

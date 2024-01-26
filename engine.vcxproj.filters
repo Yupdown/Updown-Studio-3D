@@ -8,7 +8,27 @@
     <ClCompile Include="SimpleMath.cpp">
       <Filter>External Sources</Filter>
     </ClCompile>
-    <ClCompile Include="Input.cpp" />
+    <ClCompile Include="material.cpp">
+      <Filter>Engine\Resource</Filter>
+    </ClCompile>
+    <ClCompile Include="mesh.cpp">
+      <Filter>Engine\Resource</Filter>
+    </ClCompile>
+    <ClCompile Include="shader.cpp">
+      <Filter>Engine\Resource</Filter>
+    </ClCompile>
+    <ClCompile Include="texture.cpp">
+      <Filter>Engine\Resource</Filter>
+    </ClCompile>
+    <ClCompile Include="input.cpp">
+      <Filter>Engine</Filter>
+    </ClCompile>
+    <ClCompile Include="resource.cpp">
+      <Filter>Engine\Resource</Filter>
+    </ClCompile>
+    <ClCompile Include="resource_object.cpp">
+      <Filter>Engine\Resource</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Precompiled Headers">
@@ -19,6 +39,12 @@
     </Filter>
     <Filter Include="Utility Sources">
       <UniqueIdentifier>{b297e601-7f28-49fb-822e-cc2b76964f1f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine">
+      <UniqueIdentifier>{d2660dd7-6cd3-4ae9-81ee-b69cc83014af}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\Resource">
+      <UniqueIdentifier>{eb55cbc2-6a33-41a7-a54a-47e1effd7e1c}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -38,7 +64,30 @@
     <ClInclude Include="define.h">
       <Filter>Utility Sources</Filter>
     </ClInclude>
-    <ClInclude Include="Input.h" />
+    <ClInclude Include="material.h">
+      <Filter>Engine\Resource</Filter>
+    </ClInclude>
+    <ClInclude Include="mesh.h">
+      <Filter>Engine\Resource</Filter>
+    </ClInclude>
+    <ClInclude Include="shader.h">
+      <Filter>Engine\Resource</Filter>
+    </ClInclude>
+    <ClInclude Include="texture.h">
+      <Filter>Engine\Resource</Filter>
+    </ClInclude>
+    <ClInclude Include="input.h">
+      <Filter>Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>Engine\Resource</Filter>
+    </ClInclude>
+    <ClInclude Include="stb_image.h">
+      <Filter>External Sources</Filter>
+    </ClInclude>
+    <ClInclude Include="resource_object.h">
+      <Filter>Engine\Resource</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="SimpleMath.inl">

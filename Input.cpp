@@ -34,10 +34,6 @@ namespace udsdx
 			case WM_KEYUP:
 				m_keyMap[wParam] = std::make_pair(false, m_tick);
 				break;
-			case WM_MOUSEMOVE:
-				m_mouseX = GET_X_LPARAM(lParam);
-				m_mouseY = GET_Y_LPARAM(lParam);
-				break;
 			case WM_LBUTTONDOWN:
 				m_mouseMap[VK_LBUTTON] = std::make_pair(true, m_tick);
 				break;
@@ -78,9 +74,14 @@ namespace udsdx
 						break;
 				}
 				break;
+			case WM_MOUSEMOVE:
+				m_mouseX = GET_X_LPARAM(lParam);
+				m_mouseY = GET_Y_LPARAM(lParam);
+				break;
 			default:
 				return false;
 		}
+
 		return true;
 	}
 
