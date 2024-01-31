@@ -5,9 +5,6 @@
     <ClCompile Include="pch.cpp">
       <Filter>Precompiled Headers</Filter>
     </ClCompile>
-    <ClCompile Include="SimpleMath.cpp">
-      <Filter>External Sources</Filter>
-    </ClCompile>
     <ClCompile Include="material.cpp">
       <Filter>Engine\Resource</Filter>
     </ClCompile>
@@ -28,6 +25,9 @@
     </ClCompile>
     <ClCompile Include="resource_object.cpp">
       <Filter>Engine\Resource</Filter>
+    </ClCompile>
+    <ClCompile Include="core.cpp">
+      <Filter>Engine</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -52,9 +52,6 @@
       <Filter>Precompiled Headers</Filter>
     </ClInclude>
     <ClInclude Include="updown_studio.h" />
-    <ClInclude Include="SimpleMath.h">
-      <Filter>External Sources</Filter>
-    </ClInclude>
     <ClInclude Include="custom_math.h">
       <Filter>Utility Sources</Filter>
     </ClInclude>
@@ -88,10 +85,11 @@
     <ClInclude Include="resource_object.h">
       <Filter>Engine\Resource</Filter>
     </ClInclude>
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="SimpleMath.inl">
-      <Filter>External Sources</Filter>
-    </None>
+    <ClInclude Include="s2ws.h">
+      <Filter>Utility Sources</Filter>
+    </ClInclude>
+    <ClInclude Include="core.h">
+      <Filter>Engine</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

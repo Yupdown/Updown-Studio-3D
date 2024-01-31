@@ -1,5 +1,9 @@
 #pragma once
 
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN             // Exclude rarely-used stuff from Windows headers.
+#endif
+
 // C++ Standard Library
 #include <algorithm>
 #include <array>
@@ -41,26 +45,35 @@
 #include <wincodec.h>
 #include <wincodecsdk.h>
 
-// Directx12 Library
+using namespace Microsoft::WRL;
+
+// DirectX12 Library
 #include <d3d12.h>
 #include <dxgi1_6.h>
 #include <d3dcompiler.h>
+
 #include <DirectXMath.h>
 #include <DirectXColors.h>
 #include <DirectXCollision.h>
 #include <DirectXPackedVector.h>
-#include <DirectXCollision.h>
-#include <DirectXColors.h>
+
+#include <WICTextureLoader.h>
+#include <DDSTextureLoader.h>
+#include <SimpleMath.h>
+
+using namespace DirectX;
 
 // Third Party Library
 
 // In-Engine Library
-#include "SimpleMath.h"
 #include "define.h"
 #include "custom_math.h"
+#include "s2ws.h"
+#include "singleton.h"
 
 // Link Static Library
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "d3dcompiler.lib")
 #pragma comment(lib, "dxguid.lib")
+#pragma comment(lib, "runtimeobject.lib")
