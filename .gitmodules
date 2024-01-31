@@ -1,9 +1,9 @@
 [submodule "assimp"]
 	path = assimp
 	url = https://github.com/assimp/assimp.git
-[submodule "directxtk"]
-	path = directxtk
-	url = https://github.com/microsoft/DirectXTK.git
 [submodule "directxtex"]
 	path = directxtex
 	url = https://github.com/microsoft/DirectXTex.git
+[submodule "directxtk12"]
+	path = directxtk12
+	url = https://github.com/microsoft/DirectXTK12.git
