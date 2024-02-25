@@ -1,19 +1,9 @@
 #include "pch.h"
 #include "resource.h"
-
 #include "texture.h"
 
 namespace udsdx
 {
-	template <typename T> requires std::is_base_of_v<ResourceObject, T>
-	constexpr void RegisterSuffix(std::map<std::string, std::function<std::unique_ptr<ResourceObject>(std::string_view)>>& dictionary, std::string suffix)
-	{
-		auto callback = [](std::string_view path) -> std::unique_ptr<ResourceObject> {
-			return std::make_unique<T>(path);
-		};
-		dictionary.insert(std::make_pair(suffix, callback));
-	}
-
 	Resource::Resource()
 	{
 
@@ -26,13 +16,9 @@ namespace udsdx
 
 	void Resource::Initialize()
 	{
-		std::string path = "resource\\";
+		std::wstring path = L"resource\\";
 
-		std::map<std::string, std::function<std::unique_ptr<ResourceObject>(std::string_view)>> suffixDictionary;
-
-		RegisterSuffix<Texture>(suffixDictionary, ".png");
-		RegisterSuffix<Texture>(suffixDictionary, ".jpg");
-		RegisterSuffix<Texture>(suffixDictionary, ".bmp");
+		InitializeExtensionDictionary();
 
 		for (const auto& directory : std::filesystem::recursive_directory_iterator(path))
 		{
@@ -41,12 +27,12 @@ namespace udsdx
 				continue;
 			}
 
-			std::string path = directory.path().string();
-			std::string suffix = directory.path().extension().string();
+			std::wstring path = directory.path().wstring();
+			std::wstring suffix = directory.path().extension().wstring();
 			std::transform(suffix.begin(), suffix.end(), suffix.begin(), ::tolower);
 
-			auto iter = suffixDictionary.find(suffix);
-			if (iter == suffixDictionary.end())
+			auto iter = m_extensionDictionary.find(suffix);
+			if (iter == m_extensionDictionary.end())
 			{
 				continue;
 			}
@@ -54,5 +40,13 @@ namespace udsdx
 			std::cout << "registering: " << directory.path().string() << std::endl;
 			m_resources.insert(std::make_pair(path, iter->second(path)));
 		}
+	}
+	void Resource::InitializeExtensionDictionary()
+	{
+		RegisterExtensionType<Texture>(m_extensionDictionary, L".png");
+		RegisterExtensionType<Texture>(m_extensionDictionary, L".jpg");
+		RegisterExtensionType<Texture>(m_extensionDictionary, L".jpeg");
+		RegisterExtensionType<Texture>(m_extensionDictionary, L".bmp");
+		RegisterExtensionType<Texture>(m_extensionDictionary, L".tga");
 	}
 }

@@ -29,6 +29,12 @@
     <ClCompile Include="core.cpp">
       <Filter>Engine</Filter>
     </ClCompile>
+    <ClCompile Include="d3dUtil.cpp">
+      <Filter>External Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="MathHelper.cpp">
+      <Filter>External Sources</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Precompiled Headers">
@@ -90,6 +96,18 @@
     </ClInclude>
     <ClInclude Include="core.h">
       <Filter>Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="d3dUtil.h">
+      <Filter>External Sources</Filter>
+    </ClInclude>
+    <ClInclude Include="d3dx12.h">
+      <Filter>External Sources</Filter>
+    </ClInclude>
+    <ClInclude Include="MathHelper.h">
+      <Filter>External Sources</Filter>
+    </ClInclude>
+    <ClInclude Include="UploadBuffer.h">
+      <Filter>External Sources</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

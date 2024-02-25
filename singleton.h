@@ -32,7 +32,7 @@ public:
 
 	static bool HasInstance()
 	{
-		return (bool)instance;
+		return static_cast<bool>(instance);
 	}
 };
 

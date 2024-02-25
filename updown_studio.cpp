@@ -1,49 +1,34 @@
 #include "pch.h"
 #include "updown_studio.h"
 
-#include "singleton.h"
-#include "resource.h"
-#include "input.h"
+#include "core.h"
 
 using namespace udsdx;
 
-UpdownStudio::UpdownStudio()
+void UpdownStudio::Initialize(HINSTANCE hInstance, HWND hWnd)
 {
-
-}
-
-UpdownStudio::~UpdownStudio()
-{
-
-}
-
-void UpdownStudio::Initialize()
-{
-	INSTANCE(Resource)->Initialize();
-	INSTANCE(Input)->Initialize();
+	INSTANCE(Core)->Initialize(hInstance, hWnd);
 }
 
 void UpdownStudio::Update()
 {
-	// TODO: Add your update logic here
-
-	INSTANCE(Input)->IncreaseTick();
+	INSTANCE(Core)->Update();
 }
 
-bool UpdownStudio::ProcessMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK UpdownStudio::ProcessMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-	int w, h;
+    switch (message)
+    {
+    case WM_DESTROY:
+        PostQuitMessage(0);
+        break;
 
-	switch (message)
-	{
-	case WM_SIZE:
-		w = LOWORD(lParam);
-		h = HIWORD(lParam);
-		break;
-
-	default:
-		return INSTANCE(Input)->ProcessMessage(hWnd, message, wParam, lParam);
-	}
-
-	return true;
+    default:
+        if (!INSTANCE(Core)->ProcessMessage(hWnd, message, wParam, lParam))
+        {
+            return DefWindowProc(hWnd, message, wParam, lParam);
+        }
+        break;
+    }
+    return 0;
 }

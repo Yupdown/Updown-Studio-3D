@@ -70,6 +70,8 @@ using namespace DirectX;
 #include "custom_math.h"
 #include "s2ws.h"
 #include "singleton.h"
+#include "d3dUtil.h"
+#include "UploadBuffer.h"
 
 // Link Static Library
 #pragma comment(lib, "d3d12.lib")

@@ -8,7 +8,7 @@ namespace udsdx
 	class Texture : public ResourceObject
 	{
 	public:
-		Texture(std::string_view path);
+		Texture(std::wstring_view path);
 		~Texture();
 	};
 }

@@ -29,10 +29,10 @@ namespace udsdx
 		switch (message)
 		{
 			case WM_KEYDOWN:
-				m_keyMap[wParam] = std::make_pair(true, m_tick);
+				m_keyMap[static_cast<int>(wParam)] = std::make_pair(true, m_tick);
 				break;
 			case WM_KEYUP:
-				m_keyMap[wParam] = std::make_pair(false, m_tick);
+				m_keyMap[static_cast<int>(wParam)] = std::make_pair(false, m_tick);
 				break;
 			case WM_LBUTTONDOWN:
 				m_mouseMap[VK_LBUTTON] = std::make_pair(true, m_tick);

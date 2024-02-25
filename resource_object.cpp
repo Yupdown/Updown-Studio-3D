@@ -3,7 +3,7 @@
 
 namespace udsdx
 {
-	ResourceObject::ResourceObject(std::string_view path)
+	ResourceObject::ResourceObject(std::wstring_view path)
 	{
 	}
 

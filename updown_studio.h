@@ -7,12 +7,8 @@ namespace udsdx
 	class UpdownStudio
 	{
 	public:
-		UpdownStudio();
-		~UpdownStudio();
-
-	public:
-		static void Initialize();
+		static void Initialize(HINSTANCE hInstance, HWND hWnd);
 		static void Update();
-		static bool ProcessMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
+		static LRESULT CALLBACK ProcessMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 	};
 }
