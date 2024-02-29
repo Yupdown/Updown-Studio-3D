@@ -3,32 +3,91 @@
 
 #include "core.h"
 
-using namespace udsdx;
-
-void UpdownStudio::Initialize(HINSTANCE hInstance, HWND hWnd)
+namespace udsdx
 {
-	INSTANCE(Core)->Initialize(hInstance, hWnd);
-}
+    std::wstring UpdownStudio::m_className = L"UpdownStudioClass";
+    std::wstring UpdownStudio::m_windowName = L"Updown Studio Application";
 
-void UpdownStudio::Update()
-{
-	INSTANCE(Core)->Update();
-}
+    HINSTANCE UpdownStudio::m_hInstance = nullptr;
+    HWND UpdownStudio::m_hWnd = nullptr;
 
-LRESULT CALLBACK UpdownStudio::ProcessMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
-{
-    switch (message)
+    int UpdownStudio::Initialize(HINSTANCE hInstance)
     {
-    case WM_DESTROY:
-        PostQuitMessage(0);
-        break;
+        m_hInstance = hInstance;
 
-    default:
-        if (!INSTANCE(Core)->ProcessMessage(hWnd, message, wParam, lParam))
+        WNDCLASSEXW wcex = { 0 };
+        wcex.cbSize = sizeof(WNDCLASSEX);
+        wcex.style = CS_HREDRAW | CS_VREDRAW;
+        wcex.lpfnWndProc = UpdownStudio::ProcessMessage;
+        wcex.hInstance = hInstance;
+        wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
+        wcex.lpszClassName = m_className.c_str();
+        RegisterClassExW(&wcex);
+
+        m_hWnd = CreateWindowW(m_className.c_str(), m_windowName.c_str(), WS_OVERLAPPEDWINDOW,
+            CW_USEDEFAULT, CW_USEDEFAULT, 1280, 720, nullptr, nullptr, hInstance, nullptr);
+        if (!m_hWnd)
         {
-            return DefWindowProc(hWnd, message, wParam, lParam);
+            return -1;
         }
-        break;
+
+        // Create console window for debug
+#ifdef _DEBUG
+        if (AllocConsole())
+        {
+            FILE* fp;
+            freopen_s(&fp, "CONOUT$", "w", stdout);
+        }
+#endif
+
+        INSTANCE(Core)->Initialize(hInstance, m_hWnd);
+        return 0;
     }
-    return 0;
+
+    int udsdx::UpdownStudio::Run(int nCmdShow)
+    {
+        if (!m_hWnd)
+		{
+			return -1;
+		}
+
+        ShowWindow(m_hWnd, nCmdShow);
+        UpdateWindow(m_hWnd);
+
+        MSG message;
+        while (GetMessage(&message, nullptr, 0, 0))
+        {
+            TranslateMessage(&message);
+            DispatchMessage(&message);
+        }
+
+        return static_cast<int>(message.wParam);
+    }
+
+    void UpdownStudio::Quit()
+    {
+        INSTANCE(Core)->OnDestroy();
+    }
+
+    LRESULT CALLBACK UpdownStudio::ProcessMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+    {
+        switch (message)
+        {
+        case WM_DESTROY:
+            PostQuitMessage(0);
+            break;
+
+        case WM_PAINT:
+            INSTANCE(Core)->Update();
+            break;
+
+        default:
+            if (!INSTANCE(Core)->ProcessMessage(hWnd, message, wParam, lParam))
+            {
+                return DefWindowProc(hWnd, message, wParam, lParam);
+            }
+            break;
+        }
+        return 0;
+    }
 }

@@ -146,6 +146,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="frame_resource.cpp" />
     <ClCompile Include="input.cpp" />
     <ClCompile Include="material.cpp" />
     <ClCompile Include="MathHelper.cpp">
@@ -161,7 +162,10 @@
     <ClCompile Include="resource_object.cpp" />
     <ClCompile Include="shader.cpp" />
     <ClCompile Include="texture.cpp" />
+    <ClCompile Include="time_measure.cpp" />
+    <ClCompile Include="transform.cpp" />
     <ClCompile Include="updown_studio.cpp" />
+    <ClCompile Include="vertex.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="core.h" />
@@ -169,6 +173,7 @@
     <ClInclude Include="d3dUtil.h" />
     <ClInclude Include="d3dx12.h" />
     <ClInclude Include="define.h" />
+    <ClInclude Include="frame_resource.h" />
     <ClInclude Include="input.h" />
     <ClInclude Include="material.h" />
     <ClInclude Include="MathHelper.h" />
@@ -181,8 +186,11 @@
     <ClInclude Include="singleton.h" />
     <ClInclude Include="stb_image.h" />
     <ClInclude Include="texture.h" />
+    <ClInclude Include="time_measure.h" />
+    <ClInclude Include="transform.h" />
     <ClInclude Include="updown_studio.h" />
     <ClInclude Include="UploadBuffer.h" />
+    <ClInclude Include="vertex.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="assimp\code\assimp.vcxproj">

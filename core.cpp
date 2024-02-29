@@ -4,6 +4,10 @@
 #include "singleton.h"
 #include "resource.h"
 #include "input.h"
+#include "frame_resource.h"
+#include "time_measure.h"
+#include "mesh.h"
+#include "shader.h"
 
 namespace udsdx
 {
@@ -22,6 +26,11 @@ namespace udsdx
 		m_hInstance = hInstance;
 		m_hMainWnd = hWnd;
 
+		m_timeMeasure = std::make_unique<TimeMeasure>();
+		m_timeMeasure->BeginMeasure();
+
+		m_windowedRect = { 0, 0, m_clientWidth, m_clientHeight };
+
 #if _WIN32_WINNT >= 0x0A00 // _WIN32_WINNT_WIN10
 		m_roInitialization = std::make_unique<Wrappers::RoInitializeWrapper>(RO_INIT_MULTITHREADED);
 		assert(SUCCEEDED(*m_roInitialization));
@@ -29,21 +38,28 @@ namespace udsdx
 		HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 		assert(SUCCEEDED(hr));
 #endif
-
-		INSTANCE(Resource)->Initialize();
-		INSTANCE(Input)->Initialize();
+		// Get title of window
+		wchar_t buffer[256];
+		GetWindowText(m_hMainWnd, buffer, 256);
+		m_mainWndCaption = buffer;
 
 		InitializeDirect3D();
-		OnResize();
+		OnResizeWindow(m_clientWidth, m_clientHeight);
 
-		ThrowIfFailed(m_commandList->Reset(m_directCommandListAllocator.Get(), nullptr));
+		// Reset the command list to prep for initialization commands.
+		ThrowIfFailed(m_commandList->Reset(m_directCmdListAlloc.Get(), nullptr));
+
+		for (int i = 0; i < FrameResourceCount; ++i)
+		{
+			m_frameResources[i] = std::make_unique<FrameResource>(m_d3dDevice.Get(), 1, 1);
+		}
 
 		BuildDescriptorHeaps();
 		BuildConstantBuffers();
 		BuildRootSignature();
-		BuildShadersAndInputLayout();
-		BuildGeometry();
-		BuildPipelineState();
+
+		INSTANCE(Resource)->Initialize(m_d3dDevice.Get(), m_commandList.Get(), m_rootSignature.Get());
+		INSTANCE(Input)->Initialize();
 
 		ThrowIfFailed(m_commandList->Close());
 		ID3D12CommandList* cmdsLists[] = { m_commandList.Get() };
@@ -55,15 +71,12 @@ namespace udsdx
 	void Core::InitializeDirect3D()
 	{
 #if defined(DEBUG) || defined(_DEBUG) 
-		// Create console window for debug
-		ComPtr<ID3D12Debug> debugController;
-		ThrowIfFailed(::D3D12GetDebugInterface(IID_PPV_ARGS(&debugController)));
-		debugController->EnableDebugLayer();
+		ThrowIfFailed(::D3D12GetDebugInterface(IID_PPV_ARGS(&m_debugController)));
+		m_debugController->EnableDebugLayer();
 #endif
 
 		// Create DXGI Factory
 		ThrowIfFailed(::CreateDXGIFactory1(IID_PPV_ARGS(&m_dxgiFactory)));
-
 		// Create hardware device
 		HRESULT hr = ::D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&m_d3dDevice));
 
@@ -77,6 +90,8 @@ namespace udsdx
 			ThrowIfFailed(::D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&m_d3dDevice)));
 		}
 
+		m_tearingSupport = CheckTearingSupport();
+
 		// Create command queue
 		ThrowIfFailed(m_d3dDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_fence)));
 
@@ -84,6 +99,7 @@ namespace udsdx
 		m_dsvDescriptorSize = m_d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
 		m_cbvSrvUavDescriptorSize = m_d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
+		// Check 4X MSAA quality support for our back buffer format.
 		D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS msQualityLevels;
 		msQualityLevels.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 		msQualityLevels.SampleCount = 4;
@@ -101,35 +117,16 @@ namespace udsdx
 
 
 #if defined(DEBUG) || defined(_DEBUG)
-		// Output information
-		std::wcout << L"\nDXGI Adapters:\n";
-		IDXGIAdapter* adapter = nullptr;
-		for (UINT i = 0; m_dxgiFactory->EnumAdapters(i, &adapter) != DXGI_ERROR_NOT_FOUND; ++i)
-		{
-			DXGI_ADAPTER_DESC desc;
-			adapter->GetDesc(&desc);
-
-			std::wstring text = std::format(L"* Adapter: {}\n", desc.Description);
-			std::wcout << text;
-
-			IDXGIOutput* m_output = nullptr;
-			for (UINT j = 0; adapter->EnumOutputs(j, &m_output) != DXGI_ERROR_NOT_FOUND; ++j)
-			{
-				DXGI_OUTPUT_DESC desc;
-				m_output->GetDesc(&desc);
-
-				std::wstring text = std::format(L"\t- Output: {}\n", desc.DeviceName);
-				std::wcout << text;
-
-				m_output->Release();
-			}
-			adapter->Release();
-		}
+		PrintAdapterInfo();
 #endif
-
 		CreateCommandObjects();
 		CreateSwapChain();
 		CreateRtvAndDsvDescriptorHeaps();
+
+		if (m_tearingSupport)
+		{
+			m_dxgiFactory->MakeWindowAssociation(m_hMainWnd, DXGI_MWA_NO_ALT_ENTER);
+		}
 	}
 
 	void Core::CreateCommandObjects()
@@ -144,12 +141,12 @@ namespace udsdx
 		));
 		ThrowIfFailed(m_d3dDevice->CreateCommandAllocator(
 			D3D12_COMMAND_LIST_TYPE_DIRECT,
-			IID_PPV_ARGS(m_directCommandListAllocator.GetAddressOf())
+			IID_PPV_ARGS(m_directCmdListAlloc.GetAddressOf())
 		));
 		ThrowIfFailed(m_d3dDevice->CreateCommandList(
 			0,
 			D3D12_COMMAND_LIST_TYPE_DIRECT,
-			m_directCommandListAllocator.Get(),
+			m_directCmdListAlloc.Get(),
 			nullptr,
 			IID_PPV_ARGS(m_commandList.GetAddressOf())
 		));
@@ -189,7 +186,7 @@ namespace udsdx
 		sd.OutputWindow = m_hMainWnd;
 		sd.Windowed = true;
 		sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-		sd.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+		sd.Flags = m_tearingSupport ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;
 
 		// Note: Swap chain uses queue to perform flush.
 		ThrowIfFailed(m_dxgiFactory->CreateSwapChain(m_commandQueue.Get(), &sd, m_swapChain.GetAddressOf()));
@@ -212,10 +209,27 @@ namespace udsdx
 		ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(m_dsvHeap.GetAddressOf())));
 	}
 
+	void Core::OnDestroy()
+	{
+		// Ensure that the GPU is no longer referencing resources that are about to be destroyed.
+		FlushCommandQueue();
+
+		if (!m_tearingSupport)
+		{
+			ThrowIfFailed(m_swapChain->SetFullscreenState(false, nullptr));
+		}
+	}
+
 	void Core::BuildDescriptorHeaps()
 	{
+		UINT objCount = (UINT)1;
+
+		// Need a CBV descriptor for each object for each frame resource,
+		// +1 for the perPass CBV for each frame resource.
+		UINT numDescriptors = (objCount + 1) * FrameResourceCount;
+
 		D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc;
-		cbvHeapDesc.NumDescriptors = 1;
+		cbvHeapDesc.NumDescriptors = numDescriptors;
 		cbvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 		cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 		cbvHeapDesc.NodeMask = 0;
@@ -224,22 +238,28 @@ namespace udsdx
 
 	void Core::BuildConstantBuffers()
 	{
-		m_objectCB = std::make_unique<UploadBuffer<ObjectConstants>>(m_d3dDevice.Get(), 1, true);
-
 		UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
+		UINT objCount = 1;
 
-		D3D12_GPU_VIRTUAL_ADDRESS cbAddress = m_objectCB->Resource()->GetGPUVirtualAddress();
-		// Offset to the ith object constant buffer in the buffer.
-		int boxCBufIndex = 0;
-		cbAddress += boxCBufIndex * objCBByteSize;
+		for (int frameIndex = 0; frameIndex < FrameResourceCount; ++frameIndex)
+		{
+			auto objectCB = m_frameResources[frameIndex]->GetObjectCB();
+			D3D12_GPU_VIRTUAL_ADDRESS cbAddress = objectCB->Resource()->GetGPUVirtualAddress();
 
-		D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
-		cbvDesc.BufferLocation = cbAddress;
-		cbvDesc.SizeInBytes = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
+			// Offset to the ith object constant buffer in the buffer.
+			int boxCBufIndex = 0;
+			cbAddress += boxCBufIndex * objCBByteSize;
 
-		m_d3dDevice->CreateConstantBufferView(
-			&cbvDesc,
-			m_cbvHeap->GetCPUDescriptorHandleForHeapStart());
+			int heapIndex = frameIndex * objCount + boxCBufIndex;
+			auto handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_cbvHeap->GetCPUDescriptorHandleForHeapStart());
+			handle.Offset(heapIndex, m_cbvSrvUavDescriptorSize);
+
+			D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
+			cbvDesc.BufferLocation = cbAddress;
+			cbvDesc.SizeInBytes = objCBByteSize;
+
+			m_d3dDevice->CreateConstantBufferView(&cbvDesc, handle);
+		};
 	}
 
 	void Core::BuildRootSignature()
@@ -277,132 +297,50 @@ namespace udsdx
 		));
 	}
 
-	void Core::BuildShadersAndInputLayout()
+	bool Core::CheckTearingSupport() const
 	{
-		m_vsByteCode = d3dUtil::CompileShader(L"Shaders\\color.hlsl", nullptr, "VS", "vs_5_0");
-		m_psByteCode = d3dUtil::CompileShader(L"Shaders\\color.hlsl", nullptr, "PS", "ps_5_0");
-
-		m_inputLayout =
+#ifndef PIXSUPPORT
+		ComPtr<IDXGIFactory6> factory;
+		HRESULT hr = CreateDXGIFactory1(IID_PPV_ARGS(&factory));
+		BOOL allowTearing = FALSE;
+		if (SUCCEEDED(hr))
 		{
-			{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-			{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
-		};
+			hr = factory->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &allowTearing, sizeof(allowTearing));
+		}
+
+		return SUCCEEDED(hr) && allowTearing;
+#else
+		return true;
+#endif
 	}
 
-	void Core::BuildGeometry()
+	void Core::PrintAdapterInfo()
 	{
-		std::array<Vertex, 8> vertices =
+		// Output information
+		std::wcout << L"DXGI Adapters:\n";
+		IDXGIAdapter* adapter = nullptr;
+		for (UINT i = 0; m_dxgiFactory->EnumAdapters(i, &adapter) != DXGI_ERROR_NOT_FOUND; ++i)
 		{
-			Vertex({ XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT4(Colors::White) }),
-			Vertex({ XMFLOAT3(-1.0f, +1.0f, -1.0f), XMFLOAT4(Colors::Black) }),
-			Vertex({ XMFLOAT3(+1.0f, +1.0f, -1.0f), XMFLOAT4(Colors::Red) }),
-			Vertex({ XMFLOAT3(+1.0f, -1.0f, -1.0f), XMFLOAT4(Colors::Green) }),
-			Vertex({ XMFLOAT3(-1.0f, -1.0f, +1.0f), XMFLOAT4(Colors::Blue) }),
-			Vertex({ XMFLOAT3(-1.0f, +1.0f, +1.0f), XMFLOAT4(Colors::Yellow) }),
-			Vertex({ XMFLOAT3(+1.0f, +1.0f, +1.0f), XMFLOAT4(Colors::Cyan) }),
-			Vertex({ XMFLOAT3(+1.0f, -1.0f, +1.0f), XMFLOAT4(Colors::Magenta) })
-		};
+			DXGI_ADAPTER_DESC desc;
+			adapter->GetDesc(&desc);
 
-		std::array<std::uint16_t, 36> indices =
-		{
-			// front face
-			0, 1, 2,
-			0, 2, 3,
+			std::wstring text = std::format(L"> Adapter: {}\n  Output:\n", desc.Description);
+			std::wcout << text;
 
-			// back face
-			4, 6, 5,
-			4, 7, 6,
+			IDXGIOutput* m_output = nullptr;
+			for (UINT j = 0; adapter->EnumOutputs(j, &m_output) != DXGI_ERROR_NOT_FOUND; ++j)
+			{
+				DXGI_OUTPUT_DESC desc;
+				m_output->GetDesc(&desc);
 
-			// left face
-			4, 5, 1,
-			4, 1, 0,
+				std::wstring text = std::format(L"   > {}\n", desc.DeviceName);
+				std::wcout << text;
 
-			// right face
-			3, 2, 6,
-			3, 6, 7,
-
-			// top face
-			1, 5, 6,
-			1, 6, 2,
-
-			// bottom face
-			4, 0, 3,
-			4, 3, 7
-		};
-
-		const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
-		const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
-
-		m_boxGeometry = std::make_unique<MeshGeometry>();
-		m_boxGeometry->Name = "boxGeo";
-
-		ThrowIfFailed(D3DCreateBlob(vbByteSize, &m_boxGeometry->VertexBufferCPU));
-		CopyMemory(m_boxGeometry->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
-
-		ThrowIfFailed(D3DCreateBlob(ibByteSize, &m_boxGeometry->IndexBufferCPU));
-		CopyMemory(m_boxGeometry->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
-
-		m_boxGeometry->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
-			m_d3dDevice.Get(),
-			m_commandList.Get(),
-			vertices.data(),
-			vbByteSize,
-			m_boxGeometry->VertexBufferUploader
-		);
-
-		m_boxGeometry->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
-			m_d3dDevice.Get(),
-			m_commandList.Get(),
-			indices.data(),
-			ibByteSize,
-			m_boxGeometry->IndexBufferUploader
-		);
-
-		m_boxGeometry->VertexByteStride = sizeof(Vertex);
-		m_boxGeometry->VertexBufferByteSize = vbByteSize;
-		m_boxGeometry->IndexFormat = DXGI_FORMAT_R16_UINT;
-		m_boxGeometry->IndexBufferByteSize = ibByteSize;
-
-		SubmeshGeometry submesh;
-		submesh.IndexCount = (UINT)indices.size();
-		submesh.StartIndexLocation = 0;
-		submesh.BaseVertexLocation = 0;
-
-		m_boxGeometry->DrawArgs["box"] = submesh;
-	}
-
-	void Core::BuildPipelineState()
-	{
-		D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc;
-		ZeroMemory(&psoDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
-
-		psoDesc.InputLayout = { m_inputLayout.data(), (UINT)m_inputLayout.size() };
-		psoDesc.pRootSignature = m_rootSignature.Get();
-		psoDesc.VS =
-		{
-			reinterpret_cast<BYTE*>(m_vsByteCode->GetBufferPointer()),
-			m_vsByteCode->GetBufferSize()
-		};
-		psoDesc.PS =
-		{
-			reinterpret_cast<BYTE*>(m_psByteCode->GetBufferPointer()),
-			m_psByteCode->GetBufferSize()
-		};
-		psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-		psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-		psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-		psoDesc.SampleMask = UINT_MAX;
-		psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-		psoDesc.NumRenderTargets = 1;
-		psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-		psoDesc.SampleDesc.Count = m_4xMsaaState ? 4 : 1;
-		psoDesc.SampleDesc.Quality = m_4xMsaaState ? (m_4xMsaaQuality - 1) : 0;
-		psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
-
-		ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(
-			&psoDesc,
-			IID_PPV_ARGS(m_pipelineState.GetAddressOf())
-		));
+				m_output->Release();
+			}
+			adapter->Release();
+		}
+		std::cout << std::endl;
 	}
 
 	void Core::FlushCommandQueue()
@@ -429,26 +367,30 @@ namespace udsdx
 
 	void Core::Update()
 	{
-#ifdef _DEBUG
-		constexpr int REFRESH_RATE = 20;
+		constexpr int RefreshRate = 15;
 		static int frameCount = 0;
 		static std::chrono::steady_clock timer;
 		static std::chrono::steady_clock::time_point lc;
 		std::chrono::steady_clock::time_point c = timer.now();
 		double delta = std::chrono::duration_cast<std::chrono::duration<double>>(c - lc).count();
-		if (delta * REFRESH_RATE > 1.0)
+		if (delta * RefreshRate > 1.0)
 		{
-			int fps = (int)round(1.0 / delta * frameCount);
-			SetWindowText(m_hMainWnd, (m_mainWndCaption + std::format(L" @ {} FPS", fps)).c_str());
+			int fps = static_cast<int>(round(1.0 / delta * frameCount));
+			SetWindowText(m_hMainWnd, (m_mainWndCaption + std::format(L" [{} x {}] @ {} FPS", m_clientWidth, m_clientHeight, fps)).c_str());
 			frameCount = 0;
 			lc = c;
 		}
 		frameCount += 1;
-#endif
+
+		m_timeMeasure->EndMeasure();
+		Time timeInfo = m_timeMeasure->GetTime();
+		m_timeMeasure->BeginMeasure();
 
 		// TODO: Add your update logic here
 		//
-		m_theta += 0.001f;
+
+		float t = timeInfo.time * 4.0f;
+		m_theta = t + sin(t);
 
 		// Convert Spherical to Cartesian coordinates.
 		float x = m_radius * sinf(m_phi) * cosf(m_theta);
@@ -470,28 +412,42 @@ namespace udsdx
 		// Update the constant buffer with the latest worldViewProj matrix.
 		ObjectConstants objConstants;
 		XMStoreFloat4x4(&objConstants.WorldViewProj, XMMatrixTranspose(worldViewProj));
-		m_objectCB->CopyData(0, objConstants);
+
+		m_currFrameResourceIndex = (m_currFrameResourceIndex + 1) % FrameResourceCount;
+		auto frameResource = CurrentFrameResource();
+
+		if (frameResource->GetFence() != 0 && m_fence->GetCompletedValue() < frameResource->GetFence())
+		{
+			HANDLE eventHandle = ::CreateEventEx(nullptr, false, false, EVENT_ALL_ACCESS);
+			ThrowIfFailed(m_fence->SetEventOnCompletion(frameResource->GetFence(), eventHandle));
+			::WaitForSingleObject(eventHandle, INFINITE);
+			::CloseHandle(eventHandle);
+		}
+
+		frameResource->GetObjectCB()->CopyData(0, objConstants);
 
 		// TODO: Add your draw logic here
 		//
-		ThrowIfFailed(m_directCommandListAllocator->Reset());
-		ThrowIfFailed(m_commandList->Reset(m_directCommandListAllocator.Get(), m_pipelineState.Get()));
+		auto pipelineState = INSTANCE(Resource)->Load<Shader>(L"resource\\shader\\color.hlsl");
+
+		auto cmdListAlloc = frameResource->GetCommandListAllocator();
+		ThrowIfFailed(cmdListAlloc->Reset());
+		ThrowIfFailed(m_commandList->Reset(cmdListAlloc, pipelineState->PipelineState()));
 
 		m_commandList->RSSetViewports(1, &m_screenViewport);
 		m_commandList->RSSetScissorRects(1, &m_scissorRect);
 
 		// Indicate a state transition on the resource usage.
 		m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
-			m_swapChainBuffer[m_currBackBuffer].Get(),
+			CurrentBackBuffer(),
 			D3D12_RESOURCE_STATE_PRESENT,
 			D3D12_RESOURCE_STATE_RENDER_TARGET
 		));
 
 		// Clear the back buffer and depth buffer.
-		float clearColor[] = { 0.0f, 0.2f, 0.4f, 1.0f };
 		m_commandList->ClearRenderTargetView(
 			CurrentBackBufferView(),
-			clearColor,
+			(float*)&m_clearColor,
 			0,
 			nullptr
 		);
@@ -517,12 +473,14 @@ namespace udsdx
 		m_commandList->SetGraphicsRootSignature(m_rootSignature.Get());
 		m_commandList->SetGraphicsRootDescriptorTable(0, m_cbvHeap->GetGPUDescriptorHandleForHeapStart());
 
-		m_commandList->IASetVertexBuffers(0, 1, &m_boxGeometry->VertexBufferView());
-		m_commandList->IASetIndexBuffer(&m_boxGeometry->IndexBufferView());
+		Mesh* mesh = INSTANCE(Resource)->Load<Mesh>(L"resource\\model\\yup.obj");
+
+		m_commandList->IASetVertexBuffers(0, 1, &mesh->VertexBufferView());
+		m_commandList->IASetIndexBuffer(&mesh->IndexBufferView());
 		m_commandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 		m_commandList->DrawIndexedInstanced(
-			m_boxGeometry->DrawArgs["box"].IndexCount,
+			mesh->DrawArgs["box"].IndexCount,
 			1, 0, 0, 0
 		);
 
@@ -539,13 +497,19 @@ namespace udsdx
 		ID3D12CommandList* cmdLists[] = { m_commandList.Get() };
 		m_commandQueue->ExecuteCommandLists(_countof(cmdLists), cmdLists);
 
+		// When using sync interval 0, it is recommended to always pass the tearing
+		// flag when it is supported, even when presenting in windowed mode.
+		// However, this flag cannot be used if the app is in fullscreen mode as a
+		// result of calling SetFullscreenState.
+		UINT presentFlags = (m_tearingSupport && !m_fullscreen) ? DXGI_PRESENT_ALLOW_TEARING : 0;
+
 		// Swap the back and front buffers
-		ThrowIfFailed(m_swapChain->Present(0, 0));
+		ThrowIfFailed(m_swapChain->Present(0, presentFlags));
 		m_currBackBuffer = (m_currBackBuffer + 1) % SwapChainBufferCount;
 
-		// Wait until frame commands are complete.  This waiting is inefficient and is
-		// done for simplicity.
-		FlushCommandQueue();
+		// Advance the fence value to mark commands up to this fence point.
+		frameResource->SetFence(++m_currentFence);
+		m_commandQueue->Signal(m_fence.Get(), m_currentFence);
 
 		INSTANCE(Input)->IncreaseTick();
 	}
@@ -556,60 +520,31 @@ namespace udsdx
 		{
 		case WM_SIZE:
 			// Save the new client area dimensions.
-			m_clientWidth = LOWORD(lParam);
-			m_clientHeight = HIWORD(lParam);
 			if (m_d3dDevice)
 			{
-				switch (wParam)
-				{
-					case SIZE_MINIMIZED:
-						m_appPaused = true;
-						m_minimized = true;
-						m_maximized = false;
-						break;
-
-					case SIZE_MAXIMIZED:
-						m_appPaused = false;
-						m_minimized = false;
-						m_maximized = true;
-						OnResize();
-						break;
-
-					case SIZE_RESTORED:
-						// Restoring from minimized state?
-						if (m_minimized)
-						{
-							m_appPaused = false;
-							m_minimized = false;
-							OnResize();
-						}
-
-						// Restoring from maximized state?
-						else if (m_maximized)
-						{
-							m_appPaused = false;
-							m_maximized = false;
-							OnResize();
-						}
-						else if (!m_resizing) // API call such as SetWindowPos or mSwapChain->SetFullscreenState.
-						{
-							OnResize();
-						}
-						break;
-				}
+				m_clientWidth = LOWORD(lParam);
+				m_clientHeight = HIWORD(lParam);
+				OnResizeWindow(m_clientWidth, m_clientHeight);
 			}
 			break;
 
-		case WM_ENTERSIZEMOVE:
-			m_appPaused = true;
-			m_resizing = true;
+		// Catch this message so to prevent the window from becoming too small.
+		case WM_GETMINMAXINFO:
+			((MINMAXINFO*)lParam)->ptMinTrackSize.x = m_minClientWidth;
+			((MINMAXINFO*)lParam)->ptMinTrackSize.y = m_minClientHeight;
 			break;
 
-		case WM_EXITSIZEMOVE:
-			m_appPaused = false;
-			m_resizing = false;
-			OnResize();
-			break;
+		case WM_SYSCHAR:
+			// Handle Alt + Enter key sequence
+			if ((wParam == VK_RETURN) && (lParam & (1 << 29)))
+			{
+				if (m_d3dDevice && m_tearingSupport)
+				{
+					ToggleFullscreenWindow(!m_fullscreen);
+					break;
+				}
+			}
+			return false;
 
 		default:
 			return INSTANCE(Input)->ProcessMessage(hWnd, message, wParam, lParam);
@@ -618,16 +553,92 @@ namespace udsdx
 		return true;
 	}
 
-	void Core::OnResize()
+	void Core::ToggleFullscreenWindow(bool fullscreen)
 	{
+		if (fullscreen == m_fullscreen)
+		{
+			return;
+		}
+
+		if (!m_tearingSupport)
+		{
+			return;
+		}
+
+		m_fullscreen = fullscreen;
+		if (fullscreen)
+		{
+			GetWindowRect(m_hMainWnd, &m_windowedRect);
+			SetWindowLong(m_hMainWnd, GWL_STYLE, WS_OVERLAPPEDWINDOW & ~(WS_CAPTION | WS_MAXIMIZEBOX | WS_MINIMIZEBOX | WS_SYSMENU | WS_THICKFRAME));
+
+			RECT windowRect;
+			if (m_swapChain)
+			{
+				ComPtr<IDXGIOutput> pOutput;
+				ThrowIfFailed(m_swapChain->GetContainingOutput(pOutput.GetAddressOf()));
+				DXGI_OUTPUT_DESC desc;
+				ThrowIfFailed(pOutput->GetDesc(&desc));
+				windowRect = desc.DesktopCoordinates;
+			}
+			// Fallback to EnumDisplaySettings implementation
+			else
+			{
+				// Get the settings of the primary display
+				DEVMODE devMode = {};
+				devMode.dmSize = sizeof(DEVMODE);
+				EnumDisplaySettings(nullptr, ENUM_CURRENT_SETTINGS, &devMode);
+
+				windowRect = {
+					devMode.dmPosition.x,
+					devMode.dmPosition.y,
+					devMode.dmPosition.x + static_cast<LONG>(devMode.dmPelsWidth),
+					devMode.dmPosition.y + static_cast<LONG>(devMode.dmPelsHeight)
+				};
+			}
+
+			SetWindowPos(
+				m_hMainWnd,
+				HWND_TOP,
+				windowRect.left,
+				windowRect.top,
+				windowRect.right,
+				windowRect.bottom,
+				SWP_FRAMECHANGED | SWP_NOACTIVATE
+			);
+			ShowWindow(m_hMainWnd, SW_MAXIMIZE);
+		}
+		else
+		{
+			SetWindowLong(m_hMainWnd, GWL_STYLE, WS_OVERLAPPEDWINDOW);
+
+			SetWindowPos(
+				m_hMainWnd,
+				HWND_NOTOPMOST,
+				m_windowedRect.left,
+				m_windowedRect.top,
+				m_windowedRect.right - m_windowedRect.left,
+				m_windowedRect.bottom - m_windowedRect.top,
+				SWP_FRAMECHANGED | SWP_NOACTIVATE
+			);
+			ShowWindow(m_hMainWnd, SW_NORMAL);
+		}
+	}
+
+	bool Core::OnResizeWindow(int width, int height)
+	{
+		if (width <= 0 || height <= 0)
+		{
+			return false;
+		}
+
 		assert(m_d3dDevice);
 		assert(m_swapChain);
-		assert(m_directCommandListAllocator);
+		assert(m_directCmdListAlloc);
 
 		// Flush before changing any resources.
 		FlushCommandQueue();
 
-		ThrowIfFailed(m_commandList->Reset(m_directCommandListAllocator.Get(), nullptr));
+		ThrowIfFailed(m_commandList->Reset(m_directCmdListAlloc.Get(), nullptr));
 
 		// Release the previous resources we will be recreating.
 		for (int i = 0; i < SwapChainBufferCount; ++i)
@@ -636,13 +647,16 @@ namespace udsdx
 		}
 		m_depthStencilBuffer.Reset();
 
+		// Get the description of the swap chain.
+		DXGI_SWAP_CHAIN_DESC swapChainDesc;
+		m_swapChain->GetDesc(&swapChainDesc);
+
 		// Resize the swap chain.
 		ThrowIfFailed(m_swapChain->ResizeBuffers(
 			SwapChainBufferCount,
-			m_clientWidth,
-			m_clientHeight,
-			DXGI_FORMAT_R8G8B8A8_UNORM,
-			DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH
+			width, height,
+			swapChainDesc.BufferDesc.Format,
+			swapChainDesc.Flags
 		));
 
 		m_currBackBuffer = 0;
@@ -659,8 +673,8 @@ namespace udsdx
 		D3D12_RESOURCE_DESC depthStencilDesc;
 		depthStencilDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
 		depthStencilDesc.Alignment = 0;
-		depthStencilDesc.Width = m_clientWidth;
-		depthStencilDesc.Height = m_clientHeight;
+		depthStencilDesc.Width = width;
+		depthStencilDesc.Height = height;
 		depthStencilDesc.DepthOrArraySize = 1;
 		depthStencilDesc.MipLevels = 1;
 
@@ -715,17 +729,19 @@ namespace udsdx
 		// Update the viewport transform to cover the client area.
 		m_screenViewport.TopLeftX = 0;
 		m_screenViewport.TopLeftY = 0;
-		m_screenViewport.Width = static_cast<float>(m_clientWidth);
-		m_screenViewport.Height = static_cast<float>(m_clientHeight);
+		m_screenViewport.Width = static_cast<float>(width);
+		m_screenViewport.Height = static_cast<float>(height);
 		m_screenViewport.MinDepth = 0.0f;
 		m_screenViewport.MaxDepth = 1.0f;
 
-		m_scissorRect = { 0, 0, m_clientWidth, m_clientHeight };
+		m_scissorRect = { 0, 0, width, height };
 
 		// The window resized, so update the aspect ratio and recompute the projection matrix.
-		float aspectRatio = static_cast<float>(m_clientWidth) / m_clientHeight;
+		float aspectRatio = static_cast<float>(width) / height;
 		XMMATRIX P = XMMatrixPerspectiveFovLH(0.25f * MathHelper::Pi, aspectRatio, 1.0f, 1000.0f);
 		XMStoreFloat4x4(&m_proj, P);
+
+		return true;
 	}
 
 	ID3D12Resource* Core::CurrentBackBuffer() const
@@ -740,6 +756,11 @@ namespace udsdx
 			m_currBackBuffer,
 			m_rtvDescriptorSize
 		);
+	}
+
+	FrameResource* Core::CurrentFrameResource() const
+	{
+		return m_frameResources[m_currFrameResourceIndex].get();
 	}
 
 	D3D12_CPU_DESCRIPTOR_HANDLE Core::DepthStencilView() const

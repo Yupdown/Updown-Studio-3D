@@ -35,6 +35,18 @@
     <ClCompile Include="MathHelper.cpp">
       <Filter>External Sources</Filter>
     </ClCompile>
+    <ClCompile Include="vertex.cpp">
+      <Filter>Engine</Filter>
+    </ClCompile>
+    <ClCompile Include="frame_resource.cpp">
+      <Filter>Engine</Filter>
+    </ClCompile>
+    <ClCompile Include="time_measure.cpp">
+      <Filter>Engine</Filter>
+    </ClCompile>
+    <ClCompile Include="transform.cpp">
+      <Filter>Engine</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Precompiled Headers">
@@ -51,6 +63,9 @@
     </Filter>
     <Filter Include="Engine\Resource">
       <UniqueIdentifier>{eb55cbc2-6a33-41a7-a54a-47e1effd7e1c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\Runtime">
+      <UniqueIdentifier>{ad6e46dd-10b9-42f9-9140-69f76530286a}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -108,6 +123,18 @@
     </ClInclude>
     <ClInclude Include="UploadBuffer.h">
       <Filter>External Sources</Filter>
+    </ClInclude>
+    <ClInclude Include="vertex.h">
+      <Filter>Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="frame_resource.h">
+      <Filter>Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="time_measure.h">
+      <Filter>Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="transform.h">
+      <Filter>Engine</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

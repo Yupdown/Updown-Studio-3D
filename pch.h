@@ -64,12 +64,16 @@ using namespace Microsoft::WRL;
 using namespace DirectX;
 
 // Third Party Library
+#include <assimp/Importer.hpp>
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
 
 // In-Engine Library
 #include "define.h"
 #include "custom_math.h"
 #include "s2ws.h"
 #include "singleton.h"
+#include "vertex.h"
 #include "d3dUtil.h"
 #include "UploadBuffer.h"
 

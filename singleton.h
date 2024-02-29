@@ -20,14 +20,15 @@ public:
 	}
 
 	template <typename Derived_T = T> requires std::derived_from<Derived_T, T>
-	static void CreateInstance()
+	static T* CreateInstance()
 	{
 		instance = std::make_unique<Derived_T>();
+		return instance.get();
 	}
 
-	static void DestroyInstance()
+	static void ReleaseInstance()
 	{
-		instance->reset();
+		instance.release();
 	}
 
 	static bool HasInstance()
