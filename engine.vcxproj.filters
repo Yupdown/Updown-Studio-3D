@@ -44,8 +44,17 @@
     <ClCompile Include="time_measure.cpp">
       <Filter>Engine</Filter>
     </ClCompile>
+    <ClCompile Include="scene_object.cpp">
+      <Filter>Engine\Runtime</Filter>
+    </ClCompile>
     <ClCompile Include="transform.cpp">
-      <Filter>Engine</Filter>
+      <Filter>Engine\Runtime</Filter>
+    </ClCompile>
+    <ClCompile Include="component.cpp">
+      <Filter>Engine\Runtime</Filter>
+    </ClCompile>
+    <ClCompile Include="scene.cpp">
+      <Filter>Engine\Runtime</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -133,8 +142,17 @@
     <ClInclude Include="time_measure.h">
       <Filter>Engine</Filter>
     </ClInclude>
+    <ClInclude Include="scene_object.h">
+      <Filter>Engine\Runtime</Filter>
+    </ClInclude>
     <ClInclude Include="transform.h">
-      <Filter>Engine</Filter>
+      <Filter>Engine\Runtime</Filter>
+    </ClInclude>
+    <ClInclude Include="component.h">
+      <Filter>Engine\Runtime</Filter>
+    </ClInclude>
+    <ClInclude Include="scene.h">
+      <Filter>Engine\Runtime</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

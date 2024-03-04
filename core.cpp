@@ -222,14 +222,10 @@ namespace udsdx
 
 	void Core::BuildDescriptorHeaps()
 	{
-		UINT objCount = (UINT)1;
-
 		// Need a CBV descriptor for each object for each frame resource,
-		// +1 for the perPass CBV for each frame resource.
-		UINT numDescriptors = (objCount + 1) * FrameResourceCount;
 
 		D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc;
-		cbvHeapDesc.NumDescriptors = numDescriptors;
+		cbvHeapDesc.NumDescriptors = FrameResourceCount;
 		cbvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 		cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 		cbvHeapDesc.NodeMask = 0;
@@ -239,7 +235,6 @@ namespace udsdx
 	void Core::BuildConstantBuffers()
 	{
 		UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
-		UINT objCount = 1;
 
 		for (int frameIndex = 0; frameIndex < FrameResourceCount; ++frameIndex)
 		{
@@ -247,12 +242,8 @@ namespace udsdx
 			D3D12_GPU_VIRTUAL_ADDRESS cbAddress = objectCB->Resource()->GetGPUVirtualAddress();
 
 			// Offset to the ith object constant buffer in the buffer.
-			int boxCBufIndex = 0;
-			cbAddress += boxCBufIndex * objCBByteSize;
-
-			int heapIndex = frameIndex * objCount + boxCBufIndex;
 			auto handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_cbvHeap->GetCPUDescriptorHandleForHeapStart());
-			handle.Offset(heapIndex, m_cbvSrvUavDescriptorSize);
+			handle.Offset(frameIndex, m_cbvSrvUavDescriptorSize);
 
 			D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
 			cbvDesc.BufferLocation = cbAddress;
@@ -264,13 +255,15 @@ namespace udsdx
 
 	void Core::BuildRootSignature()
 	{
-		CD3DX12_ROOT_PARAMETER slotRootParameter[1];
+		CD3DX12_ROOT_PARAMETER slotRootParameter[2];
 
 		CD3DX12_DESCRIPTOR_RANGE cbvTable;
-		cbvTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);
-		slotRootParameter[0].InitAsDescriptorTable(1, &cbvTable);
+		cbvTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1);
 
-		CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(1, slotRootParameter, 0, nullptr,
+		slotRootParameter[0].InitAsConstants(16, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+		slotRootParameter[1].InitAsDescriptorTable(1, &cbvTable);
+
+		CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(2, slotRootParameter, 0, nullptr,
 			D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
 		);
 
@@ -403,15 +396,13 @@ namespace udsdx
 		XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
 
 		XMMATRIX view = XMMatrixLookAtLH(pos, target, up);
-		XMStoreFloat4x4(&m_view, view);
-
-		XMMATRIX world = XMLoadFloat4x4(&m_world);
 		XMMATRIX proj = XMLoadFloat4x4(&m_proj);
-		XMMATRIX worldViewProj = world * view * proj;
+		XMStoreFloat4x4(&m_view, view);
 
 		// Update the constant buffer with the latest worldViewProj matrix.
 		ObjectConstants objConstants;
-		XMStoreFloat4x4(&objConstants.WorldViewProj, XMMatrixTranspose(worldViewProj));
+		XMStoreFloat4x4(&objConstants.ViewMatrix, XMMatrixTranspose(view));
+		XMStoreFloat4x4(&objConstants.ProjMatrix, XMMatrixTranspose(proj));
 
 		m_currFrameResourceIndex = (m_currFrameResourceIndex + 1) % FrameResourceCount;
 		auto frameResource = CurrentFrameResource();
@@ -468,21 +459,35 @@ namespace udsdx
 			&DepthStencilView()
 		);
 
+		auto mesh = INSTANCE(Resource)->Load<Mesh>(L"resource\\model\\yup.obj");
+
+		m_commandList->SetGraphicsRootSignature(m_rootSignature.Get());
+
 		ID3D12DescriptorHeap* descriptorHeaps[] = { m_cbvHeap.Get() };
 		m_commandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
-		m_commandList->SetGraphicsRootSignature(m_rootSignature.Get());
-		m_commandList->SetGraphicsRootDescriptorTable(0, m_cbvHeap->GetGPUDescriptorHandleForHeapStart());
+		m_commandList->SetGraphicsRootDescriptorTable(1, m_cbvHeap->GetGPUDescriptorHandleForHeapStart());
 
-		Mesh* mesh = INSTANCE(Resource)->Load<Mesh>(L"resource\\model\\yup.obj");
+		for (int i = 0; i < 100; ++i)
+		{
+			float x = static_cast<float>(i % 10) - 4.5f;
+			float y = static_cast<float>(i / 10) - 4.5f;
 
-		m_commandList->IASetVertexBuffers(0, 1, &mesh->VertexBufferView());
-		m_commandList->IASetIndexBuffer(&mesh->IndexBufferView());
-		m_commandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			XMMATRIX world = XMLoadFloat4x4(&m_world);
+			world *= XMMatrixTranslation(x * 4.0f, 0.0f, y * 4.0f);
+			XMFLOAT4X4 worldMat;
+			XMStoreFloat4x4(&worldMat, XMMatrixTranspose(world));
 
-		m_commandList->DrawIndexedInstanced(
-			mesh->DrawArgs["box"].IndexCount,
-			1, 0, 0, 0
-		);
+			m_commandList->SetGraphicsRoot32BitConstants(0, 16, &worldMat, 0);
+
+			m_commandList->IASetVertexBuffers(0, 1, &mesh->VertexBufferView());
+			m_commandList->IASetIndexBuffer(&mesh->IndexBufferView());
+			m_commandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+			m_commandList->DrawIndexedInstanced(
+				mesh->DrawArgs["box"].IndexCount,
+				1, 0, 0, 0
+			);
+		}
 
 		// indicate a state transition on the resource usage.
 		m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
@@ -519,11 +524,13 @@ namespace udsdx
 		switch (message)
 		{
 		case WM_SIZE:
-			// Save the new client area dimensions.
 			if (m_d3dDevice)
 			{
+				// Save the new client area dimensions.
 				m_clientWidth = LOWORD(lParam);
 				m_clientHeight = HIWORD(lParam);
+
+				// Notify the display associated resources for the resize event.
 				OnResizeWindow(m_clientWidth, m_clientHeight);
 			}
 			break;
@@ -540,7 +547,7 @@ namespace udsdx
 			{
 				if (m_d3dDevice && m_tearingSupport)
 				{
-					ToggleFullscreenWindow(!m_fullscreen);
+					SetWindowFullscreen(!m_fullscreen);
 					break;
 				}
 			}
@@ -549,11 +556,11 @@ namespace udsdx
 		default:
 			return INSTANCE(Input)->ProcessMessage(hWnd, message, wParam, lParam);
 		}
-
+		
 		return true;
 	}
 
-	void Core::ToggleFullscreenWindow(bool fullscreen)
+	void Core::SetWindowFullscreen(bool fullscreen)
 	{
 		if (fullscreen == m_fullscreen)
 		{

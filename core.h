@@ -30,7 +30,7 @@ namespace udsdx
 		bool		m_4xMsaaState = false;    // 4X MSAA enabled
 		UINT		m_4xMsaaQuality = 0;      // quality level of 4X MSAA
 
-		XMFLOAT4    m_clearColor = { 0.125f, 0.125f, 0.125f, 1.0f }; // #1F7B8F
+		XMFLOAT4    m_clearColor = { 0.125f, 0.125f, 0.125f, 1.0f };
 
 		// scale of xyz = 0.1f;
 		XMFLOAT4X4	m_world = MathHelper::Identity4x4();
@@ -53,7 +53,7 @@ namespace udsdx
 		ComPtr<IDXGISwapChain> m_swapChain;
 		// Direct3D 12 Debug Layer
 		ComPtr<ID3D12Debug> m_debugController;
-
+		// Fence for CPU/GPU synchronization
 		ComPtr<ID3D12Fence> m_fence;
 		UINT64 m_currentFence = 0;
 
@@ -97,23 +97,22 @@ namespace udsdx
 
 		void Initialize(HINSTANCE hInstance, HWND hWnd);
 		void InitializeDirect3D();
+		bool CheckTearingSupport() const;
+		void PrintAdapterInfo();
 		void OnDestroy();
 
 		void CreateCommandObjects();
 		void CreateSwapChain();
 		void CreateRtvAndDsvDescriptorHeaps();
-		bool CheckTearingSupport() const;
 
 		void BuildDescriptorHeaps();
 		void BuildConstantBuffers();
 		void BuildRootSignature();
 
-		void PrintAdapterInfo();
-
 		void FlushCommandQueue();
 
 		void Update();
-		void ToggleFullscreenWindow(bool fullscreen);
+		void SetWindowFullscreen(bool fullscreen);
 		bool ProcessMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 		virtual bool OnResizeWindow(int width, int height);
 

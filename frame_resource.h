@@ -6,7 +6,8 @@ namespace udsdx
 {
 	struct ObjectConstants
 	{
-		XMFLOAT4X4 WorldViewProj = MathHelper::Identity4x4();
+		XMFLOAT4X4 ViewMatrix = MathHelper::Identity4x4();
+		XMFLOAT4X4 ProjMatrix = MathHelper::Identity4x4();
 	};
 
 	class FrameResource
