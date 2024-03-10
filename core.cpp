@@ -51,7 +51,7 @@ namespace udsdx
 
 		for (int i = 0; i < FrameResourceCount; ++i)
 		{
-			m_frameResources[i] = std::make_unique<FrameResource>(m_d3dDevice.Get(), 1, 1);
+			m_frameResources[i] = std::make_unique<FrameResource>(m_d3dDevice.Get());
 		}
 
 		BuildDescriptorHeaps();
@@ -234,7 +234,7 @@ namespace udsdx
 
 	void Core::BuildConstantBuffers()
 	{
-		UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
+		UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(PassConstants));
 
 		for (int frameIndex = 0; frameIndex < FrameResourceCount; ++frameIndex)
 		{
@@ -250,7 +250,7 @@ namespace udsdx
 			cbvDesc.SizeInBytes = objCBByteSize;
 
 			m_d3dDevice->CreateConstantBufferView(&cbvDesc, handle);
-		};
+		}
 	}
 
 	void Core::BuildRootSignature()
@@ -375,35 +375,8 @@ namespace udsdx
 		}
 		frameCount += 1;
 
-		m_timeMeasure->EndMeasure();
-		Time timeInfo = m_timeMeasure->GetTime();
-		m_timeMeasure->BeginMeasure();
-
 		// TODO: Add your update logic here
 		//
-
-		float t = timeInfo.time * 4.0f;
-		m_theta = t + sin(t);
-
-		// Convert Spherical to Cartesian coordinates.
-		float x = m_radius * sinf(m_phi) * cosf(m_theta);
-		float z = m_radius * sinf(m_phi) * sinf(m_theta);
-		float y = m_radius * cosf(m_phi);
-
-		// Build the view matrix.
-		XMVECTOR pos = XMVectorSet(x, y, z, 1.0f);
-		XMVECTOR target = XMVectorZero();
-		XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-
-		XMMATRIX view = XMMatrixLookAtLH(pos, target, up);
-		XMMATRIX proj = XMLoadFloat4x4(&m_proj);
-		XMStoreFloat4x4(&m_view, view);
-
-		// Update the constant buffer with the latest worldViewProj matrix.
-		ObjectConstants objConstants;
-		XMStoreFloat4x4(&objConstants.ViewMatrix, XMMatrixTranspose(view));
-		XMStoreFloat4x4(&objConstants.ProjMatrix, XMMatrixTranspose(proj));
-
 		m_currFrameResourceIndex = (m_currFrameResourceIndex + 1) % FrameResourceCount;
 		auto frameResource = CurrentFrameResource();
 
@@ -415,13 +388,27 @@ namespace udsdx
 			::CloseHandle(eventHandle);
 		}
 
-		frameResource->GetObjectCB()->CopyData(0, objConstants);
+		m_timeMeasure->EndMeasure();
+		Time timeInfo = m_timeMeasure->GetTime();
+		m_timeMeasure->BeginMeasure();
 
+		float t = timeInfo.time * 4.0f;
+		m_theta = t + sin(t);
+
+		// Update the constant buffer with the latest view and project matrix.
+		UpdateMainPassCB();
+
+		INSTANCE(Input)->IncreaseTick();
+	}
+
+	void Core::Draw()
+	{
 		// TODO: Add your draw logic here
 		//
+		auto frameResource = CurrentFrameResource();
+		auto cmdListAlloc = frameResource->GetCommandListAllocator();
 		auto pipelineState = INSTANCE(Resource)->Load<Shader>(L"resource\\shader\\color.hlsl");
 
-		auto cmdListAlloc = frameResource->GetCommandListAllocator();
 		ThrowIfFailed(cmdListAlloc->Reset());
 		ThrowIfFailed(m_commandList->Reset(cmdListAlloc, pipelineState->PipelineState()));
 
@@ -459,13 +446,17 @@ namespace udsdx
 			&DepthStencilView()
 		);
 
-		auto mesh = INSTANCE(Resource)->Load<Mesh>(L"resource\\model\\yup.obj");
-
-		m_commandList->SetGraphicsRootSignature(m_rootSignature.Get());
+		auto mesh = INSTANCE(Resource)->Load<Mesh>(L"resource\\model\\suzanne.obj");
 
 		ID3D12DescriptorHeap* descriptorHeaps[] = { m_cbvHeap.Get() };
 		m_commandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
-		m_commandList->SetGraphicsRootDescriptorTable(1, m_cbvHeap->GetGPUDescriptorHandleForHeapStart());
+
+		m_commandList->SetGraphicsRootSignature(m_rootSignature.Get());
+
+		// Bind the current frame's constant buffer to the pipeline.
+		auto passCbvHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_cbvHeap->GetGPUDescriptorHandleForHeapStart());
+		passCbvHandle.Offset(m_currFrameResourceIndex, m_cbvSrvUavDescriptorSize);
+		m_commandList->SetGraphicsRootDescriptorTable(1, passCbvHandle);
 
 		for (int i = 0; i < 100; ++i)
 		{
@@ -473,7 +464,8 @@ namespace udsdx
 			float y = static_cast<float>(i / 10) - 4.5f;
 
 			XMMATRIX world = XMLoadFloat4x4(&m_world);
-			world *= XMMatrixTranslation(x * 4.0f, 0.0f, y * 4.0f);
+			world *= XMMatrixRotationY(m_theta);
+			world *= XMMatrixTranslation(x * 2.5f, 0.0f, y * 2.5f);
 			XMFLOAT4X4 worldMat;
 			XMStoreFloat4x4(&worldMat, XMMatrixTranspose(world));
 
@@ -515,8 +507,30 @@ namespace udsdx
 		// Advance the fence value to mark commands up to this fence point.
 		frameResource->SetFence(++m_currentFence);
 		m_commandQueue->Signal(m_fence.Get(), m_currentFence);
+	}
 
-		INSTANCE(Input)->IncreaseTick();
+	void Core::UpdateMainPassCB()
+	{
+		// Convert Spherical to Cartesian coordinates.
+		float x = m_radius * sinf(m_phi) * cosf(m_theta);
+		float z = m_radius * sinf(m_phi) * sinf(m_theta);
+		float y = m_radius * cosf(m_phi);
+
+		// Build the view matrix.
+		XMVECTOR pos = XMVectorSet(x, y, z, 1.0f);
+		XMVECTOR target = XMVectorZero();
+		XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+
+		XMMATRIX view = XMMatrixLookAtLH(pos, target, up);
+		XMMATRIX proj = XMLoadFloat4x4(&m_proj);
+		XMStoreFloat4x4(&m_view, view);
+
+		PassConstants objConstants;
+		XMStoreFloat4x4(&objConstants.ViewMatrix, XMMatrixTranspose(view));
+		XMStoreFloat4x4(&objConstants.ProjMatrix, XMMatrixTranspose(proj));
+
+		auto frameResource = CurrentFrameResource();
+		frameResource->GetObjectCB()->CopyData(0, objConstants);
 	}
 
 	bool Core::ProcessMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)

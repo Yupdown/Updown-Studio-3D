@@ -200,7 +200,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="assimp\code\assimp.vcxproj">
-      <Project>{76592feb-cd8e-38e5-ac41-fc91e40ea6f4}</Project>
+      <Project>{5702aa31-21c6-3a17-947b-6e4d18966d17}</Project>
     </ProjectReference>
     <ProjectReference Include="directxtex\DirectXTex\DirectXTex_Desktop_2022_Win10.vcxproj">
       <Project>{371b9fa9-4c90-4ac6-a123-aced756d6c77}</Project>

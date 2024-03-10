@@ -39,7 +39,7 @@ namespace udsdx
 
 		float m_theta = 1.5f * XM_PI;
 		float m_phi = XM_PIDIV4;
-		float m_radius = 20.0f;
+		float m_radius = 5.0f;
 
 	protected:
 		std::unique_ptr<TimeMeasure> m_timeMeasure;
@@ -112,6 +112,8 @@ namespace udsdx
 		void FlushCommandQueue();
 
 		void Update();
+		void Draw();
+		void UpdateMainPassCB();
 		void SetWindowFullscreen(bool fullscreen);
 		bool ProcessMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 		virtual bool OnResizeWindow(int width, int height);

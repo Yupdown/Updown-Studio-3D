@@ -79,6 +79,7 @@ namespace udsdx
 
         case WM_PAINT:
             INSTANCE(Core)->Update();
+            INSTANCE(Core)->Draw();
             break;
 
         default:

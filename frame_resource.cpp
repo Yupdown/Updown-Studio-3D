@@ -3,13 +3,13 @@
 
 namespace udsdx
 {
-	FrameResource::FrameResource(ID3D12Device* device, UINT passCount, UINT objectCount)
+	FrameResource::FrameResource(ID3D12Device* device)
 	{
 		ThrowIfFailed(device->CreateCommandAllocator(
 			D3D12_COMMAND_LIST_TYPE_DIRECT,
 			IID_PPV_ARGS(&m_commandListAllocator)
 		));
-		m_objectCB = std::make_unique<UploadBuffer<ObjectConstants>>(device, objectCount, true);
+		m_objectCB = std::make_unique<UploadBuffer<PassConstants>>(device, 1, true);
 	}
 
 	FrameResource::~FrameResource()
@@ -22,7 +22,7 @@ namespace udsdx
 		return m_commandListAllocator.Get();
 	}
 
-	UploadBuffer<ObjectConstants>* FrameResource::GetObjectCB() const
+	UploadBuffer<PassConstants>* FrameResource::GetObjectCB() const
 	{
 		return m_objectCB.get();
 	}
