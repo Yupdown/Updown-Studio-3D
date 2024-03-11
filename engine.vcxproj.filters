@@ -154,5 +154,13 @@
     <ClInclude Include="scene.h">
       <Filter>Engine\Runtime</Filter>
     </ClInclude>
+    <ClInclude Include="SimpleMath.h">
+      <Filter>External Sources</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="SimpleMath.inl">
+      <Filter>External Sources</Filter>
+    </None>
   </ItemGroup>
 </Project>

@@ -57,16 +57,9 @@ using namespace Microsoft::WRL;
 #include <DirectXCollision.h>
 #include <DirectXPackedVector.h>
 
-#include <WICTextureLoader.h>
-#include <DDSTextureLoader.h>
-#include <SimpleMath.h>
+#include "SimpleMath.h"
 
 using namespace DirectX;
-
-// Third Party Library
-#include <assimp/Importer.hpp>
-#include <assimp/scene.h>
-#include <assimp/postprocess.h>
 
 // In-Engine Library
 #include "define.h"
