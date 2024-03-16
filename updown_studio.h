@@ -5,6 +5,7 @@
 namespace udsdx
 {
 	class Core;
+	class Scene;
 
 	class UpdownStudio
 	{
@@ -17,7 +18,7 @@ namespace udsdx
 
 	public:
 		static int Initialize(HINSTANCE hInstance);
-		static int Run(int nCmdShow = SW_SHOWNORMAL);
+		static int Run(std::shared_ptr<Scene> initialScene, int nCmdShow = SW_SHOWNORMAL);
 		static void Quit();
 		static LRESULT CALLBACK ProcessMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 	};

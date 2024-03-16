@@ -22,6 +22,8 @@ namespace udsdx
 	public:
 		std::shared_ptr<Transform> GetTransform() const;
 		void RemoveAllComponents();
+		void Update(const Time& time);
+		void Render();
 
 	public:
 		template <typename Component_T>

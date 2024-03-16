@@ -44,12 +44,14 @@ namespace udsdx
         return 0;
     }
 
-    int udsdx::UpdownStudio::Run(int nCmdShow)
+    int udsdx::UpdownStudio::Run(std::shared_ptr<Scene> initialScene, int nCmdShow)
     {
         if (!m_hWnd)
 		{
 			return -1;
 		}
+
+        INSTANCE(Core)->SetScene(initialScene);
 
         ShowWindow(m_hWnd, nCmdShow);
         UpdateWindow(m_hWnd);

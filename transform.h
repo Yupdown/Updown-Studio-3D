@@ -6,27 +6,39 @@ namespace udsdx
 {
 	class Transform
 	{
-	protected:
-		XMFLOAT3 m_position;
-		XMFLOAT4 m_rotation;
-		XMFLOAT3 m_scale;
-
-		XMFLOAT4X4 m_localTRSMatrix;
-		XMFLOAT4X4 m_worldTRSMatrix;
-
-		bool m_isMatrixDirty;
-
 	public:
 		Transform();
 		~Transform();
 
 	public:
-		void SetLocalPosition(const XMFLOAT3& position);
-		void SetLocalRotation(const XMFLOAT4& rotation);
-		void SetLocalScale(const XMFLOAT3& scale);
+		void SetLocalPosition(const Vector3& position);
+		void SetLocalRotation(const Quaternion& rotation);
+		void SetLocalScale(const Vector3& scale);
 
-		XMFLOAT3 GetLocalPosition() const;
-		XMFLOAT4 GetLocalRotation() const;
-		XMFLOAT3 GetLocalScale() const;
+		void SetLocalPositionX(float x);
+		void SetLocalPositionY(float y);
+		void SetLocalPositionZ(float z);
+
+		void Translate(const Vector3& translation);
+		void Rotate(const Quaternion& rotation);
+
+		Vector3 GetLocalPosition() const;
+		Quaternion GetLocalRotation() const;
+		Vector3 GetLocalScale() const;
+
+		Matrix4x4 GetLocalSRTMatrix() const;
+		Matrix4x4 GetWorldSRTMatrix() const;
+
+		void ValidateSRTMatrix(const Transform& parent);
+
+	protected:
+		Vector3		m_position;
+		Quaternion	m_rotation;
+		Vector3		m_scale;
+
+		Matrix4x4	m_localSRTMatrix;
+		Matrix4x4	m_worldSRTMatrix;
+
+		bool		m_isMatrixDirty;
 	};
 }

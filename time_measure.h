@@ -1,15 +1,9 @@
 #pragma once
 
-#include <chrono>
+#include "pch.h"
 
 namespace udsdx
 {
-	struct Time
-	{
-		float time;
-		float deltaTime;
-	};
-
 	class TimeMeasure
 	{
 	private:

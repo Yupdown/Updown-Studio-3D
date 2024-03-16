@@ -8,6 +8,8 @@ namespace udsdx
 	{
 		XMFLOAT4X4 ViewMatrix = MathHelper::Identity4x4();
 		XMFLOAT4X4 ProjMatrix = MathHelper::Identity4x4();
+		XMFLOAT4 CameraPosition = { 0.0f, 0.0f, 0.0f, 1.0f };
+		float TotalTime = 0.0f;
 	};
 
 	class FrameResource

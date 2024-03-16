@@ -6,6 +6,7 @@
 #include "input.h"
 #include "frame_resource.h"
 #include "time_measure.h"
+#include "scene.h"
 #include "mesh.h"
 #include "shader.h"
 
@@ -358,6 +359,11 @@ namespace udsdx
 		}
 	}
 
+	void Core::SetScene(std::shared_ptr<Scene> scene)
+	{
+		m_scene = scene;
+	}
+
 	void Core::Update()
 	{
 		constexpr int RefreshRate = 15;
@@ -392,8 +398,8 @@ namespace udsdx
 		Time timeInfo = m_timeMeasure->GetTime();
 		m_timeMeasure->BeginMeasure();
 
-		float t = timeInfo.time * 4.0f;
-		m_theta = t + sin(t);
+		float t = timeInfo.totalTime;
+		m_theta = t;
 
 		// Update the constant buffer with the latest view and project matrix.
 		UpdateMainPassCB();
@@ -458,13 +464,16 @@ namespace udsdx
 		passCbvHandle.Offset(m_currFrameResourceIndex, m_cbvSrvUavDescriptorSize);
 		m_commandList->SetGraphicsRootDescriptorTable(1, passCbvHandle);
 
-		for (int i = 0; i < 100; ++i)
+		for (int i = 0; i < 1000; ++i)
 		{
-			float x = static_cast<float>(i % 10) - 4.5f;
-			float y = static_cast<float>(i / 10) - 4.5f;
+			float x = static_cast<float>(i % 32) - 15.5f;
+			float y = static_cast<float>(i / 32) - 15.5f;
+
+			static std::default_random_engine e;
+			static std::uniform_real_distribution<float> d(-0.1f, 0.1f);
 
 			XMMATRIX world = XMLoadFloat4x4(&m_world);
-			world *= XMMatrixRotationY(m_theta);
+			world *= XMMatrixRotationY(d(e));
 			world *= XMMatrixTranslation(x * 2.5f, 0.0f, y * 2.5f);
 			XMFLOAT4X4 worldMat;
 			XMStoreFloat4x4(&worldMat, XMMatrixTranspose(world));
@@ -512,9 +521,9 @@ namespace udsdx
 	void Core::UpdateMainPassCB()
 	{
 		// Convert Spherical to Cartesian coordinates.
-		float x = m_radius * sinf(m_phi) * cosf(m_theta);
-		float z = m_radius * sinf(m_phi) * sinf(m_theta);
-		float y = m_radius * cosf(m_phi);
+		float x = INSTANCE(Input)->GetMouseX() * 0.01f;
+		float y = INSTANCE(Input)->GetMouseY() * 0.01f;
+		float z = m_radius * sinf(m_phi) * sinf(m_theta + sinf(m_theta));
 
 		// Build the view matrix.
 		XMVECTOR pos = XMVectorSet(x, y, z, 1.0f);
@@ -525,12 +534,19 @@ namespace udsdx
 		XMMATRIX proj = XMLoadFloat4x4(&m_proj);
 		XMStoreFloat4x4(&m_view, view);
 
-		PassConstants objConstants;
-		XMStoreFloat4x4(&objConstants.ViewMatrix, XMMatrixTranspose(view));
-		XMStoreFloat4x4(&objConstants.ProjMatrix, XMMatrixTranspose(proj));
+		// The window resized, so update the aspect ratio and recompute the projection matrix.
+		float aspectRatio = static_cast<float>(m_clientWidth) / m_clientHeight;
+		XMMATRIX P = XMMatrixPerspectiveFovLH(PI / 3, aspectRatio, 0.1f, 1000.0f);
+		XMStoreFloat4x4(&m_proj, P);
+
+		PassConstants passConstants;
+		XMStoreFloat4x4(&passConstants.ViewMatrix, XMMatrixTranspose(view));
+		XMStoreFloat4x4(&passConstants.ProjMatrix, XMMatrixTranspose(proj));
+		XMStoreFloat4(&passConstants.CameraPosition, pos);
+		passConstants.TotalTime = m_timeMeasure->GetTime().totalTime;
 
 		auto frameResource = CurrentFrameResource();
-		frameResource->GetObjectCB()->CopyData(0, objConstants);
+		frameResource->GetObjectCB()->CopyData(0, passConstants);
 	}
 
 	bool Core::ProcessMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -664,7 +680,7 @@ namespace udsdx
 		// Release the previous resources we will be recreating.
 		for (int i = 0; i < SwapChainBufferCount; ++i)
 		{
-			m_swapChainBuffer[i].Reset();
+			m_swapChainBuffers[i].Reset();
 		}
 		m_depthStencilBuffer.Reset();
 
@@ -685,8 +701,8 @@ namespace udsdx
 		CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHeapHandle(m_rtvHeap->GetCPUDescriptorHandleForHeapStart());
 		for (UINT i = 0; i < SwapChainBufferCount; i++)
 		{
-			ThrowIfFailed(m_swapChain->GetBuffer(i, IID_PPV_ARGS(&m_swapChainBuffer[i])));
-			m_d3dDevice->CreateRenderTargetView(m_swapChainBuffer[i].Get(), nullptr, rtvHeapHandle);
+			ThrowIfFailed(m_swapChain->GetBuffer(i, IID_PPV_ARGS(&m_swapChainBuffers[i])));
+			m_d3dDevice->CreateRenderTargetView(m_swapChainBuffers[i].Get(), nullptr, rtvHeapHandle);
 			rtvHeapHandle.Offset(1, m_rtvDescriptorSize);
 		}
 
@@ -757,17 +773,12 @@ namespace udsdx
 
 		m_scissorRect = { 0, 0, width, height };
 
-		// The window resized, so update the aspect ratio and recompute the projection matrix.
-		float aspectRatio = static_cast<float>(width) / height;
-		XMMATRIX P = XMMatrixPerspectiveFovLH(0.25f * MathHelper::Pi, aspectRatio, 1.0f, 1000.0f);
-		XMStoreFloat4x4(&m_proj, P);
-
 		return true;
 	}
 
 	ID3D12Resource* Core::CurrentBackBuffer() const
 	{
-		return m_swapChainBuffer[m_currBackBuffer].Get();
+		return m_swapChainBuffers[m_currBackBuffer].Get();
 	}
 
 	D3D12_CPU_DESCRIPTOR_HANDLE Core::CurrentBackBufferView() const

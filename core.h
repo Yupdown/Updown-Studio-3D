@@ -6,6 +6,7 @@ namespace udsdx
 {
 	class FrameResource;
 	class TimeMeasure;
+	class Scene;
 
 	class Core
 	{
@@ -32,13 +33,16 @@ namespace udsdx
 
 		XMFLOAT4    m_clearColor = { 0.125f, 0.125f, 0.125f, 1.0f };
 
+		// Current Scene to render with
+		std::shared_ptr<Scene> m_scene;
+
 		// scale of xyz = 0.1f;
 		XMFLOAT4X4	m_world = MathHelper::Identity4x4();
 		XMFLOAT4X4	m_view = MathHelper::Identity4x4();
 		XMFLOAT4X4	m_proj = MathHelper::Identity4x4();
 
 		float m_theta = 1.5f * XM_PI;
-		float m_phi = XM_PIDIV4;
+		float m_phi = 1.1f;
 		float m_radius = 5.0f;
 
 	protected:
@@ -62,13 +66,13 @@ namespace udsdx
 		ComPtr<ID3D12GraphicsCommandList> m_commandList;
 
 		static constexpr int FrameResourceCount = 3;
-		std::unique_ptr<FrameResource> m_frameResources[FrameResourceCount];
+		std::array<std::unique_ptr<FrameResource>, FrameResourceCount> m_frameResources;
 		int m_currFrameResourceIndex = 0;
 
 		static constexpr int SwapChainBufferCount = 2;
 		int m_currBackBuffer = 0;
 
-		ComPtr<ID3D12Resource> m_swapChainBuffer[SwapChainBufferCount];
+		std::array<ComPtr<ID3D12Resource>, SwapChainBufferCount> m_swapChainBuffers;
 		ComPtr<ID3D12Resource> m_depthStencilBuffer;
 
 		// Render Target View Descriptor Heap
@@ -111,6 +115,7 @@ namespace udsdx
 
 		void FlushCommandQueue();
 
+		void SetScene(std::shared_ptr<Scene> scene);
 		void Update();
 		void Draw();
 		void UpdateMainPassCB();

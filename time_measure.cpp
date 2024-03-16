@@ -30,6 +30,6 @@ namespace udsdx
 
 	Time TimeMeasure::GetTime() const
 	{
-		return { m_time, m_deltaTime };
+		return { m_deltaTime, m_time };
 	}
 }

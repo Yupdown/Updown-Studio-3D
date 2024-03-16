@@ -24,4 +24,14 @@ namespace udsdx
 	{
 		m_components.clear();
 	}
+
+	void SceneObject::Update(const Time& time)
+	{
+
+	}
+
+	void SceneObject::Render()
+	{
+
+	}
 }
