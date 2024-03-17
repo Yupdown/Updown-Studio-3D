@@ -21,5 +21,6 @@ namespace udsdx
 		static int Run(std::shared_ptr<Scene> initialScene, int nCmdShow = SW_SHOWNORMAL);
 		static void Quit();
 		static LRESULT CALLBACK ProcessMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
+		static void RegisterUpdateCallback(std::function<void(const Time&)> callback);
 	};
 }

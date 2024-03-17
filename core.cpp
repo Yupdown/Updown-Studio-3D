@@ -155,6 +155,11 @@ namespace udsdx
 		m_commandList->Close();
 	}
 
+	void Core::RegisterUpdateCallback(std::function<void(const Time&)> callback)
+	{
+		m_updateCallback = callback;
+	}
+
 	void Core::CreateSwapChain()
 	{
 		// Release the previous swapchain we will be recreating.
@@ -256,15 +261,16 @@ namespace udsdx
 
 	void Core::BuildRootSignature()
 	{
-		CD3DX12_ROOT_PARAMETER slotRootParameter[2];
+		CD3DX12_ROOT_PARAMETER slotRootParameter[3];
 
 		CD3DX12_DESCRIPTOR_RANGE cbvTable;
-		cbvTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1);
+		cbvTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 2);
 
 		slotRootParameter[0].InitAsConstants(16, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
-		slotRootParameter[1].InitAsDescriptorTable(1, &cbvTable);
+		slotRootParameter[1].InitAsConstants(20, 1, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+		slotRootParameter[2].InitAsDescriptorTable(1, &cbvTable);
 
-		CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(2, slotRootParameter, 0, nullptr,
+		CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(3, slotRootParameter, 0, nullptr,
 			D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
 		);
 
@@ -398,8 +404,11 @@ namespace udsdx
 		Time timeInfo = m_timeMeasure->GetTime();
 		m_timeMeasure->BeginMeasure();
 
-		float t = timeInfo.totalTime;
-		m_theta = t;
+		if (m_updateCallback)
+		{
+			m_updateCallback(timeInfo);
+		}
+		m_scene->Update(timeInfo);
 
 		// Update the constant buffer with the latest view and project matrix.
 		UpdateMainPassCB();
@@ -413,10 +422,11 @@ namespace udsdx
 		//
 		auto frameResource = CurrentFrameResource();
 		auto cmdListAlloc = frameResource->GetCommandListAllocator();
-		auto pipelineState = INSTANCE(Resource)->Load<Shader>(L"resource\\shader\\color.hlsl");
 
 		ThrowIfFailed(cmdListAlloc->Reset());
-		ThrowIfFailed(m_commandList->Reset(cmdListAlloc, pipelineState->PipelineState()));
+		// Resets a command list back to its initial state as if a new command list was just created.
+		// ID3D12PipelineState: This is optional and can be NULL. If NULL, the runtime sets a dummy initial pipeline state so that drivers don't have to deal with undefined state.
+		ThrowIfFailed(m_commandList->Reset(cmdListAlloc, nullptr));
 
 		m_commandList->RSSetViewports(1, &m_screenViewport);
 		m_commandList->RSSetScissorRects(1, &m_scissorRect);
@@ -452,43 +462,18 @@ namespace udsdx
 			&DepthStencilView()
 		);
 
-		auto mesh = INSTANCE(Resource)->Load<Mesh>(L"resource\\model\\suzanne.obj");
-
 		ID3D12DescriptorHeap* descriptorHeaps[] = { m_cbvHeap.Get() };
 		m_commandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
-
 		m_commandList->SetGraphicsRootSignature(m_rootSignature.Get());
 
 		// Bind the current frame's constant buffer to the pipeline.
 		auto passCbvHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_cbvHeap->GetGPUDescriptorHandleForHeapStart());
 		passCbvHandle.Offset(m_currFrameResourceIndex, m_cbvSrvUavDescriptorSize);
-		m_commandList->SetGraphicsRootDescriptorTable(1, passCbvHandle);
+		m_commandList->SetGraphicsRootDescriptorTable(2, passCbvHandle);
 
-		for (int i = 0; i < 1000; ++i)
-		{
-			float x = static_cast<float>(i % 32) - 15.5f;
-			float y = static_cast<float>(i / 32) - 15.5f;
-
-			static std::default_random_engine e;
-			static std::uniform_real_distribution<float> d(-0.1f, 0.1f);
-
-			XMMATRIX world = XMLoadFloat4x4(&m_world);
-			world *= XMMatrixRotationY(d(e));
-			world *= XMMatrixTranslation(x * 2.5f, 0.0f, y * 2.5f);
-			XMFLOAT4X4 worldMat;
-			XMStoreFloat4x4(&worldMat, XMMatrixTranspose(world));
-
-			m_commandList->SetGraphicsRoot32BitConstants(0, 16, &worldMat, 0);
-
-			m_commandList->IASetVertexBuffers(0, 1, &mesh->VertexBufferView());
-			m_commandList->IASetIndexBuffer(&mesh->IndexBufferView());
-			m_commandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-			m_commandList->DrawIndexedInstanced(
-				mesh->DrawArgs["box"].IndexCount,
-				1, 0, 0, 0
-			);
-		}
+		float aspect = static_cast<float>(m_clientWidth) / m_clientHeight;
+		// Draw the scene objects.
+		m_scene->Render(*m_commandList.Get(), aspect);
 
 		// indicate a state transition on the resource usage.
 		m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
@@ -520,29 +505,7 @@ namespace udsdx
 
 	void Core::UpdateMainPassCB()
 	{
-		// Convert Spherical to Cartesian coordinates.
-		float x = INSTANCE(Input)->GetMouseX() * 0.01f;
-		float y = INSTANCE(Input)->GetMouseY() * 0.01f;
-		float z = m_radius * sinf(m_phi) * sinf(m_theta + sinf(m_theta));
-
-		// Build the view matrix.
-		XMVECTOR pos = XMVectorSet(x, y, z, 1.0f);
-		XMVECTOR target = XMVectorZero();
-		XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-
-		XMMATRIX view = XMMatrixLookAtLH(pos, target, up);
-		XMMATRIX proj = XMLoadFloat4x4(&m_proj);
-		XMStoreFloat4x4(&m_view, view);
-
-		// The window resized, so update the aspect ratio and recompute the projection matrix.
-		float aspectRatio = static_cast<float>(m_clientWidth) / m_clientHeight;
-		XMMATRIX P = XMMatrixPerspectiveFovLH(PI / 3, aspectRatio, 0.1f, 1000.0f);
-		XMStoreFloat4x4(&m_proj, P);
-
 		PassConstants passConstants;
-		XMStoreFloat4x4(&passConstants.ViewMatrix, XMMatrixTranspose(view));
-		XMStoreFloat4x4(&passConstants.ProjMatrix, XMMatrixTranspose(proj));
-		XMStoreFloat4(&passConstants.CameraPosition, pos);
 		passConstants.TotalTime = m_timeMeasure->GetTime().totalTime;
 
 		auto frameResource = CurrentFrameResource();

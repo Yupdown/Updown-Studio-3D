@@ -4,17 +4,13 @@
 
 namespace udsdx
 {
-	Component::Component()
+	Component::Component(const std::shared_ptr<SceneObject>& object)
 	{
+		m_object = object;
 	}
 
 	Component::~Component()
 	{
-	}
-
-	void Component::AttachToSceneObject(const std::shared_ptr<SceneObject>& object)
-	{
-		m_object = object;
 	}
 
 	void Component::DetachFromSceneObject()

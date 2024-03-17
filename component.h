@@ -5,20 +5,24 @@
 namespace udsdx
 {
 	class SceneObject;
+	class Scene;
 
 	class Component
 	{
-	protected:
-		std::weak_ptr<SceneObject> m_object;
+	public:
+		Component(const std::shared_ptr<SceneObject>& object);
+		virtual ~Component();
 
 	public:
-		Component();
-		~Component();
+		virtual void Update(const Time& time, Scene& scene) = 0;
+		virtual void Render(ID3D12GraphicsCommandList& cmdl) = 0;
 
 	public:
-		void AttachToSceneObject(const std::shared_ptr<SceneObject>& object);
 		void DetachFromSceneObject();
 		bool IsAttachedToSceneObject() const;
 		std::shared_ptr<SceneObject> GetSceneObject() const;
+
+	protected:
+		std::weak_ptr<SceneObject> m_object;
 	};
 }

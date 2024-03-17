@@ -4,11 +4,19 @@
 
 namespace udsdx
 {
+	struct ObjectConstants
+	{
+		Matrix4x4 World = Matrix4x4::Identity;
+	};
+
+	struct CameraConstants
+	{
+		Matrix4x4 ViewProj = Matrix4x4::Identity;
+		Vector4 CameraPosition = Vector4::Zero;
+	};
+
 	struct PassConstants
 	{
-		XMFLOAT4X4 ViewMatrix = MathHelper::Identity4x4();
-		XMFLOAT4X4 ProjMatrix = MathHelper::Identity4x4();
-		XMFLOAT4 CameraPosition = { 0.0f, 0.0f, 0.0f, 1.0f };
 		float TotalTime = 0.0f;
 	};
 

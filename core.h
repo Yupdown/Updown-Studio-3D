@@ -10,6 +10,43 @@ namespace udsdx
 
 	class Core
 	{
+	public:
+		Core();
+		Core(const Core& rhs) = delete;
+		Core& operator=(const Core& rhs) = delete;
+		virtual ~Core();
+
+		void Initialize(HINSTANCE hInstance, HWND hWnd);
+		void InitializeDirect3D();
+		bool CheckTearingSupport() const;
+		void PrintAdapterInfo();
+		void OnDestroy();
+
+		void CreateCommandObjects();
+		void CreateSwapChain();
+		void CreateRtvAndDsvDescriptorHeaps();
+
+		void BuildDescriptorHeaps();
+		void BuildConstantBuffers();
+		void BuildRootSignature();
+
+		void FlushCommandQueue();
+
+		void SetScene(std::shared_ptr<Scene> scene);
+		void RegisterUpdateCallback(std::function<void(const Time&)> callback);
+		void Update();
+		void Draw();
+		void UpdateMainPassCB();
+		void SetWindowFullscreen(bool fullscreen);
+		bool ProcessMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
+		virtual bool OnResizeWindow(int width, int height);
+
+	public:
+		ID3D12Resource* CurrentBackBuffer() const;
+		D3D12_CPU_DESCRIPTOR_HANDLE CurrentBackBufferView() const;
+		D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilView() const;
+		FrameResource* CurrentFrameResource() const;
+
 	protected:
 		HINSTANCE	m_hInstance = 0;
 		HWND		m_hMainWnd = 0;
@@ -35,15 +72,7 @@ namespace udsdx
 
 		// Current Scene to render with
 		std::shared_ptr<Scene> m_scene;
-
-		// scale of xyz = 0.1f;
-		XMFLOAT4X4	m_world = MathHelper::Identity4x4();
-		XMFLOAT4X4	m_view = MathHelper::Identity4x4();
-		XMFLOAT4X4	m_proj = MathHelper::Identity4x4();
-
-		float m_theta = 1.5f * XM_PI;
-		float m_phi = 1.1f;
-		float m_radius = 5.0f;
+		std::function<void(const Time&)> m_updateCallback;
 
 	protected:
 		std::unique_ptr<TimeMeasure> m_timeMeasure;
@@ -92,42 +121,6 @@ namespace udsdx
 		UINT m_rtvDescriptorSize = 0;
 		UINT m_dsvDescriptorSize = 0;
 		UINT m_cbvSrvUavDescriptorSize = 0;
-
-	public:
-		Core();
-		Core(const Core& rhs) = delete;
-		Core& operator=(const Core& rhs) = delete;
-		virtual ~Core();
-
-		void Initialize(HINSTANCE hInstance, HWND hWnd);
-		void InitializeDirect3D();
-		bool CheckTearingSupport() const;
-		void PrintAdapterInfo();
-		void OnDestroy();
-
-		void CreateCommandObjects();
-		void CreateSwapChain();
-		void CreateRtvAndDsvDescriptorHeaps();
-
-		void BuildDescriptorHeaps();
-		void BuildConstantBuffers();
-		void BuildRootSignature();
-
-		void FlushCommandQueue();
-
-		void SetScene(std::shared_ptr<Scene> scene);
-		void Update();
-		void Draw();
-		void UpdateMainPassCB();
-		void SetWindowFullscreen(bool fullscreen);
-		bool ProcessMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
-		virtual bool OnResizeWindow(int width, int height);
-
-	public:
-		ID3D12Resource* CurrentBackBuffer() const;
-		D3D12_CPU_DESCRIPTOR_HANDLE CurrentBackBufferView() const;
-		D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilView() const;
-		FrameResource* CurrentFrameResource() const;
 	};
 }
 

@@ -93,4 +93,9 @@ namespace udsdx
         }
         return 0;
     }
+
+    void UpdownStudio::RegisterUpdateCallback(std::function<void(const Time&)> callback)
+    {
+        INSTANCE(Core)->RegisterUpdateCallback(callback);
+    }
 }

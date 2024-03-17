@@ -6,13 +6,10 @@ namespace udsdx
 {
 	class Transform;
 	class Component;
+	class Scene;
 
-	class SceneObject
+	class SceneObject : public std::enable_shared_from_this<SceneObject>
 	{
-	protected:
-		std::shared_ptr<Transform> m_transform;
-		std::vector<std::shared_ptr<Component>> m_components;
-
 	public:
 		SceneObject();
 		SceneObject(const SceneObject& rhs) = delete;
@@ -20,33 +17,45 @@ namespace udsdx
 		~SceneObject();
 
 	public:
-		std::shared_ptr<Transform> GetTransform() const;
-		void RemoveAllComponents();
-		void Update(const Time& time);
-		void Render();
+		Transform* GetTransform() const;
+		void Update(const Time& time, Scene& scene, const SceneObject& parent);
+		void Render(ID3D12GraphicsCommandList& cmdl);
+
+	public:
+		void AddChild(std::shared_ptr<SceneObject> child);
+		void RemoveChild(std::shared_ptr<SceneObject> child);
+		std::shared_ptr<SceneObject> GetParent() const;
 
 	public:
 		template <typename Component_T>
-		std::shared_ptr<Component_T> AddComponent()
+		Component_T* AddComponent()
 		{
-			std::shared_ptr<Component> component = std::make_shared<Component_T>();
-			component->AttachToSceneObject(shared_from_this<SceneObject>())
-			m_components.emplace_back(component);
-			return component;
+			std::unique_ptr<Component_T> component = std::make_unique<Component_T>(shared_from_this());
+			m_components.emplace_back(std::move(component));
+			return dynamic_cast<Component_T*>(m_components.back().get());
 		}
 
 		template <typename Component_T>
-		std::shared_ptr<Component_T> GetComponent() const
+		Component_T* GetComponent() const
 		{
 			for (auto& component : m_components)
 			{
-				std::shared_ptr<Component_T> castedComponent = std::dynamic_pointer_cast<Component_T>(component);
+				Component_T* castedComponent = dynamic_cast<Component_T*>(component.get());
 				if (castedComponent)
 				{
 					return castedComponent;
 				}
 			}
-			return std::shared_ptr<Component_T>();
+			return nullptr;
 		}
+		void RemoveAllComponents();
+
+	protected:
+		std::unique_ptr<Transform> m_transform;
+		std::vector<std::unique_ptr<Component>> m_components;
+
+	protected:
+		std::vector<std::shared_ptr<SceneObject>> m_children;
+		std::weak_ptr<SceneObject> m_parent;
 	};
 }

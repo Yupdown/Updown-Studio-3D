@@ -7,7 +7,7 @@ namespace udsdx
 {
 	SceneObject::SceneObject()
 	{
-		m_transform = std::make_shared<Transform>();
+		m_transform = std::make_unique<Transform>();
 	}
 
 	SceneObject::~SceneObject()
@@ -15,9 +15,9 @@ namespace udsdx
 		m_components.clear();
 	}
 
-	std::shared_ptr<Transform> SceneObject::GetTransform() const
+	Transform* SceneObject::GetTransform() const
 	{
-		return m_transform;
+		return m_transform.get();
 	}
 
 	void SceneObject::RemoveAllComponents()
@@ -25,13 +25,57 @@ namespace udsdx
 		m_components.clear();
 	}
 
-	void SceneObject::Update(const Time& time)
+	void SceneObject::Update(const Time& time, Scene& scene, const SceneObject& parent)
 	{
+		// Validate SRT matrix
+		m_transform->ValidateSRTMatrix(*parent.GetTransform());
 
+		// Update components
+		for (auto& component : m_components)
+		{
+			component->Update(time, scene);
+		}
+
+		// Update children, recursively
+		for (auto& child : m_children)
+		{
+			child->Update(time, scene, *this);
+		}
 	}
 
-	void SceneObject::Render()
+	void SceneObject::Render(ID3D12GraphicsCommandList& cmdl)
 	{
+		// Render components
+		for (auto& component : m_components)
+		{
+			component->Render(cmdl);
+		}
 
+		// Render children, recursively
+		for (auto& child : m_children)
+		{
+			child->Render(cmdl);
+		}
+	}
+
+	void SceneObject::AddChild(std::shared_ptr<SceneObject> child)
+	{
+		child->m_parent = weak_from_this();
+		m_children.push_back(child);
+	}
+
+	void SceneObject::RemoveChild(std::shared_ptr<SceneObject> child)
+	{
+		auto iter = std::find(m_children.begin(), m_children.end(), child);
+		if (iter != m_children.end())
+		{
+			(*iter)->m_parent.reset();
+			m_children.erase(iter);
+		}
+	}
+
+	std::shared_ptr<SceneObject> SceneObject::GetParent() const
+	{
+		return m_parent.lock();
 	}
 }

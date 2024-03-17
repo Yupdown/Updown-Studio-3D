@@ -59,6 +59,9 @@
     <ClCompile Include="mesh_renderer.cpp">
       <Filter>Engine\Runtime</Filter>
     </ClCompile>
+    <ClCompile Include="camera.cpp">
+      <Filter>Engine\Runtime</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Precompiled Headers">
@@ -161,6 +164,9 @@
       <Filter>External Sources</Filter>
     </ClInclude>
     <ClInclude Include="mesh_renderer.h">
+      <Filter>Engine\Runtime</Filter>
+    </ClInclude>
+    <ClInclude Include="camera.h">
       <Filter>Engine\Runtime</Filter>
     </ClInclude>
   </ItemGroup>
