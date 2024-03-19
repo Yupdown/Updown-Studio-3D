@@ -19,7 +19,6 @@ namespace udsdx
 	public:
 		Transform* GetTransform() const;
 		void Update(const Time& time, Scene& scene, const SceneObject& parent);
-		void Render(ID3D12GraphicsCommandList& cmdl);
 
 	public:
 		void AddChild(std::shared_ptr<SceneObject> child);
@@ -31,8 +30,9 @@ namespace udsdx
 		Component_T* AddComponent()
 		{
 			std::unique_ptr<Component_T> component = std::make_unique<Component_T>(shared_from_this());
+			Component_T* componentPtr = component.get();
 			m_components.emplace_back(std::move(component));
-			return dynamic_cast<Component_T*>(m_components.back().get());
+			return componentPtr;
 		}
 
 		template <typename Component_T>

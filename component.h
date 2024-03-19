@@ -15,11 +15,8 @@ namespace udsdx
 
 	public:
 		virtual void Update(const Time& time, Scene& scene) = 0;
-		virtual void Render(ID3D12GraphicsCommandList& cmdl) = 0;
 
 	public:
-		void DetachFromSceneObject();
-		bool IsAttachedToSceneObject() const;
 		std::shared_ptr<SceneObject> GetSceneObject() const;
 
 	protected:

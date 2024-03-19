@@ -4,6 +4,7 @@
 #include "scene_object.h"
 #include "transform.h"
 #include "shader.h"
+#include "scene.h"
 #include "mesh.h"
 
 namespace udsdx
@@ -15,6 +16,7 @@ namespace udsdx
 
 	void MeshRenderer::Update(const Time& time, Scene& scene)
 	{
+		scene.EnqueueRenderObject(this);
 	}
 
 	void MeshRenderer::Render(ID3D12GraphicsCommandList& cmdl)

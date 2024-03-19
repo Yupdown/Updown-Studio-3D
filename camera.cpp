@@ -15,10 +15,6 @@ namespace udsdx
 		scene.EnqueueRenderCamera(this);
 	}
 
-	void Camera::Render(ID3D12GraphicsCommandList& cmdl)
-	{
-	}
-
 	Matrix4x4 Camera::GetViewMatrix() const
 	{
 		Transform* transform = GetSceneObject()->GetTransform();
@@ -28,6 +24,38 @@ namespace udsdx
 
 	Matrix4x4 Camera::GetProjMatrix(float aspect) const
 	{
-		return Matrix4x4::CreatePerspectiveFieldOfView(m_fov, aspect, m_near, m_far);
+		Matrix4x4 m;
+		XMStoreFloat4x4(&m, XMMatrixPerspectiveFovLH(m_fov, aspect, m_near, m_far));
+		return m;
+	}
+
+	void Camera::SetFov(float fov)
+	{
+		m_fov = fov;
+	}
+
+	void Camera::SetNear(float fNear)
+	{
+		m_near = fNear;
+	}
+
+	void Camera::SetFar(float fFar)
+	{
+		m_far = fFar;
+	}
+
+	float Camera::GetFov() const
+	{
+		return m_fov;
+	}
+
+	float Camera::GetNear() const
+	{
+		return m_near;
+	}
+
+	float Camera::GetFar() const
+	{
+		return m_far;
 	}
 }

@@ -418,8 +418,12 @@ namespace udsdx
 
 	void Core::Draw()
 	{
-		// TODO: Add your draw logic here
-		//
+		if (m_resizeDirty)
+		{
+			OnResizeWindow(m_clientWidth, m_clientHeight);
+			m_resizeDirty = false;
+		}
+
 		auto frameResource = CurrentFrameResource();
 		auto cmdListAlloc = frameResource->GetCommandListAllocator();
 
@@ -524,7 +528,7 @@ namespace udsdx
 				m_clientHeight = HIWORD(lParam);
 
 				// Notify the display associated resources for the resize event.
-				OnResizeWindow(m_clientWidth, m_clientHeight);
+				m_resizeDirty = true;
 			}
 			break;
 

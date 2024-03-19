@@ -11,6 +11,8 @@ namespace udsdx
     HINSTANCE UpdownStudio::m_hInstance = nullptr;
     HWND UpdownStudio::m_hWnd = nullptr;
 
+    std::atomic_bool UpdownStudio::m_running = false;
+
     int UpdownStudio::Initialize(HINSTANCE hInstance)
     {
         m_hInstance = hInstance;
@@ -53,22 +55,40 @@ namespace udsdx
 
         INSTANCE(Core)->SetScene(initialScene);
 
+        m_running = true;
+
         ShowWindow(m_hWnd, nCmdShow);
         UpdateWindow(m_hWnd);
+
+        std::thread engineThread(MainLoop);
 
         MSG message;
         while (GetMessage(&message, nullptr, 0, 0))
         {
             TranslateMessage(&message);
             DispatchMessage(&message);
+            if (!m_running)
+                PostQuitMessage(0);
         }
 
+        engineThread.join();
         return static_cast<int>(message.wParam);
     }
 
+    void UpdownStudio::MainLoop()
+    {
+        auto core = INSTANCE(Core);
+        while (m_running)
+        {
+            core->Update();
+            core->Draw();
+		}
+        core->OnDestroy();
+	}
+
     void UpdownStudio::Quit()
     {
-        INSTANCE(Core)->OnDestroy();
+        m_running = false;
     }
 
     LRESULT CALLBACK UpdownStudio::ProcessMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -76,12 +96,7 @@ namespace udsdx
         switch (message)
         {
         case WM_DESTROY:
-            PostQuitMessage(0);
-            break;
-
-        case WM_PAINT:
-            INSTANCE(Core)->Update();
-            INSTANCE(Core)->Draw();
+            m_running = false;
             break;
 
         default:

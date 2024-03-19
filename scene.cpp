@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "scene.h"
+#include "mesh_renderer.h"
 #include "frame_resource.h"
 #include "scene_object.h"
 #include "transform.h"
@@ -22,6 +23,7 @@ namespace udsdx
 	void Scene::Update(const Time& time)
 	{
 		m_renderCameraQueue.clear();
+		m_renderObjectQueue.clear();
 
 		for (auto& object : m_objects)
 		{
@@ -46,7 +48,7 @@ namespace udsdx
 			cmdl.SetGraphicsRoot32BitConstants(1, 20, &cameraConstants, 0);
 			cmdl.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-			for (auto& object : m_objects)
+			for (const auto& object : m_renderObjectQueue)
 			{
 				object->Render(cmdl);
 			}
@@ -67,8 +69,13 @@ namespace udsdx
 		}
 	}
 
-	void Scene::EnqueueRenderCamera(const Camera* camera)
+	void Scene::EnqueueRenderCamera(Camera* camera)
 	{
 		m_renderCameraQueue.emplace_back(camera);
+	}
+
+	void Scene::EnqueueRenderObject(MeshRenderer* object)
+	{
+		m_renderObjectQueue.emplace_back(object);
 	}
 }

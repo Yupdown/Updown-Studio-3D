@@ -12,7 +12,7 @@ namespace udsdx
 
 	SceneObject::~SceneObject()
 	{
-		m_components.clear();
+
 	}
 
 	Transform* SceneObject::GetTransform() const
@@ -40,21 +40,6 @@ namespace udsdx
 		for (auto& child : m_children)
 		{
 			child->Update(time, scene, *this);
-		}
-	}
-
-	void SceneObject::Render(ID3D12GraphicsCommandList& cmdl)
-	{
-		// Render components
-		for (auto& component : m_components)
-		{
-			component->Render(cmdl);
-		}
-
-		// Render children, recursively
-		for (auto& child : m_children)
-		{
-			child->Render(cmdl);
 		}
 	}
 

@@ -92,7 +92,7 @@ namespace udsdx
 		{
 			return false;
 		}
-		return (*iter).second.first;
+		return (*iter).second.first && (*iter).second.second + 1 <= m_tick;
 	}
 
 	bool Input::GetKeyDown(int key) const
@@ -102,7 +102,7 @@ namespace udsdx
 		{
 			return false;
 		}
-		return (*iter).second.first && (*iter).second.second == m_tick;
+		return (*iter).second.first && (*iter).second.second + 1 == m_tick;
 	}
 
 	bool Input::GetKeyUp(int key) const
@@ -112,7 +112,7 @@ namespace udsdx
 		{
 			return false;
 		}
-		return !(*iter).second.first && (*iter).second.second == m_tick;
+		return !(*iter).second.first && (*iter).second.second + 1 == m_tick;
 	}
 
 	bool Input::GetMouseButton(int button) const
@@ -122,7 +122,7 @@ namespace udsdx
 		{
 			return false;
 		}
-		return (*iter).second.first;
+		return (*iter).second.first && (*iter).second.second + 1 <= m_tick;
 	}
 
 	bool Input::GetMouseButtonDown(int button) const
@@ -132,7 +132,7 @@ namespace udsdx
 		{
 			return false;
 		}
-		return (*iter).second.first && (*iter).second.second == m_tick;
+		return (*iter).second.first && (*iter).second.second + 1 == m_tick;
 	}
 
 	bool Input::GetMouseButtonUp(int button) const
@@ -142,7 +142,7 @@ namespace udsdx
 		{
 			return false;
 		}
-		return !(*iter).second.first && (*iter).second.second == m_tick;
+		return !(*iter).second.first && (*iter).second.second + 1 == m_tick;
 	}
 
 	int Input::GetMouseX() const

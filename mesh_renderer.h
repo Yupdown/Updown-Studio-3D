@@ -16,7 +16,7 @@ namespace udsdx
 
 	public:
 		virtual void Update(const Time& time, Scene& scene) override;
-		virtual void Render(ID3D12GraphicsCommandList& cmdl) override;
+		virtual void Render(ID3D12GraphicsCommandList& cmdl);
 
 	public:
 		void SetMesh(Mesh* mesh);

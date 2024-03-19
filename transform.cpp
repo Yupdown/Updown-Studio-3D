@@ -99,11 +99,18 @@ namespace udsdx
 			return;
 		}
 
-		m_localSRTMatrix = Matrix4x4::Identity;
-		m_localSRTMatrix *= Matrix4x4::CreateScale(m_scale);
-		m_localSRTMatrix *= Matrix4x4::CreateFromQuaternion(m_rotation);
-		m_localSRTMatrix *= Matrix4x4::CreateTranslation(m_position);
-		m_worldSRTMatrix = m_localSRTMatrix * parent.m_worldSRTMatrix;
+		// All properties of the transform are converted to XMVECTOR without an explicit conversion.
+		XMMATRIX m = XMMatrixScalingFromVector(m_scale);
+		m = XMMatrixMultiply(m, XMMatrixRotationQuaternion(m_rotation));
+		m = XMMatrixMultiply(m, XMMatrixTranslationFromVector(m_position));
+
+		// Apply the local SRT matrix.
+		XMStoreFloat4x4(&m_localSRTMatrix, m);
+
+		m = XMMatrixMultiply(m, parent.m_worldSRTMatrix);
+
+		// Apply the world SRT matrix.
+		XMStoreFloat4x4(&m_worldSRTMatrix, m);
 
 		m_isMatrixDirty = false;
 	}
