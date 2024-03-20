@@ -2,11 +2,26 @@
 
 #include "pch.h"
 
+#include "resource.h"
+#include "resource_object.h"
+#include "material.h"
+#include "mesh.h"
+#include "texture.h"
+#include "shader.h"
+
+#include "time_measure.h"
+#include "input.h"
+#include "core.h"
+
+#include "scene.h"
+#include "scene_object.h"
+#include "transform.h"
+#include "component.h"
+#include "mesh_renderer.h"
+#include "camera.h"
+
 namespace udsdx
 {
-	class Core;
-	class Scene;
-
 	class UpdownStudio
 	{
 	private:
@@ -20,7 +35,7 @@ namespace udsdx
 
 	public:
 		static int Initialize(HINSTANCE hInstance);
-		static int Run(std::shared_ptr<Scene> initialScene, int nCmdShow = SW_SHOWNORMAL);
+		static int Run(std::shared_ptr<Scene> beginScene, int nCmdShow = SW_SHOWNORMAL);
 		static void MainLoop();
 		static void Quit();
 		static LRESULT CALLBACK ProcessMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);

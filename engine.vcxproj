@@ -191,7 +191,6 @@
     <ClInclude Include="pch.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="resource_object.h" />
-    <ClInclude Include="s2ws.h" />
     <ClInclude Include="shader.h" />
     <ClInclude Include="SimpleMath.h" />
     <ClInclude Include="singleton.h" />

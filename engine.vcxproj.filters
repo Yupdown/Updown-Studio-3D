@@ -121,9 +121,6 @@
     <ClInclude Include="resource_object.h">
       <Filter>Engine\Resource</Filter>
     </ClInclude>
-    <ClInclude Include="s2ws.h">
-      <Filter>Utility Sources</Filter>
-    </ClInclude>
     <ClInclude Include="core.h">
       <Filter>Engine</Filter>
     </ClInclude>
