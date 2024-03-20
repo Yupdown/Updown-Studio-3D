@@ -47,34 +47,37 @@ namespace udsdx
         return 0;
     }
 
-    int udsdx::UpdownStudio::Run(std::shared_ptr<Scene> initialScene, int nCmdShow)
+    int udsdx::UpdownStudio::Run(std::shared_ptr<Scene> beginScene, int nCmdShow)
     {
         if (!m_hWnd)
 		{
 			return -1;
 		}
 
-        INSTANCE(Core)->SetScene(initialScene);
+        INSTANCE(Core)->SetScene(beginScene);
 
         m_running = true;
 
         ShowWindow(m_hWnd, nCmdShow);
         UpdateWindow(m_hWnd);
 
-        g_engineThread = std::thread(&UpdownStudio::MainLoop);
+        g_engineThread = std::thread(UpdownStudio::MainLoop);
 
         MSG message;
         while (GetMessage(&message, nullptr, 0, 0))
         {
             TranslateMessage(&message);
             DispatchMessage(&message);
+
             if (!m_running)
             {
-                g_engineThread.join();
                 PostQuitMessage(0);
+                if (g_engineThread.joinable())
+                {
+                    g_engineThread.join();
+                }
             }
         }
-
         return static_cast<int>(message.wParam);
     }
 
@@ -98,8 +101,12 @@ namespace udsdx
     {
         switch (message)
         {
+        case WM_CREATE:
+            break;
+
         case WM_DESTROY:
             m_running = false;
+            g_engineThread.join();
             break;
 
         default:

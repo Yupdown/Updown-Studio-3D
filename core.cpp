@@ -59,7 +59,6 @@ namespace udsdx
 		BuildRootSignature();
 
 		INSTANCE(Resource)->Initialize(m_d3dDevice.Get(), m_commandList.Get(), m_rootSignature.Get());
-		INSTANCE(Input)->Initialize();
 
 		ThrowIfFailed(m_commandList->Close());
 		ID3D12CommandList* cmdsLists[] = { m_commandList.Get() };
@@ -388,12 +387,6 @@ namespace udsdx
 		}
 		frameCount += 1;
 
-		if (m_resizeDirty)
-		{
-			m_resizeDirty = false;
-			OnResizeWindow(m_clientWidth, m_clientHeight);
-		}
-
 		m_currFrameResourceIndex = (m_currFrameResourceIndex + 1) % FrameResourceCount;
 		auto frameResource = CurrentFrameResource();
 
@@ -410,6 +403,8 @@ namespace udsdx
 		Time timeInfo = m_timeMeasure->GetTime();
 		m_timeMeasure->BeginMeasure();
 
+		INSTANCE(Input)->FlushQueue();
+
 		if (m_updateCallback)
 		{
 			m_updateCallback(timeInfo);
@@ -418,12 +413,16 @@ namespace udsdx
 
 		// Update the constant buffer with the latest view and project matrix.
 		UpdateMainPassCB();
-
-		INSTANCE(Input)->IncreaseTick();
 	}
 
 	void Core::Draw()
 	{
+		if (m_resizeDirty)
+		{
+			m_resizeDirty = false;
+			OnResizeWindow(m_clientWidth, m_clientHeight);
+		}
+
 		auto frameResource = CurrentFrameResource();
 		auto cmdListAlloc = frameResource->GetCommandListAllocator();
 
