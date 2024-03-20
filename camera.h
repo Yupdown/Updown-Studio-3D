@@ -16,9 +16,20 @@ namespace udsdx
 		virtual void Update(const Time& time, Scene& scene) override;
 
 	public:
-		Matrix4x4 GetViewMatrix() const;
-		Matrix4x4 GetProjMatrix(float aspect) const;
+		virtual Matrix4x4 GetViewMatrix() const;
+		virtual Matrix4x4 GetProjMatrix(float aspect) const = 0;
 
+	};
+
+	class CameraPerspective : public Camera
+	{
+	public:
+		CameraPerspective(const std::shared_ptr<SceneObject>& object);
+
+	public:
+		virtual Matrix4x4 GetProjMatrix(float aspect) const override;
+
+	public:
 		void SetFov(float fov);
 		void SetNear(float fNear);
 		void SetFar(float fFar);
@@ -31,5 +42,28 @@ namespace udsdx
 		float m_fov = PI / 3;
 		float m_near = 0.1f;
 		float m_far = 1000.0f;
+	};
+
+	class CameraOrthographic : public Camera
+	{
+	public:
+		CameraOrthographic(const std::shared_ptr<SceneObject>& object);
+
+	public:
+		virtual Matrix4x4 GetProjMatrix(float aspect) const override;
+
+	public:
+		void SetNear(float fNear);
+		void SetFar(float fFar);
+		void SetRadius(float radius);
+
+		float GetNear() const;
+		float GetFar() const;
+		float GetRadius() const;
+
+	protected:
+		float m_near = 0.1f;
+		float m_far = 1000.0f;
+		float m_radius = 1.0f;
 	};
 }

@@ -22,40 +22,85 @@ namespace udsdx
 		return worldMat.Invert();
 	}
 
-	Matrix4x4 Camera::GetProjMatrix(float aspect) const
+	CameraPerspective::CameraPerspective(const std::shared_ptr<SceneObject>& object) : Camera(object)
 	{
-		Matrix4x4 m;
+	}
+
+	Matrix4x4 CameraPerspective::GetProjMatrix(float aspect) const
+	{
+		XMFLOAT4X4 m;
 		XMStoreFloat4x4(&m, XMMatrixPerspectiveFovLH(m_fov, aspect, m_near, m_far));
 		return m;
 	}
 
-	void Camera::SetFov(float fov)
+	void CameraPerspective::SetFov(float fov)
 	{
 		m_fov = fov;
 	}
 
-	void Camera::SetNear(float fNear)
+	void CameraPerspective::SetNear(float fNear)
 	{
 		m_near = fNear;
 	}
 
-	void Camera::SetFar(float fFar)
+	void CameraPerspective::SetFar(float fFar)
 	{
 		m_far = fFar;
 	}
 
-	float Camera::GetFov() const
+	float CameraPerspective::GetFov() const
 	{
 		return m_fov;
 	}
 
-	float Camera::GetNear() const
+	float CameraPerspective::GetNear() const
 	{
 		return m_near;
 	}
 
-	float Camera::GetFar() const
+	float CameraPerspective::GetFar() const
 	{
 		return m_far;
+	}
+
+	CameraOrthographic::CameraOrthographic(const std::shared_ptr<SceneObject>& object) : Camera(object)
+	{
+	}
+
+	Matrix4x4 CameraOrthographic::GetProjMatrix(float aspect) const
+	{
+		XMFLOAT4X4 m;
+		XMStoreFloat4x4(&m, XMMatrixOrthographicLH(aspect * m_radius, m_radius, m_near, m_far));
+		return m;
+	}
+
+	void CameraOrthographic::SetNear(float fNear)
+	{
+		m_near = fNear;
+	}
+
+	void CameraOrthographic::SetFar(float fFar)
+	{
+		m_far = fFar;
+	}
+
+	void CameraOrthographic::SetRadius(float radius)
+	{
+		m_radius = radius;
+	}
+
+	float CameraOrthographic::GetNear() const
+	{
+		return m_near;
+	}
+
+	float CameraOrthographic::GetFar() const
+	{
+		return m_far;
+	}
+
+	float CameraOrthographic::GetRadius() const
+	{
+		return m_radius;
 	}
 }
