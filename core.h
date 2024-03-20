@@ -46,6 +46,8 @@ namespace udsdx
 		D3D12_CPU_DESCRIPTOR_HANDLE CurrentBackBufferView() const;
 		D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilView() const;
 		FrameResource* CurrentFrameResource() const;
+		int GetClientWidth() const;
+		int GetClientHeight() const;
 
 	protected:
 		HINSTANCE	m_hInstance = 0;
@@ -70,7 +72,7 @@ namespace udsdx
 		bool		m_4xMsaaState = false;    // 4X MSAA enabled
 		UINT		m_4xMsaaQuality = 0;      // quality level of 4X MSAA
 
-		XMFLOAT4    m_clearColor = { 0.125f, 0.125f, 0.125f, 1.0f };
+		XMFLOAT4    m_clearColor = { 0.08f, 0.08f, 0.08f, 1.0f };
 
 		// Current Scene to render with
 		std::shared_ptr<Scene> m_scene;
@@ -91,6 +93,7 @@ namespace udsdx
 		// Fence for CPU/GPU synchronization
 		ComPtr<ID3D12Fence> m_fence;
 		UINT64 m_currentFence = 0;
+		HANDLE m_fenceEvent = nullptr;
 
 		ComPtr<ID3D12CommandQueue> m_commandQueue;
 		ComPtr<ID3D12CommandAllocator> m_directCmdListAlloc;

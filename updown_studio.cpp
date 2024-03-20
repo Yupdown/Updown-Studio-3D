@@ -12,6 +12,7 @@ namespace udsdx
     HWND UpdownStudio::m_hWnd = nullptr;
 
     std::atomic_bool UpdownStudio::m_running = false;
+    std::thread g_engineThread;
 
     int UpdownStudio::Initialize(HINSTANCE hInstance)
     {
@@ -60,7 +61,7 @@ namespace udsdx
         ShowWindow(m_hWnd, nCmdShow);
         UpdateWindow(m_hWnd);
 
-        std::thread engineThread(MainLoop);
+        g_engineThread = std::thread(&UpdownStudio::MainLoop);
 
         MSG message;
         while (GetMessage(&message, nullptr, 0, 0))
@@ -68,10 +69,12 @@ namespace udsdx
             TranslateMessage(&message);
             DispatchMessage(&message);
             if (!m_running)
+            {
+                g_engineThread.join();
                 PostQuitMessage(0);
+            }
         }
 
-        engineThread.join();
         return static_cast<int>(message.wParam);
     }
 

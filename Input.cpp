@@ -1,6 +1,16 @@
 #include "pch.h"
 #include "Input.h"
 
+template <typename T>
+inline void ProcessKeyMessage(std::map<T, std::pair<bool, unsigned long long>>& keyMap, T key, bool state, unsigned long long tick)
+{
+	auto iter = keyMap.find(static_cast<int>(key));
+	if (iter == keyMap.end() || (*iter).second.first != state)
+	{
+		keyMap[key] = std::make_pair(state, tick);
+	}
+}
+
 namespace udsdx
 {
 	Input::Input()
@@ -29,37 +39,37 @@ namespace udsdx
 		switch (message)
 		{
 			case WM_KEYDOWN:
-				m_keyMap[static_cast<int>(wParam)] = std::make_pair(true, m_tick);
+				ProcessKeyMessage(m_keyMap, static_cast<int>(wParam), true, m_tick);
 				break;
 			case WM_KEYUP:
-				m_keyMap[static_cast<int>(wParam)] = std::make_pair(false, m_tick);
+				ProcessKeyMessage(m_keyMap, static_cast<int>(wParam), false, m_tick);
 				break;
 			case WM_LBUTTONDOWN:
-				m_mouseMap[VK_LBUTTON] = std::make_pair(true, m_tick);
+				ProcessKeyMessage(m_mouseMap, VK_LBUTTON, true, m_tick);
 				break;
 			case WM_LBUTTONUP:
-				m_mouseMap[VK_LBUTTON] = std::make_pair(false, m_tick);
+				ProcessKeyMessage(m_mouseMap, VK_LBUTTON, false, m_tick);
 				break;
 			case WM_RBUTTONDOWN:
-				m_mouseMap[VK_RBUTTON] = std::make_pair(true, m_tick);
+				ProcessKeyMessage(m_mouseMap, VK_RBUTTON, true, m_tick);
 				break;
 			case WM_RBUTTONUP:
-				m_mouseMap[VK_RBUTTON] = std::make_pair(false, m_tick);
+				ProcessKeyMessage(m_mouseMap, VK_RBUTTON, false, m_tick);
 				break;
 			case WM_MBUTTONDOWN:
-				m_mouseMap[VK_MBUTTON] = std::make_pair(true, m_tick);
+				ProcessKeyMessage(m_mouseMap, VK_MBUTTON, true, m_tick);
 				break;
 			case WM_MBUTTONUP:
-				m_mouseMap[VK_MBUTTON] = std::make_pair(false, m_tick);
+				ProcessKeyMessage(m_mouseMap, VK_MBUTTON, false, m_tick);
 				break;
 			case WM_XBUTTONDOWN:
 				switch (HIWORD(wParam))
 				{
 					case XBUTTON1:
-						m_mouseMap[VK_XBUTTON1] = std::make_pair(true, m_tick);
+						ProcessKeyMessage(m_mouseMap, VK_XBUTTON1, true, m_tick);
 						break;
 					case XBUTTON2:
-						m_mouseMap[VK_XBUTTON2] = std::make_pair(true, m_tick);
+						ProcessKeyMessage(m_mouseMap, VK_XBUTTON2, true, m_tick);
 						break;
 				}
 				break;
@@ -67,10 +77,10 @@ namespace udsdx
 				switch (HIWORD(wParam))
 				{
 					case XBUTTON1:
-						m_mouseMap[VK_XBUTTON1] = std::make_pair(false, m_tick);
+						ProcessKeyMessage(m_mouseMap, VK_XBUTTON1, false, m_tick);
 						break;
 					case XBUTTON2:
-						m_mouseMap[VK_XBUTTON2] = std::make_pair(false, m_tick);
+						ProcessKeyMessage(m_mouseMap, VK_XBUTTON2, false, m_tick);
 						break;
 				}
 				break;

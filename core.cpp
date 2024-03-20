@@ -19,7 +19,6 @@ namespace udsdx
 
 	Core::~Core()
 	{
-
 	}
 
 	void Core::Initialize(HINSTANCE hInstance, HWND hWnd)
@@ -66,6 +65,7 @@ namespace udsdx
 		ID3D12CommandList* cmdsLists[] = { m_commandList.Get() };
 		m_commandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
 
+		m_fenceEvent = ::CreateEventEx(nullptr, false, false, EVENT_ALL_ACCESS);
 		FlushCommandQueue();
 	}
 
@@ -217,12 +217,16 @@ namespace udsdx
 
 	void Core::OnDestroy()
 	{
-		// Ensure that the GPU is no longer referencing resources that are about to be destroyed.
-		FlushCommandQueue();
-
 		if (!m_tearingSupport)
 		{
 			ThrowIfFailed(m_swapChain->SetFullscreenState(false, nullptr));
+		}
+
+		if (m_d3dDevice != nullptr)
+		{
+			// Ensure that the GPU is no longer referencing resources that are about to be destroyed.
+			FlushCommandQueue();
+			::CloseHandle(m_fenceEvent);
 		}
 	}
 
@@ -354,14 +358,11 @@ namespace udsdx
 		// Wait until the GPU has completed commands up to this fence point.
 		if (m_fence->GetCompletedValue() < m_currentFence)
 		{
-			HANDLE eventHandle = ::CreateEventEx(nullptr, false, false, EVENT_ALL_ACCESS);
-
 			// Fire event when GPU hits current fence.
-			ThrowIfFailed(m_fence->SetEventOnCompletion(m_currentFence, eventHandle));
+			ThrowIfFailed(m_fence->SetEventOnCompletion(m_currentFence, m_fenceEvent));
 
 			// Wait until the GPU hits current fence event is fired.
-			::WaitForSingleObject(eventHandle, INFINITE);
-			::CloseHandle(eventHandle);
+			::WaitForSingleObject(m_fenceEvent, INFINITE);
 		}
 	}
 
@@ -387,17 +388,22 @@ namespace udsdx
 		}
 		frameCount += 1;
 
-		// TODO: Add your update logic here
-		//
+		if (m_resizeDirty)
+		{
+			m_resizeDirty = false;
+			OnResizeWindow(m_clientWidth, m_clientHeight);
+		}
+
 		m_currFrameResourceIndex = (m_currFrameResourceIndex + 1) % FrameResourceCount;
 		auto frameResource = CurrentFrameResource();
 
 		if (frameResource->GetFence() != 0 && m_fence->GetCompletedValue() < frameResource->GetFence())
 		{
-			HANDLE eventHandle = ::CreateEventEx(nullptr, false, false, EVENT_ALL_ACCESS);
-			ThrowIfFailed(m_fence->SetEventOnCompletion(frameResource->GetFence(), eventHandle));
-			::WaitForSingleObject(eventHandle, INFINITE);
-			::CloseHandle(eventHandle);
+			// Fire event when GPU hits current fence.
+			ThrowIfFailed(m_fence->SetEventOnCompletion(frameResource->GetFence(), m_fenceEvent));
+
+			// Wait until the GPU hits current fence event is fired.
+			::WaitForSingleObject(m_fenceEvent, INFINITE);
 		}
 
 		m_timeMeasure->EndMeasure();
@@ -418,12 +424,6 @@ namespace udsdx
 
 	void Core::Draw()
 	{
-		if (m_resizeDirty)
-		{
-			OnResizeWindow(m_clientWidth, m_clientHeight);
-			m_resizeDirty = false;
-		}
-
 		auto frameResource = CurrentFrameResource();
 		auto cmdListAlloc = frameResource->GetCommandListAllocator();
 
@@ -521,15 +521,12 @@ namespace udsdx
 		switch (message)
 		{
 		case WM_SIZE:
-			if (m_d3dDevice)
-			{
-				// Save the new client area dimensions.
-				m_clientWidth = LOWORD(lParam);
-				m_clientHeight = HIWORD(lParam);
+			// Save the new client area dimensions.
+			m_clientWidth = LOWORD(lParam);
+			m_clientHeight = HIWORD(lParam);
 
-				// Notify the display associated resources for the resize event.
-				m_resizeDirty = true;
-			}
+			// Notify the display associated resources for the resize event.
+			m_resizeDirty = true;
 			break;
 
 		// Catch this message so to prevent the window from becoming too small.
@@ -760,6 +757,16 @@ namespace udsdx
 	FrameResource* Core::CurrentFrameResource() const
 	{
 		return m_frameResources[m_currFrameResourceIndex].get();
+	}
+
+	int Core::GetClientWidth() const
+	{
+		return m_clientWidth;
+	}
+
+	int Core::GetClientHeight() const
+	{
+		return m_clientHeight;
 	}
 
 	D3D12_CPU_DESCRIPTOR_HANDLE Core::DepthStencilView() const
