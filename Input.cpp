@@ -17,70 +17,98 @@ namespace udsdx
 	{
 		switch (message)
 		{
-			case WM_KEYDOWN:
-				m_keyMap.AddMessage(static_cast<int>(wParam), KeyState::Down);
-				break;
-			case WM_KEYUP:
-				m_keyMap.AddMessage(static_cast<int>(wParam), KeyState::Up);
-				break;
-			case WM_LBUTTONDOWN:
-				m_mouseMap.AddMessage(VK_LBUTTON, KeyState::Down);
-				break;
-			case WM_LBUTTONUP:
-				m_mouseMap.AddMessage(VK_LBUTTON, KeyState::Up);
-				break;
-			case WM_RBUTTONDOWN:
-				m_mouseMap.AddMessage(VK_RBUTTON, KeyState::Down);
-				break;
-			case WM_RBUTTONUP:
-				m_mouseMap.AddMessage(VK_RBUTTON, KeyState::Up);
-				break;
-			case WM_MBUTTONDOWN:
-				m_mouseMap.AddMessage(VK_MBUTTON, KeyState::Down);
-				break;
-			case WM_MBUTTONUP:
-				m_mouseMap.AddMessage(VK_MBUTTON, KeyState::Up);
-				break;
-			case WM_XBUTTONDOWN:
-				switch (HIWORD(wParam))
-				{
-					case XBUTTON1:
-						m_mouseMap.AddMessage(VK_XBUTTON1, KeyState::Down);
-						break;
-					case XBUTTON2:
-						m_mouseMap.AddMessage(VK_XBUTTON2, KeyState::Down);
-						break;
-				}
-				break;
-			case WM_XBUTTONUP:
-				switch (HIWORD(wParam))
-				{
-					case XBUTTON1:
-						m_mouseMap.AddMessage(VK_XBUTTON1, KeyState::Up);
-						break;
-					case XBUTTON2:
-						m_mouseMap.AddMessage(VK_XBUTTON2, KeyState::Up);
-						break;
-				}
-				break;
-			case WM_MOUSEMOVE:
-				nextMouseParam = static_cast<LONG>(lParam);
-				break;
-			default:
-				return false;
+		case WM_KEYDOWN:
+		case WM_KEYUP:
+		case WM_LBUTTONDOWN:
+		case WM_LBUTTONUP:
+		case WM_RBUTTONDOWN:
+		case WM_RBUTTONUP:
+		case WM_MBUTTONDOWN:
+		case WM_MBUTTONUP:
+		case WM_XBUTTONDOWN:
+		case WM_XBUTTONUP:
+		case WM_MOUSEMOVE:
+		{
+			auto tuple = std::make_tuple(hWnd, message, wParam, lParam);
+			{
+				std::unique_lock<std::mutex> lock(m_queueLock);
+				m_messageQueue.push(tuple);
+			}
+			return true;
 		}
-
-		return true;
+		}
+		return false;
 	}
 
 	void Input::FlushQueue()
 	{
 		m_tick += 1ull;
 
-		m_keyMap.FlushQueue(m_tick);
-		m_mouseMap.FlushQueue(m_tick);
+		std::unique_lock<std::mutex> lock(m_queueLock);
 
-		currMouseParam = nextMouseParam;
+		while (!m_messageQueue.empty())
+		{
+			auto& tuple = m_messageQueue.front();
+			auto hWnd = std::get<0>(tuple);
+			auto message = std::get<1>(tuple);
+			auto wParam = std::get<2>(tuple);
+			auto lParam = std::get<3>(tuple);
+			m_messageQueue.pop();
+			
+			switch (message)
+			{
+			case WM_KEYDOWN:
+				m_keyMap.SetKey(static_cast<int>(wParam), true, m_tick);
+				break;
+			case WM_KEYUP:
+				m_keyMap.SetKey(static_cast<int>(wParam), false, m_tick);
+				break;
+			case WM_LBUTTONDOWN:
+				m_mouseMap.SetKey(MK_LBUTTON, true, m_tick);
+				break;
+			case WM_LBUTTONUP:
+				m_mouseMap.SetKey(MK_LBUTTON, false, m_tick);
+				break;
+			case WM_RBUTTONDOWN:
+				m_mouseMap.SetKey(MK_RBUTTON, true, m_tick);
+				break;
+			case WM_RBUTTONUP:
+				m_mouseMap.SetKey(MK_RBUTTON, false, m_tick);
+				break;
+			case WM_MBUTTONDOWN:
+				m_mouseMap.SetKey(MK_MBUTTON, true, m_tick);
+				break;
+			case WM_MBUTTONUP:
+				m_mouseMap.SetKey(MK_MBUTTON, false, m_tick);
+				break;
+			case WM_XBUTTONDOWN:
+				switch (HIWORD(wParam))
+				{
+				case XBUTTON1:
+					m_mouseMap.SetKey(XBUTTON1, true, m_tick);
+					break;
+				case XBUTTON2:
+					m_mouseMap.SetKey(XBUTTON2, true, m_tick);
+					break;
+				}
+				break;
+			case WM_XBUTTONUP:
+				switch (HIWORD(wParam))
+				{
+				case XBUTTON1:
+					m_mouseMap.SetKey(XBUTTON1, false, m_tick);
+					break;
+				case XBUTTON2:
+					m_mouseMap.SetKey(XBUTTON2, false, m_tick);
+					break;
+				}
+				break;
+			case WM_MOUSEMOVE:
+				m_mouseX = GET_X_LPARAM(lParam);
+				m_mouseY = GET_Y_LPARAM(lParam);
+				break;
+			}
+		}
 	}
 
 	bool Input::GetKey(int key) const
@@ -115,11 +143,11 @@ namespace udsdx
 
 	int Input::GetMouseX() const
 	{
-		return GET_X_LPARAM(currMouseParam);
+		return m_mouseX;
 	}
 
 	int Input::GetMouseY() const
 	{
-		return GET_Y_LPARAM(currMouseParam);
+		return m_mouseY;
 	}
 }

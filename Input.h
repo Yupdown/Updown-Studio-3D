@@ -7,35 +7,19 @@ namespace udsdx
 	class Input
 	{
 	private:
-		enum class KeyState { Down, Up };
-
-	private:
 		template <typename T>
 		struct KeyMap
 		{
 		public:
-			void AddMessage(T message, KeyState state)
+			void SetKey(T key, bool state, unsigned long long tick)
 			{
-				std::unique_lock<std::mutex> lock(queueLock);
-				messageQueue.push(std::make_pair(message, state));
-			}
-
-			void FlushQueue(unsigned long long tick)
-			{
-				std::unique_lock<std::mutex> lock(queueLock);
-				while (!messageQueue.empty())
+				if (state)
 				{
-					auto message = messageQueue.front();
-					messageQueue.pop();
-					switch (message.second)
-					{
-					case KeyState::Down:
-						keyDownTick[message.first] = tick;
-						break;
-					case KeyState::Up:
-						keyUpTick[message.first] = tick;
-						break;
-					}
+					keyDownTick[key] = tick;
+				}
+				else
+				{
+					keyUpTick[key] = tick;
 				}
 			}
 
@@ -79,10 +63,8 @@ namespace udsdx
 			}
 
 		private:
-			std::queue<std::pair<T, KeyState>> messageQueue;
-			std::map<T, unsigned long long> keyDownTick;
-			std::map<T, unsigned long long> keyUpTick;
-			std::mutex queueLock;
+			std::unordered_map<T, unsigned long long> keyDownTick;
+			std::unordered_map<T, unsigned long long> keyUpTick;
 		};
 
 	public:
@@ -114,11 +96,14 @@ namespace udsdx
 	private:
 		unsigned long long m_tick = 0;
 
+		std::queue<std::tuple<HWND, UINT, WPARAM, LPARAM>> m_messageQueue;
+		std::mutex m_queueLock;
+
 		KeyMap<int> m_keyMap;
 		KeyMap<int> m_mouseMap;
 
-		LONG currMouseParam = 0;
-		LONG nextMouseParam = 0;
+		int m_mouseX = 0;
+		int m_mouseY = 0;
 	};
 }
 
