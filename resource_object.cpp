@@ -9,6 +9,7 @@ namespace udsdx
 
 	ResourceObject::ResourceObject(std::wstring_view path)
 	{
+
 	}
 
 	ResourceObject::~ResourceObject()

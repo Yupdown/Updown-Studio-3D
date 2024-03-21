@@ -4,6 +4,7 @@
 
 namespace udsdx
 {
+	class FrameDebug;
 	class FrameResource;
 	class TimeMeasure;
 	class Scene;
@@ -20,6 +21,7 @@ namespace udsdx
 		void InitializeDirect3D();
 		bool CheckTearingSupport() const;
 		void PrintAdapterInfo();
+		void DisplayFrameStats();
 		void OnDestroy();
 
 		void CreateCommandObjects();
@@ -34,8 +36,10 @@ namespace udsdx
 
 		void SetScene(std::shared_ptr<Scene> scene);
 		void RegisterUpdateCallback(std::function<void(const Time&)> callback);
+		void AcquireNextFrameResource();
 		void Update();
-		void Draw();
+		void BroadcastUpdateMessage();
+		void Render();
 		void UpdateMainPassCB();
 		void SetWindowFullscreen(bool fullscreen);
 		bool ProcessMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
@@ -126,6 +130,9 @@ namespace udsdx
 		UINT m_rtvDescriptorSize = 0;
 		UINT m_dsvDescriptorSize = 0;
 		UINT m_cbvSrvUavDescriptorSize = 0;
+
+		std::unique_ptr<FrameDebug> m_frameDebug;
+		TracyD3D12Ctx m_tracyQueueCtx;
 	};
 }
 

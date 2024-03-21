@@ -65,7 +65,7 @@ namespace udsdx
 
         MSG message;
         while (GetMessage(&message, nullptr, 0, 0))
-        {
+        { ZoneScopedN("Windows32 Main Loop");
             TranslateMessage(&message);
             DispatchMessage(&message);
 
@@ -83,11 +83,16 @@ namespace udsdx
 
     void UpdownStudio::MainLoop()
     {
+        tracy::SetThreadName("Engine Thread");
+
         auto core = INSTANCE(Core);
         while (m_running)
-        {
+        { ZoneScopedNC("Engine Main Loop", 0x27449F);
+            core->AcquireNextFrameResource();
             core->Update();
-            core->Draw();
+            core->Render();
+
+            FrameMark;
 		}
         core->OnDestroy();
 	}
@@ -99,6 +104,11 @@ namespace udsdx
 
     LRESULT CALLBACK UpdownStudio::ProcessMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     {
+        if (hWnd != m_hWnd)
+        {
+			return DefWindowProc(hWnd, message, wParam, lParam);
+		}
+
         switch (message)
         {
         case WM_CREATE:

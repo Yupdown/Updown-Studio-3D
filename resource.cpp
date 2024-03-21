@@ -21,7 +21,7 @@ namespace udsdx
 	}
 
 	void Resource::Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* commandList, ID3D12RootSignature* rootSignature)
-	{
+	{ ZoneScoped;
 		std::wstring path = L"resource\\";
 
 		InitializeLoaders(device, commandList, rootSignature);
@@ -89,7 +89,7 @@ namespace udsdx
 	}
 
 	std::unique_ptr<ResourceObject> TextureLoader::Load(std::wstring_view path)
-	{
+	{ ZoneScoped;
 		return std::unique_ptr<ResourceObject>();
 	}
 
@@ -98,7 +98,7 @@ namespace udsdx
 	}
 
 	std::unique_ptr<ResourceObject> ModelLoader::Load(std::wstring_view path)
-	{
+	{ ZoneScoped;
 		std::vector<Vertex> vertices;
 		std::vector<std::uint16_t> indices;
 
@@ -193,7 +193,7 @@ namespace udsdx
 	}
 
 	std::unique_ptr<ResourceObject> ShaderLoader::Load(std::wstring_view path)
-	{
+	{ ZoneScoped;
 		auto shader = std::make_unique<Shader>(path);
 		shader->BuildPipelineState(m_device, m_rootSignature);
 		return shader;

@@ -21,7 +21,7 @@ namespace udsdx
 	}
 
 	void Scene::Update(const Time& time)
-	{
+	{ ZoneScoped;
 		m_renderCameraQueue.clear();
 		m_renderObjectQueue.clear();
 
@@ -32,7 +32,7 @@ namespace udsdx
 	}
 
 	void Scene::Render(ID3D12GraphicsCommandList& cmdl, float aspect)
-	{
+	{ ZoneScoped;
 		for (const auto& camera : m_renderCameraQueue)
 		{
 			Matrix4x4 viewMat = camera->GetViewMatrix();

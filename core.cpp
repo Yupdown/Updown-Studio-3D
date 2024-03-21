@@ -9,6 +9,7 @@
 #include "scene.h"
 #include "mesh.h"
 #include "shader.h"
+#include "frame_debug.h"
 
 namespace udsdx
 {
@@ -22,7 +23,7 @@ namespace udsdx
 	}
 
 	void Core::Initialize(HINSTANCE hInstance, HWND hWnd)
-	{
+	{ ZoneScoped;
 		m_hInstance = hInstance;
 		m_hMainWnd = hWnd;
 
@@ -66,10 +67,13 @@ namespace udsdx
 
 		m_fenceEvent = ::CreateEventEx(nullptr, false, false, EVENT_ALL_ACCESS);
 		FlushCommandQueue();
+
+		// Create frame debug window
+		m_frameDebug = std::make_unique<FrameDebug>(m_hInstance);
 	}
 
 	void Core::InitializeDirect3D()
-	{
+	{ ZoneScoped;
 #if defined(DEBUG) || defined(_DEBUG) 
 		ThrowIfFailed(::D3D12GetDebugInterface(IID_PPV_ARGS(&m_debugController)));
 		m_debugController->EnableDebugLayer();
@@ -123,6 +127,10 @@ namespace udsdx
 		CreateSwapChain();
 		CreateRtvAndDsvDescriptorHeaps();
 
+		const char tracyQueueName[] = "D3D12 Graphics Queue";
+		m_tracyQueueCtx = TracyD3D12Context(m_d3dDevice.Get(), m_commandQueue.Get());
+		TracyD3D12ContextName(m_tracyQueueCtx, tracyQueueName, sizeof(tracyQueueName));
+
 		if (m_tearingSupport)
 		{
 			m_dxgiFactory->MakeWindowAssociation(m_hMainWnd, DXGI_MWA_NO_ALT_ENTER);
@@ -130,7 +138,7 @@ namespace udsdx
 	}
 
 	void Core::CreateCommandObjects()
-	{
+	{ ZoneScoped;
 		D3D12_COMMAND_QUEUE_DESC queueDesc = {};
 		queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
 		queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
@@ -160,7 +168,7 @@ namespace udsdx
 	}
 
 	void Core::CreateSwapChain()
-	{
+	{ ZoneScoped;
 		// Release the previous swapchain we will be recreating.
 		m_swapChain.Reset();
 
@@ -198,7 +206,7 @@ namespace udsdx
 	}
 
 	void Core::CreateRtvAndDsvDescriptorHeaps()
-	{
+	{ ZoneScoped;
 		D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc;
 		rtvHeapDesc.NumDescriptors = SwapChainBufferCount;
 		rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
@@ -215,22 +223,20 @@ namespace udsdx
 	}
 
 	void Core::OnDestroy()
-	{
-		if (!m_tearingSupport)
-		{
-			ThrowIfFailed(m_swapChain->SetFullscreenState(false, nullptr));
-		}
-
+	{ ZoneScoped;
 		if (m_d3dDevice != nullptr)
 		{
 			// Ensure that the GPU is no longer referencing resources that are about to be destroyed.
 			FlushCommandQueue();
 			::CloseHandle(m_fenceEvent);
+
+			// Release the context
+			DestroyD3D12Context(m_tracyQueueCtx);
 		}
 	}
 
 	void Core::BuildDescriptorHeaps()
-	{
+	{ ZoneScoped;
 		// Need a CBV descriptor for each object for each frame resource,
 
 		D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc;
@@ -242,7 +248,7 @@ namespace udsdx
 	}
 
 	void Core::BuildConstantBuffers()
-	{
+	{ ZoneScoped;
 		UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(PassConstants));
 
 		for (int frameIndex = 0; frameIndex < FrameResourceCount; ++frameIndex)
@@ -263,7 +269,7 @@ namespace udsdx
 	}
 
 	void Core::BuildRootSignature()
-	{
+	{ ZoneScoped;
 		CD3DX12_ROOT_PARAMETER slotRootParameter[3];
 
 		CD3DX12_DESCRIPTOR_RANGE cbvTable;
@@ -346,8 +352,28 @@ namespace udsdx
 		std::cout << std::endl;
 	}
 
-	void Core::FlushCommandQueue()
+	void Core::DisplayFrameStats()
 	{
+		constexpr int RefreshRate = 15;
+		static int frameCount = 0;
+
+		static std::chrono::steady_clock timer;
+		static std::chrono::steady_clock::time_point lc;
+		std::chrono::steady_clock::time_point c = timer.now();
+
+		double delta = std::chrono::duration_cast<std::chrono::duration<double>>(c - lc).count();
+		if (delta * RefreshRate > 1.0)
+		{
+			int fps = static_cast<int>(round(1.0 / delta * frameCount));
+			SetWindowText(m_hMainWnd, (m_mainWndCaption + std::format(L" [{} x {}] @ {} FPS", m_clientWidth, m_clientHeight, fps)).c_str());
+			frameCount = 0;
+			lc = c;
+		}
+		frameCount += 1;
+	}
+
+	void Core::FlushCommandQueue()
+	{ ZoneScoped;
 		// Advance the fence value to mark commands up to this fence point.
 		m_currentFence++;
 
@@ -370,23 +396,8 @@ namespace udsdx
 		m_scene = scene;
 	}
 
-	void Core::Update()
-	{
-		constexpr int RefreshRate = 15;
-		static int frameCount = 0;
-		static std::chrono::steady_clock timer;
-		static std::chrono::steady_clock::time_point lc;
-		std::chrono::steady_clock::time_point c = timer.now();
-		double delta = std::chrono::duration_cast<std::chrono::duration<double>>(c - lc).count();
-		if (delta * RefreshRate > 1.0)
-		{
-			int fps = static_cast<int>(round(1.0 / delta * frameCount));
-			SetWindowText(m_hMainWnd, (m_mainWndCaption + std::format(L" [{} x {}] @ {} FPS", m_clientWidth, m_clientHeight, fps)).c_str());
-			frameCount = 0;
-			lc = c;
-		}
-		frameCount += 1;
-
+	void Core::AcquireNextFrameResource()
+	{ ZoneScopedC(0x249EA0);
 		m_currFrameResourceIndex = (m_currFrameResourceIndex + 1) % FrameResourceCount;
 		auto frameResource = CurrentFrameResource();
 
@@ -398,25 +409,36 @@ namespace udsdx
 			// Wait until the GPU hits current fence event is fired.
 			::WaitForSingleObject(m_fenceEvent, INFINITE);
 		}
+	}
+
+	void Core::Update()
+	{ ZoneScopedC(0xFAAB36);
+		DisplayFrameStats();
 
 		m_timeMeasure->EndMeasure();
-		Time timeInfo = m_timeMeasure->GetTime();
 		m_timeMeasure->BeginMeasure();
 
 		INSTANCE(Input)->FlushQueue();
 
-		if (m_updateCallback)
-		{
-			m_updateCallback(timeInfo);
-		}
-		m_scene->Update(timeInfo);
+		BroadcastUpdateMessage();
+		m_scene->Update(m_timeMeasure->GetTime());
 
 		// Update the constant buffer with the latest view and project matrix.
 		UpdateMainPassCB();
 	}
 
-	void Core::Draw()
-	{
+	void Core::BroadcastUpdateMessage()
+	{ ZoneScoped;
+		if (m_updateCallback)
+		{
+			m_updateCallback(m_timeMeasure->GetTime());
+		}
+	}
+
+	void Core::Render()
+	{ ZoneScopedC(0xF78104);
+		TracyD3D12Collect(m_tracyQueueCtx);
+		TracyD3D12NewFrame(m_tracyQueueCtx);
 		if (m_resizeDirty)
 		{
 			m_resizeDirty = false;
@@ -441,6 +463,7 @@ namespace udsdx
 			D3D12_RESOURCE_STATE_RENDER_TARGET
 		));
 
+		{ TracyD3D12Zone(m_tracyQueueCtx, m_commandList.Get(), "Clear Buffers");
 		// Clear the back buffer and depth buffer.
 		m_commandList->ClearRenderTargetView(
 			CurrentBackBufferView(),
@@ -464,6 +487,7 @@ namespace udsdx
 			true,
 			&DepthStencilView()
 		);
+		}
 
 		ID3D12DescriptorHeap* descriptorHeaps[] = { m_cbvHeap.Get() };
 		m_commandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
@@ -475,8 +499,11 @@ namespace udsdx
 		m_commandList->SetGraphicsRootDescriptorTable(2, passCbvHandle);
 
 		float aspect = static_cast<float>(m_clientWidth) / m_clientHeight;
-		// Draw the scene objects.
+
+		{ TracyD3D12Zone(m_tracyQueueCtx, m_commandList.Get(), "Draw Calls");
+		// Draw the scene objects. 
 		m_scene->Render(*m_commandList.Get(), aspect);
+		}
 
 		// indicate a state transition on the resource usage.
 		m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
@@ -497,17 +524,22 @@ namespace udsdx
 		// result of calling SetFullscreenState.
 		UINT presentFlags = (m_tearingSupport && !m_fullscreen) ? DXGI_PRESENT_ALLOW_TEARING : 0;
 
-		// Swap the back and front buffers
-		ThrowIfFailed(m_swapChain->Present(0, presentFlags));
-		m_currBackBuffer = (m_currBackBuffer + 1) % SwapChainBufferCount;
+		{ ZoneScopedN("Present Swap Chain");
+			// Swap the back and front buffers
+			ThrowIfFailed(m_swapChain->Present(0, presentFlags));
+			m_currBackBuffer = (m_currBackBuffer + 1) % SwapChainBufferCount;
+		}
 
 		// Advance the fence value to mark commands up to this fence point.
 		frameResource->SetFence(++m_currentFence);
 		m_commandQueue->Signal(m_fence.Get(), m_currentFence);
+
+		// Frame debug
+		m_frameDebug->Update(m_timeMeasure->GetTime());
 	}
 
 	void Core::UpdateMainPassCB()
-	{
+	{ ZoneScoped;
 		PassConstants passConstants;
 		passConstants.TotalTime = m_timeMeasure->GetTime().totalTime;
 
@@ -516,7 +548,7 @@ namespace udsdx
 	}
 
 	bool Core::ProcessMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
-	{
+	{ ZoneScoped;
 		switch (message)
 		{
 		case WM_SIZE:
@@ -625,7 +657,7 @@ namespace udsdx
 	}
 
 	bool Core::OnResizeWindow(int width, int height)
-	{
+	{ ZoneScoped;
 		if (width <= 0 || height <= 0)
 		{
 			return false;

@@ -62,6 +62,15 @@
     <ClCompile Include="camera.cpp">
       <Filter>Engine\Runtime</Filter>
     </ClCompile>
+    <ClCompile Include="frame_debug.cpp">
+      <Filter>Engine</Filter>
+    </ClCompile>
+    <ClCompile Include="tracy\public\TracyClient.cpp">
+      <Filter>External Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="allocation.cpp">
+      <Filter>External Sources</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Precompiled Headers">
@@ -165,6 +174,9 @@
     </ClInclude>
     <ClInclude Include="camera.h">
       <Filter>Engine\Runtime</Filter>
+    </ClInclude>
+    <ClInclude Include="frame_debug.h">
+      <Filter>Engine</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

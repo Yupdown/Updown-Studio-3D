@@ -11,6 +11,7 @@ namespace udsdx
 
 	Component::~Component()
 	{
+
 	}
 
 	std::shared_ptr<SceneObject> Component::GetSceneObject() const

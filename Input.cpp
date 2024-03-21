@@ -30,7 +30,7 @@ namespace udsdx
 		case WM_MOUSEMOVE:
 		{
 			auto tuple = std::make_tuple(hWnd, message, wParam, lParam);
-			{
+			{ ZoneScoped;
 				std::unique_lock<std::mutex> lock(m_queueLock);
 				m_messageQueue.push(tuple);
 			}
@@ -41,20 +41,13 @@ namespace udsdx
 	}
 
 	void Input::FlushQueue()
-	{
+	{ ZoneScoped;
 		m_tick += 1ull;
 
 		std::unique_lock<std::mutex> lock(m_queueLock);
-
 		while (!m_messageQueue.empty())
 		{
-			auto& tuple = m_messageQueue.front();
-			auto hWnd = std::get<0>(tuple);
-			auto message = std::get<1>(tuple);
-			auto wParam = std::get<2>(tuple);
-			auto lParam = std::get<3>(tuple);
-			m_messageQueue.pop();
-			
+			auto& [hWnd, message, wParam, lParam] = m_messageQueue.front();
 			switch (message)
 			{
 			case WM_KEYDOWN:
@@ -108,6 +101,7 @@ namespace udsdx
 				m_mouseY = GET_Y_LPARAM(lParam);
 				break;
 			}
+			m_messageQueue.pop();
 		}
 	}
 

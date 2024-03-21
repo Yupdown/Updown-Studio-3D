@@ -62,6 +62,10 @@ using namespace Microsoft::WRL;
 
 using namespace DirectX;
 
+// Tracy Profiler
+#include "tracy/public/tracy/Tracy.hpp"
+#include "tracy/public/tracy/TracyD3D12.hpp"
+
 // In-Engine Library
 #include "define.h"
 #include "custom_math.h"

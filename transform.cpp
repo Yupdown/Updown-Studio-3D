@@ -17,6 +17,7 @@ namespace udsdx
 
 	Transform::~Transform()
 	{
+
 	}
 
 	void Transform::SetLocalPosition(const Vector3& position)
