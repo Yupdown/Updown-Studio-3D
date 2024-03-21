@@ -7,3 +7,6 @@
 [submodule "directxtk12"]
 	path = directxtk12
 	url = https://github.com/microsoft/DirectXTK12.git
+[submodule "tracy"]
+	path = tracy
+	url = https://github.com/wolfpld/tracy.git
