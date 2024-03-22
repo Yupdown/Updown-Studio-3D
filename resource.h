@@ -45,6 +45,17 @@ namespace udsdx
 		std::unique_ptr<ResourceObject> Load(std::wstring_view path) override;
 	};
 
+	class AudioClipLoader : public ResourceLoader
+	{
+	protected:
+		AudioEngine* m_audioEngine;
+
+	public:
+		AudioClipLoader(ID3D12Device* device, ID3D12GraphicsCommandList* commandList);
+
+		std::unique_ptr<ResourceObject> Load(std::wstring_view path) override;
+	};
+
 	class Resource
 	{
 	private:

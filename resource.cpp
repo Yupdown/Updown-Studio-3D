@@ -4,6 +4,8 @@
 #include "mesh.h"
 #include "shader.h"
 #include "debug_console.h"
+#include "audio.h"
+#include "audio_clip.h"
 
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
@@ -66,6 +68,7 @@ namespace udsdx
 		m_loaders.insert(std::make_pair(L"texture", std::make_unique<TextureLoader>(device, commandList)));
 		m_loaders.insert(std::make_pair(L"model", std::make_unique<ModelLoader>(device, commandList)));
 		m_loaders.insert(std::make_pair(L"shader", std::make_unique<ShaderLoader>(device, commandList, rootSignature)));
+		m_loaders.insert(std::make_pair(L"audio", std::make_unique<AudioClipLoader>(device, commandList)));
 	}
 
 	void Resource::InitializeExtensionDictionary()
@@ -78,6 +81,7 @@ namespace udsdx
 		m_extensionDictionary.insert(std::make_pair(L".obj", L"model"));
 		m_extensionDictionary.insert(std::make_pair(L".fbx", L"model"));
 		m_extensionDictionary.insert(std::make_pair(L".hlsl", L"shader"));
+		m_extensionDictionary.insert(std::make_pair(L".wav", L"audio"));
 	}
 
 	ResourceLoader::ResourceLoader(ID3D12Device* device, ID3D12GraphicsCommandList* commandList) : m_device(device), m_commandList(commandList)
@@ -201,5 +205,15 @@ namespace udsdx
 		auto shader = std::make_unique<Shader>(path);
 		shader->BuildPipelineState(m_device, m_rootSignature);
 		return shader;
+	}
+
+	AudioClipLoader::AudioClipLoader(ID3D12Device* device, ID3D12GraphicsCommandList* commandList) : ResourceLoader(device, commandList)
+	{
+		m_audioEngine = INSTANCE(Audio)->GetAudioEngine();
+	}
+
+	std::unique_ptr<ResourceObject> AudioClipLoader::Load(std::wstring_view path)
+	{ ZoneScoped;
+		return std::make_unique<AudioClip>(path, m_audioEngine);
 	}
 }

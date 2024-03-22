@@ -62,6 +62,9 @@ using namespace Microsoft::WRL;
 
 using namespace DirectX;
 
+// DirectXTK Library
+#include "directxtk12/Inc/Audio.h"
+
 // Tracy Profiler
 #include "tracy/public/tracy/Tracy.hpp"
 #include "tracy/public/tracy/TracyD3D12.hpp"

@@ -143,6 +143,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="allocation.cpp" />
+    <ClCompile Include="audio.cpp" />
+    <ClCompile Include="audio_clip.cpp" />
     <ClCompile Include="camera.cpp" />
     <ClCompile Include="component.cpp" />
     <ClCompile Include="core.cpp" />
@@ -181,6 +183,8 @@
     <ClCompile Include="vertex.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="audio.h" />
+    <ClInclude Include="audio_clip.h" />
     <ClInclude Include="camera.h" />
     <ClInclude Include="component.h" />
     <ClInclude Include="core.h" />

@@ -11,6 +11,7 @@
 #include "shader.h"
 #include "frame_debug.h"
 #include "debug_console.h"
+#include "audio.h"
 
 namespace udsdx
 {
@@ -21,6 +22,8 @@ namespace udsdx
 
 	Core::~Core()
 	{
+		Singleton<Resource>::ReleaseInstance();
+		Singleton<Audio>::ReleaseInstance();
 	}
 
 	void Core::Initialize(HINSTANCE hInstance, HWND hWnd)
@@ -60,7 +63,9 @@ namespace udsdx
 		BuildConstantBuffers();
 		BuildRootSignature();
 
-		INSTANCE(Resource)->Initialize(m_d3dDevice.Get(), m_commandList.Get(), m_rootSignature.Get());
+		auto audio = Singleton<Audio>::CreateInstance();
+		auto resource = Singleton<Resource>::CreateInstance();
+		resource->Initialize(m_d3dDevice.Get(), m_commandList.Get(), m_rootSignature.Get());
 
 		ThrowIfFailed(m_commandList->Close());
 		ID3D12CommandList* cmdsLists[] = { m_commandList.Get() };
@@ -426,6 +431,7 @@ namespace udsdx
 		m_timeMeasure->BeginMeasure();
 
 		INSTANCE(Input)->FlushQueue();
+		INSTANCE(Audio)->Update();
 
 		BroadcastUpdateMessage();
 		m_scene->Update(m_timeMeasure->GetTime());

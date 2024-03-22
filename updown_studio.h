@@ -8,9 +8,11 @@
 #include "mesh.h"
 #include "texture.h"
 #include "shader.h"
+#include "audio_clip.h"
 
 #include "time_measure.h"
 #include "input.h"
+#include "audio.h"
 #include "core.h"
 
 #include "scene.h"
