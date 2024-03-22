@@ -93,11 +93,11 @@ namespace udsdx
 		return m_worldSRTMatrix;
 	}
 
-	void Transform::ValidateSRTMatrix(const Transform& parent)
+	bool Transform::ValidateLocalSRTMatrix()
 	{
 		if (!m_isMatrixDirty)
 		{
-			return;
+			return false;
 		}
 
 		// All properties of the transform are converted to XMVECTOR without an explicit conversion.
@@ -108,11 +108,16 @@ namespace udsdx
 		// Apply the local SRT matrix.
 		XMStoreFloat4x4(&m_localSRTMatrix, m);
 
+		m_isMatrixDirty = false;
+		return true;
+	}
+
+	void Transform::ValidateWorldSRTMatrix(const Transform& parent)
+	{
+		XMMATRIX m = XMLoadFloat4x4(&m_localSRTMatrix);
 		m = XMMatrixMultiply(m, parent.m_worldSRTMatrix);
 
 		// Apply the world SRT matrix.
 		XMStoreFloat4x4(&m_worldSRTMatrix, m);
-
-		m_isMatrixDirty = false;
 	}
 }

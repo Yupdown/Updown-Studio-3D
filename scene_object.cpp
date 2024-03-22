@@ -25,10 +25,14 @@ namespace udsdx
 		m_components.clear();
 	}
 
-	void SceneObject::Update(const Time& time, Scene& scene, const SceneObject& parent)
+	void SceneObject::Update(const Time& time, Scene& scene, const SceneObject& parent, bool forceValidate)
 	{
 		// Validate SRT matrix
-		m_transform->ValidateSRTMatrix(*parent.GetTransform());
+		forceValidate |= m_transform->ValidateLocalSRTMatrix();
+		if (forceValidate)
+		{
+			m_transform->ValidateWorldSRTMatrix(*parent.GetTransform());
+		}
 
 		// Update components
 		for (auto& component : m_components)
@@ -39,7 +43,7 @@ namespace udsdx
 		// Update children, recursively
 		for (auto& child : m_children)
 		{
-			child->Update(time, scene, *this);
+			child->Update(time, scene, *this, forceValidate);
 		}
 	}
 

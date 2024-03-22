@@ -17,9 +17,13 @@ namespace udsdx
 
 	Matrix4x4 Camera::GetViewMatrix() const
 	{
-		Transform* transform = GetSceneObject()->GetTransform();
-		Matrix4x4 worldMat = transform->GetWorldSRTMatrix();
-		return worldMat.Invert();
+		XMMATRIX worldSRTMatrix = XMLoadFloat4x4(&GetSceneObject()->GetTransform()->GetWorldSRTMatrix());
+		XMVECTOR eye = XMVector4Transform(XMVectorSet(0.0f, 0.0f, 0.0f, 1.0f), worldSRTMatrix);
+		XMVECTOR at = XMVector4Transform(XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f), worldSRTMatrix) + eye;
+		XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 1.0f);
+		Matrix4x4 m;
+		XMStoreFloat4x4(&m, XMMatrixLookAtLH(eye, at, up));
+		return m;
 	}
 
 	CameraPerspective::CameraPerspective(const std::shared_ptr<SceneObject>& object) : Camera(object)
@@ -28,7 +32,7 @@ namespace udsdx
 
 	Matrix4x4 CameraPerspective::GetProjMatrix(float aspect) const
 	{
-		XMFLOAT4X4 m;
+		Matrix4x4 m;
 		XMStoreFloat4x4(&m, XMMatrixPerspectiveFovLH(m_fov, aspect, m_near, m_far));
 		return m;
 	}

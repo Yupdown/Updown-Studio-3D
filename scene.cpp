@@ -27,7 +27,7 @@ namespace udsdx
 
 		for (auto& object : m_objects)
 		{
-			object->Update(time, *this, *m_rootObject);
+			object->Update(time, *this, *m_rootObject, false);
 		}
 	}
 

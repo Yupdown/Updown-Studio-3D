@@ -29,7 +29,8 @@ namespace udsdx
 		Matrix4x4 GetLocalSRTMatrix() const;
 		Matrix4x4 GetWorldSRTMatrix() const;
 
-		void ValidateSRTMatrix(const Transform& parent);
+		bool ValidateLocalSRTMatrix();
+		void ValidateWorldSRTMatrix(const Transform& parent);
 
 	protected:
 		Vector3		m_position;
