@@ -54,7 +54,7 @@ namespace udsdx
 			return;
 		}
 
-		int height = static_cast<int>(time.deltaTime * 10'000);
+		int height = static_cast<int>(time.deltaTime * 5'000);
 		RECT clientRect;
 		GetClientRect(m_hWnd, &clientRect);
 		int bottom = clientRect.bottom;

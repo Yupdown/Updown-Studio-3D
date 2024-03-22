@@ -3,6 +3,7 @@
 #include "texture.h"
 #include "mesh.h"
 #include "shader.h"
+#include "debug_console.h"
 
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
@@ -27,7 +28,7 @@ namespace udsdx
 		InitializeLoaders(device, commandList, rootSignature);
 		InitializeExtensionDictionary();
 
-		std::cout << "Registering resources..." << std::endl;
+		DebugConsole::Log("Registering resources...");
 		for (const auto& directory : std::filesystem::recursive_directory_iterator(path))
 		{
 			if (!directory.is_regular_file())
@@ -51,7 +52,10 @@ namespace udsdx
 				continue;
 			}
 
-			std::wcout << L"> " << iter->second << L": " << path << std::endl;
+			std::string type_str(iter->second.begin(), iter->second.end());
+			std::string path_str(path.begin(), path.end());
+
+			DebugConsole::Log("> " + type_str + ": " + path_str);
 			m_resources.insert(std::make_pair(path, loader_iter->second->Load(path)));
 		}
 		std::cout << std::endl;

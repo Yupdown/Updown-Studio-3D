@@ -10,6 +10,7 @@
 #include "mesh.h"
 #include "shader.h"
 #include "frame_debug.h"
+#include "debug_console.h"
 
 namespace udsdx
 {
@@ -325,31 +326,37 @@ namespace udsdx
 
 	void Core::PrintAdapterInfo()
 	{
+		std::string text = "DXGI Adapters:\n";
+
 		// Output information
-		std::wcout << L"DXGI Adapters:\n";
 		IDXGIAdapter* adapter = nullptr;
 		for (UINT i = 0; m_dxgiFactory->EnumAdapters(i, &adapter) != DXGI_ERROR_NOT_FOUND; ++i)
 		{
 			DXGI_ADAPTER_DESC desc;
 			adapter->GetDesc(&desc);
-
-			std::wstring text = std::format(L"> Adapter: {}\n  Output:\n", desc.Description);
-			std::wcout << text;
+			std::string buffer(desc.Description, desc.Description + lstrlen(desc.Description) * sizeof(char));
+			text += std::format("> Adapter: {}\n  Output: ", buffer);
 
 			IDXGIOutput* m_output = nullptr;
-			for (UINT j = 0; adapter->EnumOutputs(j, &m_output) != DXGI_ERROR_NOT_FOUND; ++j)
+			UINT j = 0;
+			for (; adapter->EnumOutputs(j, &m_output) != DXGI_ERROR_NOT_FOUND; ++j)
 			{
 				DXGI_OUTPUT_DESC desc;
 				m_output->GetDesc(&desc);
-
-				std::wstring text = std::format(L"   > {}\n", desc.DeviceName);
-				std::wcout << text;
-
+				std::string buffer(desc.DeviceName, desc.DeviceName + lstrlen(desc.DeviceName) * sizeof(char));
+				text += std::format("\n   > {}", buffer);
 				m_output->Release();
 			}
+			if (j == 0)
+			{
+				text += "None";
+			}
+			text += "\n";
 			adapter->Release();
 		}
-		std::cout << std::endl;
+
+		std::string textChar(text.begin(), text.end());
+		DebugConsole::Log(textChar);
 	}
 
 	void Core::DisplayFrameStats()

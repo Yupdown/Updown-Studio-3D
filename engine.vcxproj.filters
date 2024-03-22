@@ -71,6 +71,9 @@
     <ClCompile Include="allocation.cpp">
       <Filter>Utility Sources</Filter>
     </ClCompile>
+    <ClCompile Include="debug_console.cpp">
+      <Filter>Engine</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Precompiled Headers">
@@ -177,6 +180,9 @@
     </ClInclude>
     <ClInclude Include="directxtk12\Inc\SimpleMath.h">
       <Filter>External Sources</Filter>
+    </ClInclude>
+    <ClInclude Include="debug_console.h">
+      <Filter>Engine</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

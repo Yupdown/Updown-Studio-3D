@@ -150,6 +150,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="debug_console.cpp" />
     <ClCompile Include="frame_debug.cpp" />
     <ClCompile Include="frame_resource.cpp" />
     <ClCompile Include="input.cpp" />
@@ -186,6 +187,7 @@
     <ClInclude Include="custom_math.h" />
     <ClInclude Include="d3dUtil.h" />
     <ClInclude Include="d3dx12.h" />
+    <ClInclude Include="debug_console.h" />
     <ClInclude Include="define.h" />
     <ClInclude Include="directxtk12\Inc\SimpleMath.h" />
     <ClInclude Include="frame_debug.h" />
