@@ -187,6 +187,7 @@
     <ClInclude Include="d3dUtil.h" />
     <ClInclude Include="d3dx12.h" />
     <ClInclude Include="define.h" />
+    <ClInclude Include="directxtk12\Inc\SimpleMath.h" />
     <ClInclude Include="frame_debug.h" />
     <ClInclude Include="frame_resource.h" />
     <ClInclude Include="input.h" />
@@ -200,7 +201,6 @@
     <ClInclude Include="resource.h" />
     <ClInclude Include="resource_object.h" />
     <ClInclude Include="shader.h" />
-    <ClInclude Include="SimpleMath.h" />
     <ClInclude Include="singleton.h" />
     <ClInclude Include="stb_image.h" />
     <ClInclude Include="texture.h" />
@@ -222,7 +222,7 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <None Include="SimpleMath.inl" />
+    <None Include="directxtk12\Inc\SimpleMath.inl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

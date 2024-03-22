@@ -58,7 +58,7 @@ using namespace Microsoft::WRL;
 #include <DirectXCollision.h>
 #include <DirectXPackedVector.h>
 
-#include "SimpleMath.h"
+#include "directxtk12/Inc/SimpleMath.h"
 
 using namespace DirectX;
 
