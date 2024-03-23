@@ -7,9 +7,10 @@
 #include "audio.h"
 #include "audio_clip.h"
 
-#include <assimp/Importer.hpp>
-#include <assimp/scene.h>
-#include <assimp/postprocess.h>
+// Assimp Library
+#include "assimp/include/assimp/Importer.hpp"
+#include "assimp/include/assimp/scene.h"
+#include "assimp/include/assimp/postprocess.h"
 
 namespace udsdx
 {
@@ -23,11 +24,11 @@ namespace udsdx
 
 	}
 
-	void Resource::Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* commandList, ID3D12RootSignature* rootSignature)
+	void Resource::Initialize(ID3D12Device* device, ID3D12CommandQueue* commandQueue, ID3D12GraphicsCommandList* commandList, ID3D12RootSignature* rootSignature)
 	{ ZoneScoped;
 		std::wstring path = L"resource\\";
 
-		InitializeLoaders(device, commandList, rootSignature);
+		InitializeLoaders(device, commandQueue, commandList, rootSignature);
 		InitializeExtensionDictionary();
 
 		DebugConsole::Log("Registering resources...");
@@ -63,9 +64,9 @@ namespace udsdx
 		std::cout << std::endl;
 	}
 
-	void Resource::InitializeLoaders(ID3D12Device* device, ID3D12GraphicsCommandList* commandList, ID3D12RootSignature* rootSignature)
+	void Resource::InitializeLoaders(ID3D12Device* device, ID3D12CommandQueue* commandQueue, ID3D12GraphicsCommandList* commandList, ID3D12RootSignature* rootSignature)
 	{
-		m_loaders.insert(std::make_pair(L"texture", std::make_unique<TextureLoader>(device, commandList)));
+		m_loaders.insert(std::make_pair(L"texture", std::make_unique<TextureLoader>(device, commandQueue, commandList)));
 		m_loaders.insert(std::make_pair(L"model", std::make_unique<ModelLoader>(device, commandList)));
 		m_loaders.insert(std::make_pair(L"shader", std::make_unique<ShaderLoader>(device, commandList, rootSignature)));
 		m_loaders.insert(std::make_pair(L"audio", std::make_unique<AudioClipLoader>(device, commandList)));
@@ -92,13 +93,15 @@ namespace udsdx
 	{
 	}
 
-	TextureLoader::TextureLoader(ID3D12Device* device, ID3D12GraphicsCommandList* commandList) : ResourceLoader(device, commandList)
+	TextureLoader::TextureLoader(ID3D12Device* device, ID3D12CommandQueue* commandQueue, ID3D12GraphicsCommandList* commandList) : ResourceLoader(device, commandList), m_commandQueue(commandQueue)
 	{
+
 	}
 
 	std::unique_ptr<ResourceObject> TextureLoader::Load(std::wstring_view path)
 	{ ZoneScoped;
-		return std::unique_ptr<ResourceObject>();
+		auto texture = std::make_unique<Texture>(path, m_device, m_commandQueue);
+		return texture;
 	}
 
 	ModelLoader::ModelLoader(ID3D12Device* device, ID3D12GraphicsCommandList* commandList) : ResourceLoader(device, commandList)
@@ -153,47 +156,10 @@ namespace udsdx
 			}
 		}
 
-		const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
-		const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
+		auto modelResource = std::make_unique<Mesh>(vertices, indices);
+		modelResource->CreateBuffers(m_device, m_commandList);
 
-		auto m_boxGeometry = std::make_unique<Mesh>();
-		m_boxGeometry->Name = "boxGeo";
-
-		ThrowIfFailed(D3DCreateBlob(vbByteSize, &m_boxGeometry->VertexBufferCPU));
-		CopyMemory(m_boxGeometry->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
-
-		ThrowIfFailed(D3DCreateBlob(ibByteSize, &m_boxGeometry->IndexBufferCPU));
-		CopyMemory(m_boxGeometry->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
-
-		m_boxGeometry->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
-			m_device,
-			m_commandList,
-			vertices.data(),
-			vbByteSize,
-			m_boxGeometry->VertexBufferUploader
-		);
-
-		m_boxGeometry->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
-			m_device,
-			m_commandList,
-			indices.data(),
-			ibByteSize,
-			m_boxGeometry->IndexBufferUploader
-		);
-
-		m_boxGeometry->VertexByteStride = sizeof(Vertex);
-		m_boxGeometry->VertexBufferByteSize = vbByteSize;
-		m_boxGeometry->IndexFormat = DXGI_FORMAT_R16_UINT;
-		m_boxGeometry->IndexBufferByteSize = ibByteSize;
-
-		SubmeshGeometry submesh;
-		submesh.IndexCount = (UINT)indices.size();
-		submesh.StartIndexLocation = 0;
-		submesh.BaseVertexLocation = 0;
-
-		m_boxGeometry->DrawArgs["box"] = submesh;
-
-		return m_boxGeometry;
+		return modelResource;
 	}
 
 	ShaderLoader::ShaderLoader(ID3D12Device* device, ID3D12GraphicsCommandList* commandList, ID3D12RootSignature* rootSignature) : ResourceLoader(device, commandList), m_rootSignature(rootSignature)

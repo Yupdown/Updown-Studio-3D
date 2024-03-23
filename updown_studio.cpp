@@ -111,10 +111,7 @@ namespace udsdx
 
         switch (message)
         {
-        case WM_CREATE:
-            break;
-
-        case WM_DESTROY:
+        case WM_CLOSE:
             m_running = false;
             g_engineThread.join();
             break;

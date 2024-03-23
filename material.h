@@ -4,13 +4,18 @@
 
 namespace udsdx
 {
+	class Texture;
 	class Material
 	{
 	public:
 		Material();
 		~Material();
 
-	public:
+	private:
+		Texture* m_mainTex = nullptr;
 
+	public:
+		void SetMainTexture(Texture* texture);
+		Texture* GetMainTexture() const;
 	};
 }

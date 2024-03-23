@@ -8,6 +8,7 @@ namespace udsdx
 	class Scene;
 	class Mesh;
 	class Shader;
+	class Material;
 
 	class MeshRenderer : public Component
 	{
@@ -21,11 +22,14 @@ namespace udsdx
 	public:
 		void SetMesh(Mesh* mesh);
 		void SetShader(Shader* shader);
+		void SetMaterial(Material* material);
 		Mesh* GetMesh() const;
 		Shader* GetShader() const;
+		Material* GetMaterial() const;
 
 	protected:
 		Mesh* m_mesh = nullptr;
 		Shader* m_shader = nullptr;
+		Material* m_material = nullptr;
 	};
 }

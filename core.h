@@ -76,7 +76,7 @@ namespace udsdx
 		bool		m_4xMsaaState = false;    // 4X MSAA enabled
 		UINT		m_4xMsaaQuality = 0;      // quality level of 4X MSAA
 
-		XMFLOAT4    m_clearColor = { 0.08f, 0.08f, 0.08f, 1.0f };
+		XMFLOAT4    m_clearColor = Vector4::One;
 
 		// Current Scene to render with
 		std::shared_ptr<Scene> m_scene;
@@ -108,9 +108,9 @@ namespace udsdx
 		int m_currFrameResourceIndex = 0;
 
 		static constexpr int SwapChainBufferCount = 2;
+		std::array<ComPtr<ID3D12Resource>, SwapChainBufferCount> m_swapChainBuffers;
 		int m_currBackBuffer = 0;
 
-		std::array<ComPtr<ID3D12Resource>, SwapChainBufferCount> m_swapChainBuffers;
 		ComPtr<ID3D12Resource> m_depthStencilBuffer;
 
 		// Render Target View Descriptor Heap
@@ -119,6 +119,8 @@ namespace udsdx
 		ComPtr<ID3D12DescriptorHeap> m_dsvHeap;
 		// Constant Buffer View Descriptor Heap
 		ComPtr<ID3D12DescriptorHeap> m_cbvHeap;
+		// Shader Resource View Descriptor Heap
+		ComPtr<ID3D12DescriptorHeap> m_srvHeap;
 
 		// Root Signature:
 		// used to define the data that the shaders will access

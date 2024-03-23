@@ -20,8 +20,11 @@ namespace udsdx
 
 	class TextureLoader : public ResourceLoader
 	{
+	protected:
+		ID3D12CommandQueue* m_commandQueue;
+
 	public:
-		TextureLoader(ID3D12Device* device, ID3D12GraphicsCommandList* commandList);
+		TextureLoader(ID3D12Device* device, ID3D12CommandQueue* commandQueue, ID3D12GraphicsCommandList* commandList);
 
 		std::unique_ptr<ResourceObject> Load(std::wstring_view path) override;
 	};
@@ -61,17 +64,17 @@ namespace udsdx
 	private:
 		std::unordered_map<std::wstring, std::unique_ptr<ResourceObject>> m_resources;
 
-		std::map<std::wstring, std::unique_ptr<ResourceLoader>> m_loaders;
-		std::map<std::wstring, std::wstring> m_extensionDictionary;
+		std::unordered_map<std::wstring, std::unique_ptr<ResourceLoader>> m_loaders;
+		std::unordered_map<std::wstring, std::wstring> m_extensionDictionary;
 
 	public:
 		Resource();
 		~Resource();
 
-		void Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* commandList, ID3D12RootSignature* rootSignature);
+		void Initialize(ID3D12Device* device, ID3D12CommandQueue* commandQueue, ID3D12GraphicsCommandList* commandList, ID3D12RootSignature* rootSignature);
 
 	private:
-		void InitializeLoaders(ID3D12Device* device, ID3D12GraphicsCommandList* commandList, ID3D12RootSignature* rootSignature);
+		void InitializeLoaders(ID3D12Device* device, ID3D12CommandQueue* commandQueue, ID3D12GraphicsCommandList* commandList, ID3D12RootSignature* rootSignature);
 		void InitializeExtensionDictionary();
 
 	public:

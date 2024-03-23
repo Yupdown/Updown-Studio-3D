@@ -64,6 +64,9 @@ using namespace DirectX;
 
 // DirectXTK Library
 #include "directxtk12/Inc/Audio.h"
+#include "directxtk12/Inc/ResourceUploadBatch.h"
+#include "directxtk12/Inc/DDSTextureLoader.h"
+#include "directxtk12/Inc/WICTextureLoader.h"
 
 // Tracy Profiler
 #include "tracy/public/tracy/Tracy.hpp"

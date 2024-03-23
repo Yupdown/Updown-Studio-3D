@@ -8,6 +8,7 @@
 #include "mesh.h"
 #include "texture.h"
 #include "shader.h"
+#include "texture.h"
 #include "audio_clip.h"
 
 #include "time_measure.h"

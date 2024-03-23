@@ -12,6 +12,7 @@
 #include "frame_debug.h"
 #include "debug_console.h"
 #include "audio.h"
+#include "texture.h"
 
 namespace udsdx
 {
@@ -59,13 +60,14 @@ namespace udsdx
 			m_frameResources[i] = std::make_unique<FrameResource>(m_d3dDevice.Get());
 		}
 
-		BuildDescriptorHeaps();
-		BuildConstantBuffers();
 		BuildRootSignature();
 
 		auto audio = Singleton<Audio>::CreateInstance();
 		auto resource = Singleton<Resource>::CreateInstance();
-		resource->Initialize(m_d3dDevice.Get(), m_commandList.Get(), m_rootSignature.Get());
+		resource->Initialize(m_d3dDevice.Get(), m_commandQueue.Get(), m_commandList.Get(), m_rootSignature.Get());
+
+		BuildDescriptorHeaps();
+		BuildConstantBuffers();
 
 		ThrowIfFailed(m_commandList->Close());
 		ID3D12CommandList* cmdsLists[] = { m_commandList.Get() };
@@ -243,14 +245,21 @@ namespace udsdx
 
 	void Core::BuildDescriptorHeaps()
 	{ ZoneScoped;
-		// Need a CBV descriptor for each object for each frame resource,
-
+		// Need a CBV descriptor for each frame resource,
 		D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc;
 		cbvHeapDesc.NumDescriptors = FrameResourceCount;
 		cbvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 		cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 		cbvHeapDesc.NodeMask = 0;
 		ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&cbvHeapDesc, IID_PPV_ARGS(m_cbvHeap.GetAddressOf())));
+
+		// Create SRV heap
+		D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc;
+		srvHeapDesc.NumDescriptors = Texture::sm_textureCount;
+		srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+		srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+		srvHeapDesc.NodeMask = 0;
+		ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(m_srvHeap.GetAddressOf())));
 	}
 
 	void Core::BuildConstantBuffers()
@@ -276,16 +285,28 @@ namespace udsdx
 
 	void Core::BuildRootSignature()
 	{ ZoneScoped;
-		CD3DX12_ROOT_PARAMETER slotRootParameter[3];
+		CD3DX12_ROOT_PARAMETER slotRootParameter[4];
 
 		CD3DX12_DESCRIPTOR_RANGE cbvTable;
 		cbvTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 2);
 
+		CD3DX12_DESCRIPTOR_RANGE texTable;
+		texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+
 		slotRootParameter[0].InitAsConstants(16, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
 		slotRootParameter[1].InitAsConstants(20, 1, 0, D3D12_SHADER_VISIBILITY_VERTEX);
-		slotRootParameter[2].InitAsDescriptorTable(1, &cbvTable);
+		slotRootParameter[2].InitAsConstantBufferView(2);
+		slotRootParameter[3].InitAsDescriptorTable(1, &texTable);
 
-		CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(3, slotRootParameter, 0, nullptr,
+		auto samplerDesc = CD3DX12_STATIC_SAMPLER_DESC(
+			0,
+			D3D12_FILTER_MIN_MAG_MIP_POINT,
+			D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+			D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+			D3D12_TEXTURE_ADDRESS_MODE_CLAMP
+		);
+
+		CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(4, slotRootParameter, 1, &samplerDesc,
 			D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
 		);
 
@@ -492,6 +513,7 @@ namespace udsdx
 			0,
 			nullptr
 		);
+		}
 
 		// Specify the buffers we are going to render to.
 		m_commandList->OMSetRenderTargets(
@@ -500,16 +522,13 @@ namespace udsdx
 			true,
 			&DepthStencilView()
 		);
-		}
 
-		ID3D12DescriptorHeap* descriptorHeaps[] = { m_cbvHeap.Get() };
-		m_commandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
+		//ID3D12DescriptorHeap* descriptorHeaps[] = { m_cbvHeap.Get(), m_srvHeap.Get() };
+		//m_commandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
 		m_commandList->SetGraphicsRootSignature(m_rootSignature.Get());
 
 		// Bind the current frame's constant buffer to the pipeline.
-		auto passCbvHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_cbvHeap->GetGPUDescriptorHandleForHeapStart());
-		passCbvHandle.Offset(m_currFrameResourceIndex, m_cbvSrvUavDescriptorSize);
-		m_commandList->SetGraphicsRootDescriptorTable(2, passCbvHandle);
+		m_commandList->SetGraphicsRootConstantBufferView(2, CurrentFrameResource()->GetObjectCB()->Resource()->GetGPUVirtualAddress());
 
 		float aspect = static_cast<float>(m_clientWidth) / m_clientHeight;
 
@@ -531,15 +550,15 @@ namespace udsdx
 		ID3D12CommandList* cmdLists[] = { m_commandList.Get() };
 		m_commandQueue->ExecuteCommandLists(_countof(cmdLists), cmdLists);
 
-		// When using sync interval 0, it is recommended to always pass the tearing
-		// flag when it is supported, even when presenting in windowed mode.
-		// However, this flag cannot be used if the app is in fullscreen mode as a
-		// result of calling SetFullscreenState.
-		UINT presentFlags = (m_tearingSupport && !m_fullscreen) ? DXGI_PRESENT_ALLOW_TEARING : 0;
-
 		{ ZoneScopedN("Present Swap Chain");
-			// Swap the back and front buffers
+			// When using sync interval 0, it is recommended to always pass the tearing
+			// flag when it is supported, even when presenting in windowed mode.
+			// However, this flag cannot be used if the app is in fullscreen mode as a
+			// result of calling SetFullscreenState.
+			UINT presentFlags = (m_tearingSupport && !m_fullscreen) ? DXGI_PRESENT_ALLOW_TEARING : 0;
+
 			ThrowIfFailed(m_swapChain->Present(0, presentFlags));
+			// Swap the back and front buffers
 			m_currBackBuffer = (m_currBackBuffer + 1) % SwapChainBufferCount;
 		}
 
@@ -745,7 +764,7 @@ namespace udsdx
 			&depthStencilDesc,
 			D3D12_RESOURCE_STATE_COMMON,
 			&optClear,
-			IID_PPV_ARGS(m_depthStencilBuffer.GetAddressOf())
+			IID_PPV_ARGS(&m_depthStencilBuffer)
 		));
 
 		// Create descriptor to mip level 0 of entire resource using the format of the resource.
