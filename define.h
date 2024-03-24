@@ -10,6 +10,14 @@ namespace udsdx
 		float totalTime;
 	};
 
+	struct RenderParam
+	{
+		ID3D12GraphicsCommandList* CommandList;
+		ID3D12DescriptorHeap* SRVDescriptorHeap;
+		float AspectRatio;
+		UINT CbvSrvUavDescriptorSize;
+	};
+
 	using Vector2 = DirectX::SimpleMath::Vector2;
 	using Vector2Int = XMINT2;
 	using Vector3 = DirectX::SimpleMath::Vector3;

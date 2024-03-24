@@ -7,6 +7,7 @@ namespace udsdx
 	class SceneObject;
 	class MeshRenderer;
 	class Camera;
+	class LightDirectional;
 
 	class Scene
 	{
@@ -16,7 +17,8 @@ namespace udsdx
 
 	public:
 		void Update(const Time& time);
-		void Render(ID3D12GraphicsCommandList& cmdl, float aspect);
+		void Render(RenderParam& param);
+		void RenderShadow(RenderParam& param);
 
 		void AddObject(std::shared_ptr<SceneObject> object);
 		void RemoveObject(std::shared_ptr<SceneObject> object);

@@ -12,15 +12,11 @@ namespace udsdx
 		~Texture();
 
 	public:
-		ID3D12DescriptorHeap* GetDescriptorHeap() const;
-		CD3DX12_GPU_DESCRIPTOR_HANDLE GetDesciptorHandle() const;
-
-	public:
-		static unsigned int sm_textureCount;
+		void CreateShaderResourceView(ID3D12Device* device, ID3D12DescriptorHeap* descriptorHeap, int index);
+		int GetDescriptorHeapIndex() const;
 
 	private:
 		ComPtr<ID3D12Resource> m_texture;
-		ComPtr<ID3D12DescriptorHeap> m_srvHeap;
-		unsigned int m_textureIndex;
+		int m_descriptorHeapIndex;
 	};
 }

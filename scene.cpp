@@ -1,11 +1,13 @@
 #include "pch.h"
 #include "scene.h"
+#include "light_directional.h"
 #include "mesh_renderer.h"
 #include "frame_resource.h"
 #include "scene_object.h"
 #include "transform.h"
 #include "time_measure.h"
 #include "camera.h"
+#include "shader.h"
 #include "core.h"
 
 namespace udsdx
@@ -31,12 +33,12 @@ namespace udsdx
 		}
 	}
 
-	void Scene::Render(ID3D12GraphicsCommandList& cmdl, float aspect)
+	void Scene::Render(RenderParam& param)
 	{ ZoneScoped;
 		for (const auto& camera : m_renderCameraQueue)
 		{
 			Matrix4x4 viewMat = camera->GetViewMatrix();
-			Matrix4x4 projMat = camera->GetProjMatrix(aspect);
+			Matrix4x4 projMat = camera->GetProjMatrix(param.AspectRatio);
 			Matrix4x4 viewProjMat = viewMat * projMat;
 
 			CameraConstants cameraConstants;
@@ -45,13 +47,24 @@ namespace udsdx
 			Matrix4x4 worldMat = camera->GetSceneObject()->GetTransform()->GetWorldSRTMatrix();
 			cameraConstants.CameraPosition = Vector4::Transform(Vector4::UnitW, worldMat);
 
-			cmdl.SetGraphicsRoot32BitConstants(1, 20, &cameraConstants, 0);
-			cmdl.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			param.CommandList->SetGraphicsRoot32BitConstants(1, 20, &cameraConstants, 0);
+			param.CommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 			for (const auto& object : m_renderObjectQueue)
 			{
-				object->Render(cmdl);
+				param.CommandList->SetPipelineState(object->GetShader()->PipelineState());
+				object->Render(param);
 			}
+		}
+	}
+
+	void Scene::RenderShadow(RenderParam& param)
+	{ ZoneScoped;
+		param.CommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+		for (const auto& object : m_renderObjectQueue)
+		{
+			object->Render(param);
 		}
 	}
 

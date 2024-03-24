@@ -13,6 +13,7 @@
 #include "debug_console.h"
 #include "audio.h"
 #include "texture.h"
+#include "light_directional.h"
 
 namespace udsdx
 {
@@ -66,15 +67,13 @@ namespace udsdx
 		auto resource = Singleton<Resource>::CreateInstance();
 		resource->Initialize(m_d3dDevice.Get(), m_commandQueue.Get(), m_commandList.Get(), m_rootSignature.Get());
 
+		m_directionalLight = std::make_unique<LightDirectional>(4096u, 4096u, m_d3dDevice.Get());
+		m_directionalLight->BuildPipelineState(m_d3dDevice.Get(), m_rootSignature.Get());
+
 		BuildDescriptorHeaps();
 		BuildConstantBuffers();
 
-		ThrowIfFailed(m_commandList->Close());
-		ID3D12CommandList* cmdsLists[] = { m_commandList.Get() };
-		m_commandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
-
 		m_fenceEvent = ::CreateEventEx(nullptr, false, false, EVENT_ALL_ACCESS);
-		FlushCommandQueue();
 
 		// Create frame debug window
 		m_frameDebug = std::make_unique<FrameDebug>(m_hInstance);
@@ -223,7 +222,7 @@ namespace udsdx
 		ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(m_rtvHeap.GetAddressOf())));
 
 		D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc;
-		dsvHeapDesc.NumDescriptors = 1;
+		dsvHeapDesc.NumDescriptors = 2;
 		dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
 		dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 		dsvHeapDesc.NodeMask = 0;
@@ -253,13 +252,26 @@ namespace udsdx
 		cbvHeapDesc.NodeMask = 0;
 		ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&cbvHeapDesc, IID_PPV_ARGS(m_cbvHeap.GetAddressOf())));
 
+		std::vector<Texture*> textures = INSTANCE(Resource)->LoadAll<Texture>();
+
 		// Create SRV heap
 		D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc;
-		srvHeapDesc.NumDescriptors = Texture::sm_textureCount;
+		srvHeapDesc.NumDescriptors = static_cast<UINT>(textures.size() + 1);
 		srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 		srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 		srvHeapDesc.NodeMask = 0;
 		ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(m_srvHeap.GetAddressOf())));
+
+		for (int index = 0; index < textures.size(); ++index)
+		{
+			textures[index]->CreateShaderResourceView(m_d3dDevice.Get(), m_srvHeap.Get(), index);
+		}
+
+		CD3DX12_CPU_DESCRIPTOR_HANDLE hSrvDescriptor(m_srvHeap->GetCPUDescriptorHandleForHeapStart(), textures.size(), m_cbvSrvUavDescriptorSize);
+		CD3DX12_CPU_DESCRIPTOR_HANDLE hDsvDescriptor(m_dsvHeap->GetCPUDescriptorHandleForHeapStart(), 1, m_dsvDescriptorSize);
+		CD3DX12_GPU_DESCRIPTOR_HANDLE hSrvGpuDescriptor(m_srvHeap->GetGPUDescriptorHandleForHeapStart(), textures.size(), m_cbvSrvUavDescriptorSize);
+
+		m_directionalLight->BuildDescriptors(m_d3dDevice.Get(), hSrvDescriptor, hDsvDescriptor, hSrvGpuDescriptor);
 	}
 
 	void Core::BuildConstantBuffers()
@@ -285,28 +297,40 @@ namespace udsdx
 
 	void Core::BuildRootSignature()
 	{ ZoneScoped;
-		CD3DX12_ROOT_PARAMETER slotRootParameter[4];
-
-		CD3DX12_DESCRIPTOR_RANGE cbvTable;
-		cbvTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 2);
+		CD3DX12_ROOT_PARAMETER slotRootParameter[5];
 
 		CD3DX12_DESCRIPTOR_RANGE texTable;
 		texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+
+		CD3DX12_DESCRIPTOR_RANGE shadowMapTable;
+		shadowMapTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
 
 		slotRootParameter[0].InitAsConstants(16, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
 		slotRootParameter[1].InitAsConstants(20, 1, 0, D3D12_SHADER_VISIBILITY_VERTEX);
 		slotRootParameter[2].InitAsConstantBufferView(2);
 		slotRootParameter[3].InitAsDescriptorTable(1, &texTable);
+		slotRootParameter[4].InitAsDescriptorTable(1, &shadowMapTable);
 
-		auto samplerDesc = CD3DX12_STATIC_SAMPLER_DESC(
+		CD3DX12_STATIC_SAMPLER_DESC samplerDesc[] = {
+			CD3DX12_STATIC_SAMPLER_DESC(
 			0,
 			D3D12_FILTER_MIN_MAG_MIP_POINT,
-			D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
-			D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
-			D3D12_TEXTURE_ADDRESS_MODE_CLAMP
-		);
+			D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+			D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+			D3D12_TEXTURE_ADDRESS_MODE_WRAP),
+			CD3DX12_STATIC_SAMPLER_DESC(
+			1,
+			D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT,
+			D3D12_TEXTURE_ADDRESS_MODE_BORDER,
+			D3D12_TEXTURE_ADDRESS_MODE_BORDER,
+			D3D12_TEXTURE_ADDRESS_MODE_BORDER,
+			0.0f,
+			16,
+			D3D12_COMPARISON_FUNC_LESS_EQUAL,
+			D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK)
+		};
 
-		CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(4, slotRootParameter, 1, &samplerDesc,
+		CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(_countof(slotRootParameter), slotRootParameter, _countof(samplerDesc), samplerDesc,
 			D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
 		);
 
@@ -405,6 +429,13 @@ namespace udsdx
 		frameCount += 1;
 	}
 
+	void Core::ExecuteCommandList()
+	{
+		ThrowIfFailed(m_commandList->Close());
+		ID3D12CommandList* cmdsLists[] = { m_commandList.Get() };
+		m_commandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
+	}
+
 	void Core::FlushCommandQueue()
 	{ ZoneScoped;
 		// Advance the fence value to mark commands up to this fence point.
@@ -455,6 +486,7 @@ namespace udsdx
 		INSTANCE(Audio)->Update();
 
 		BroadcastUpdateMessage();
+		m_directionalLight->UpdateShadowTransform(m_timeMeasure->GetTime());
 		m_scene->Update(m_timeMeasure->GetTime());
 
 		// Update the constant buffer with the latest view and project matrix.
@@ -479,6 +511,13 @@ namespace udsdx
 			OnResizeWindow(m_clientWidth, m_clientHeight);
 		}
 
+		// Ready all the resources for rendering.
+		RenderParam param;
+		param.CommandList = m_commandList.Get();
+		param.AspectRatio = static_cast<float>(m_clientWidth) / m_clientHeight;
+		param.SRVDescriptorHeap = m_srvHeap.Get();
+		param.CbvSrvUavDescriptorSize = m_cbvSrvUavDescriptorSize;
+
 		auto frameResource = CurrentFrameResource();
 		auto cmdListAlloc = frameResource->GetCommandListAllocator();
 
@@ -486,6 +525,15 @@ namespace udsdx
 		// Resets a command list back to its initial state as if a new command list was just created.
 		// ID3D12PipelineState: This is optional and can be NULL. If NULL, the runtime sets a dummy initial pipeline state so that drivers don't have to deal with undefined state.
 		ThrowIfFailed(m_commandList->Reset(cmdListAlloc, nullptr));
+
+		ID3D12DescriptorHeap* descriptorHeaps[] = { m_srvHeap.Get() };
+		m_commandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
+		m_commandList->SetGraphicsRootSignature(m_rootSignature.Get());
+
+		// Bind the current frame's constant buffer to the pipeline.
+		m_commandList->SetGraphicsRootConstantBufferView(2, CurrentFrameResource()->GetObjectCB()->Resource()->GetGPUVirtualAddress());
+
+		m_directionalLight->RenderShadowMap(param, *m_scene);
 
 		m_commandList->RSSetViewports(1, &m_screenViewport);
 		m_commandList->RSSetScissorRects(1, &m_scissorRect);
@@ -523,18 +571,11 @@ namespace udsdx
 			&DepthStencilView()
 		);
 
-		//ID3D12DescriptorHeap* descriptorHeaps[] = { m_cbvHeap.Get(), m_srvHeap.Get() };
-		//m_commandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
-		m_commandList->SetGraphicsRootSignature(m_rootSignature.Get());
-
-		// Bind the current frame's constant buffer to the pipeline.
-		m_commandList->SetGraphicsRootConstantBufferView(2, CurrentFrameResource()->GetObjectCB()->Resource()->GetGPUVirtualAddress());
-
-		float aspect = static_cast<float>(m_clientWidth) / m_clientHeight;
+		m_commandList->SetGraphicsRootDescriptorTable(4, m_directionalLight->GetSrvGpu());
 
 		{ TracyD3D12Zone(m_tracyQueueCtx, m_commandList.Get(), "Draw Calls");
-		// Draw the scene objects. 
-		m_scene->Render(*m_commandList.Get(), aspect);
+			// Draw the scene objects. 
+			m_scene->Render(param);
 		}
 
 		// indicate a state transition on the resource usage.
@@ -573,6 +614,7 @@ namespace udsdx
 	void Core::UpdateMainPassCB()
 	{ ZoneScoped;
 		PassConstants passConstants;
+		passConstants.ShadowTransform = m_directionalLight->GetShadowTransform().Transpose();
 		passConstants.TotalTime = m_timeMeasure->GetTime().totalTime;
 
 		auto frameResource = CurrentFrameResource();
@@ -801,6 +843,26 @@ namespace udsdx
 		m_scissorRect = { 0, 0, width, height };
 
 		return true;
+	}
+
+	ID3D12Device* Core::GetDevice() const
+	{
+		return m_d3dDevice.Get();
+	}
+
+	ID3D12CommandQueue* Core::GetCommandQueue() const
+	{
+		return m_commandQueue.Get();
+	}
+
+	ID3D12CommandAllocator* Core::GetCommandAllocator() const
+	{
+		return m_directCmdListAlloc.Get();
+	}
+
+	ID3D12GraphicsCommandList* Core::GetCommandList() const
+	{
+		return m_commandList.Get();
 	}
 
 	ID3D12Resource* Core::CurrentBackBuffer() const

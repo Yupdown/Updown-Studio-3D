@@ -54,6 +54,8 @@ namespace udsdx
 			return -1;
 		}
 
+        INSTANCE(Core)->ExecuteCommandList();
+        INSTANCE(Core)->FlushCommandQueue();
         INSTANCE(Core)->SetScene(beginScene);
 
         m_running = true;

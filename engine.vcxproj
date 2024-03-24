@@ -156,6 +156,7 @@
     <ClCompile Include="frame_debug.cpp" />
     <ClCompile Include="frame_resource.cpp" />
     <ClCompile Include="input.cpp" />
+    <ClCompile Include="light_directional.cpp" />
     <ClCompile Include="material.cpp" />
     <ClCompile Include="MathHelper.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
@@ -197,6 +198,7 @@
     <ClInclude Include="frame_debug.h" />
     <ClInclude Include="frame_resource.h" />
     <ClInclude Include="input.h" />
+    <ClInclude Include="light_directional.h" />
     <ClInclude Include="material.h" />
     <ClInclude Include="MathHelper.h" />
     <ClInclude Include="mesh.h" />

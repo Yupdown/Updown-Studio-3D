@@ -21,7 +21,7 @@ namespace udsdx
 		scene.EnqueueRenderObject(this);
 	}
 
-	void MeshRenderer::Render(ID3D12GraphicsCommandList& cmdl)
+	void MeshRenderer::Render(RenderParam& param)
 	{
 		Transform* transform = GetSceneObject()->GetTransform();
 		Matrix4x4 worldMat = transform->GetWorldSRTMatrix();
@@ -29,20 +29,20 @@ namespace udsdx
 		ObjectConstants objectConstants;
 		objectConstants.World = worldMat.Transpose();
 
-		cmdl.SetPipelineState(m_shader->PipelineState());
-		cmdl.SetGraphicsRoot32BitConstants(0, 16, &objectConstants, 0);
+		param.CommandList->SetGraphicsRoot32BitConstants(0, 16, &objectConstants, 0);
 
 		if (m_material != nullptr && m_material->GetMainTexture() != nullptr)
 		{
-			ID3D12DescriptorHeap* descriptorHeaps[] = { m_material->GetMainTexture()->GetDescriptorHeap() };
-			cmdl.SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
-			cmdl.SetGraphicsRootDescriptorTable(3, m_material->GetMainTexture()->GetDesciptorHandle());
+			Texture* mainTex = m_material->GetMainTexture();
+			CD3DX12_GPU_DESCRIPTOR_HANDLE handle(param.SRVDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+			handle.Offset(mainTex->GetDescriptorHeapIndex(), param.CbvSrvUavDescriptorSize);
+			param.CommandList->SetGraphicsRootDescriptorTable(3, handle);
 		}
 
-		cmdl.IASetVertexBuffers(0, 1, &m_mesh->VertexBufferView());
-		cmdl.IASetIndexBuffer(&m_mesh->IndexBufferView());
+		param.CommandList->IASetVertexBuffers(0, 1, &m_mesh->VertexBufferView());
+		param.CommandList->IASetIndexBuffer(&m_mesh->IndexBufferView());
 
-		cmdl.DrawIndexedInstanced(m_mesh->GetSubmesh("box").IndexCount, 1, 0, 0, 0);
+		param.CommandList->DrawIndexedInstanced(m_mesh->GetSubmesh("box").IndexCount, 1, 0, 0, 0);
 	}
 
 	void MeshRenderer::SetMesh(Mesh* mesh)

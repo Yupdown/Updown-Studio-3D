@@ -8,6 +8,7 @@ namespace udsdx
 	class FrameResource;
 	class TimeMeasure;
 	class Scene;
+	class LightDirectional;
 
 	class Core
 	{
@@ -32,6 +33,7 @@ namespace udsdx
 		void BuildConstantBuffers();
 		void BuildRootSignature();
 
+		void ExecuteCommandList();
 		void FlushCommandQueue();
 
 		void SetScene(std::shared_ptr<Scene> scene);
@@ -46,10 +48,17 @@ namespace udsdx
 		virtual bool OnResizeWindow(int width, int height);
 
 	public:
+		ID3D12Device* GetDevice() const;
+		ID3D12CommandQueue* GetCommandQueue() const;
+		ID3D12CommandAllocator* GetCommandAllocator() const;
+		ID3D12GraphicsCommandList* GetCommandList() const;
+
+		FrameResource* CurrentFrameResource() const;
 		ID3D12Resource* CurrentBackBuffer() const;
+
 		D3D12_CPU_DESCRIPTOR_HANDLE CurrentBackBufferView() const;
 		D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilView() const;
-		FrameResource* CurrentFrameResource() const;
+
 		int GetClientWidth() const;
 		int GetClientHeight() const;
 
@@ -135,6 +144,8 @@ namespace udsdx
 
 		std::unique_ptr<FrameDebug> m_frameDebug;
 		TracyD3D12Ctx m_tracyQueueCtx;
+
+		std::unique_ptr<LightDirectional> m_directionalLight;
 	};
 }
 

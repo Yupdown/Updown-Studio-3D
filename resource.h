@@ -80,6 +80,8 @@ namespace udsdx
 	public:
 		template <typename T>
 		T* Load(std::wstring_view path);
+		template <typename T>
+		std::vector<T*> LoadAll();
 	};
 
 	template<typename T>
@@ -91,5 +93,20 @@ namespace udsdx
 			return nullptr;
 		}
 		return dynamic_cast<T*>(iter->second.get());
+	}
+
+	template<typename T>
+	inline std::vector<T*> Resource::LoadAll()
+	{
+		std::vector<T*> ret;
+		for (auto& resource : m_resources)
+		{
+			auto casted = dynamic_cast<T*>(resource.second.get());
+			if (casted != nullptr)
+			{
+				ret.push_back(casted);
+			}
+		}
+		return ret;
 	}
 }

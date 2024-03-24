@@ -22,14 +22,14 @@ namespace udsdx
 	protected:
 		// System memory copies.  Use Blobs because the vertex/index format can be generic.
 		// It is up to the client to cast appropriately.  
-		Microsoft::WRL::ComPtr<ID3DBlob> m_vertexBufferCPU = nullptr;
-		Microsoft::WRL::ComPtr<ID3DBlob> m_indexBufferCPU = nullptr;
+		ComPtr<ID3DBlob> m_vertexBufferCPU = nullptr;
+		ComPtr<ID3DBlob> m_indexBufferCPU = nullptr;
 
-		Microsoft::WRL::ComPtr<ID3D12Resource> m_vertexBufferGPU = nullptr;
-		Microsoft::WRL::ComPtr<ID3D12Resource> m_indexBufferGPU = nullptr;
+		ComPtr<ID3D12Resource> m_vertexBufferGPU = nullptr;
+		ComPtr<ID3D12Resource> m_indexBufferGPU = nullptr;
 
-		Microsoft::WRL::ComPtr<ID3D12Resource> m_vertexBufferUploader = nullptr;
-		Microsoft::WRL::ComPtr<ID3D12Resource> m_indexBufferUploader = nullptr;
+		ComPtr<ID3D12Resource> m_vertexBufferUploader = nullptr;
+		ComPtr<ID3D12Resource> m_indexBufferUploader = nullptr;
 
 		// Data about the buffers.
 		UINT m_vertexByteStride = 0;

@@ -26,5 +26,6 @@ namespace udsdx
 		constexpr static UINT DescriptionTableSize = sizeof(DescriptionTable) / sizeof(D3D12_INPUT_ELEMENT_DESC);
 
 		Vertex();
+		Vertex(const XMFLOAT3& position, const XMFLOAT4& color, const XMFLOAT2& uv, const XMFLOAT3& normal);
 	};
 }
