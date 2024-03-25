@@ -267,9 +267,9 @@ namespace udsdx
 			textures[index]->CreateShaderResourceView(m_d3dDevice.Get(), m_srvHeap.Get(), index);
 		}
 
-		CD3DX12_CPU_DESCRIPTOR_HANDLE hSrvDescriptor(m_srvHeap->GetCPUDescriptorHandleForHeapStart(), textures.size(), m_cbvSrvUavDescriptorSize);
+		CD3DX12_CPU_DESCRIPTOR_HANDLE hSrvDescriptor(m_srvHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(textures.size()), m_cbvSrvUavDescriptorSize);
 		CD3DX12_CPU_DESCRIPTOR_HANDLE hDsvDescriptor(m_dsvHeap->GetCPUDescriptorHandleForHeapStart(), 1, m_dsvDescriptorSize);
-		CD3DX12_GPU_DESCRIPTOR_HANDLE hSrvGpuDescriptor(m_srvHeap->GetGPUDescriptorHandleForHeapStart(), textures.size(), m_cbvSrvUavDescriptorSize);
+		CD3DX12_GPU_DESCRIPTOR_HANDLE hSrvGpuDescriptor(m_srvHeap->GetGPUDescriptorHandleForHeapStart(), static_cast<INT>(textures.size()), m_cbvSrvUavDescriptorSize);
 
 		m_directionalLight->BuildDescriptors(m_d3dDevice.Get(), hSrvDescriptor, hDsvDescriptor, hSrvGpuDescriptor);
 	}
@@ -376,7 +376,7 @@ namespace udsdx
 
 	void Core::PrintAdapterInfo()
 	{
-		std::string text = "DXGI Adapters:\n";
+		std::wstring text = L"DXGI Adapters:\n";
 
 		// Output information
 		IDXGIAdapter* adapter = nullptr;
@@ -384,8 +384,7 @@ namespace udsdx
 		{
 			DXGI_ADAPTER_DESC desc;
 			adapter->GetDesc(&desc);
-			std::string buffer(desc.Description, desc.Description + lstrlen(desc.Description) * sizeof(char));
-			text += std::format("> Adapter: {}\n  Output: ", buffer);
+			text += std::format(L"> Adapter: {}\n  Output: ", desc.Description);
 
 			IDXGIOutput* m_output = nullptr;
 			UINT j = 0;
@@ -393,20 +392,17 @@ namespace udsdx
 			{
 				DXGI_OUTPUT_DESC desc;
 				m_output->GetDesc(&desc);
-				std::string buffer(desc.DeviceName, desc.DeviceName + lstrlen(desc.DeviceName) * sizeof(char));
-				text += std::format("\n   > {}", buffer);
+				text += std::format(L"\n   > {}", desc.DeviceName);
 				m_output->Release();
 			}
 			if (j == 0)
 			{
-				text += "None";
+				text += L"None";
 			}
-			text += "\n";
+			text += L"\n";
 			adapter->Release();
 		}
-
-		std::string textChar(text.begin(), text.end());
-		DebugConsole::Log(textChar);
+		DebugConsole::Log(text);
 	}
 
 	void Core::DisplayFrameStats()

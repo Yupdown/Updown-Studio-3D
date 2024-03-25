@@ -10,8 +10,11 @@ namespace udsdx
 		static constexpr int STACKTRACE_SIZE = 16;
 
 	public:
-		static void Log(const std::string& message);
-		static void LogWarning(const std::string& message);
-		static void LogError(const std::string& message);
+		static void Log(std::string_view message);
+		static void Log(std::wstring_view message);
+		static void LogWarning(std::string_view message);
+		static void LogWarning(std::wstring_view message);
+		static void LogError(std::string_view message);
+		static void LogError(std::wstring_view message);
 	};
 }

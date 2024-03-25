@@ -55,10 +55,7 @@ namespace udsdx
 				continue;
 			}
 
-			std::string type_str(iter->second.begin(), iter->second.end());
-			std::string path_str(path.begin(), path.end());
-
-			DebugConsole::Log("> " + type_str + ": " + path_str);
+			DebugConsole::Log(L"> " + iter->second + L": " + path);
 			m_resources.insert(std::make_pair(path, loader_iter->second->Load(path)));
 		}
 		std::cout << std::endl;

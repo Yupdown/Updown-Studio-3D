@@ -3,21 +3,47 @@
 
 namespace udsdx
 {
-	void DebugConsole::Log(const std::string& message)
+	std::string ToNarrowString(std::wstring_view wideString)
 	{
-		TracyMessageCS(message.c_str(), message.size(), 0xFFFFFF, STACKTRACE_SIZE);
+		std::string narrowString;
+		narrowString.resize(wideString.size());
+		wcstombs_s(nullptr, narrowString.data(), narrowString.size() + 1, wideString.data(), wideString.size());
+		return narrowString;
+	}
+
+	void DebugConsole::Log(std::string_view message)
+	{
+		TracyMessageCS(message.data(), message.size(), 0xFFFFFF, STACKTRACE_SIZE);
 		std::cout << "[LOG] " << message << std::endl;
 	}
 
-	void DebugConsole::LogWarning(const std::string& message)
+	void DebugConsole::Log(std::wstring_view message)
 	{
-		TracyMessageCS(message.c_str(), message.size(), 0xFFFF00, STACKTRACE_SIZE);
+		TracyMessageCS(ToNarrowString(message).c_str(), message.size(), 0xFFFFFF, STACKTRACE_SIZE);
+		std::wcout << L"[LOG] " << message << std::endl;
+	}
+
+	void DebugConsole::LogWarning(std::string_view message)
+	{
+		TracyMessageCS(message.data(), message.size(), 0xFFFF00, STACKTRACE_SIZE);
 		std::cout << "[WARNING] " << message << std::endl;
 	}
 
-	void DebugConsole::LogError(const std::string& message)
+	void DebugConsole::LogWarning(std::wstring_view message)
 	{
-		TracyMessageCS(message.c_str(), message.size(), 0xFF0000, STACKTRACE_SIZE);
+		TracyMessageCS(ToNarrowString(message).c_str(), message.size(), 0xFFFF00, STACKTRACE_SIZE);
+		std::wcout << L"[WARNING] " << message << std::endl;
+	}
+
+	void DebugConsole::LogError(std::string_view message)
+	{
+		TracyMessageCS(message.data(), message.size(), 0xFF0000, STACKTRACE_SIZE);
 		std::cout << "[ERROR] " << message << std::endl;
+	}
+
+	void DebugConsole::LogError(std::wstring_view message)
+	{
+		TracyMessageCS(ToNarrowString(message).c_str(), message.size(), 0xFF0000, STACKTRACE_SIZE);
+		std::wcout << L"[ERROR] " << message << std::endl;
 	}
 }
