@@ -62,6 +62,9 @@ namespace udsdx
 		int GetClientWidth() const;
 		int GetClientHeight() const;
 
+		void SetClearColor(const Color& clearColor);
+		void SetClearColor(float r, float g, float b);
+
 	protected:
 		HINSTANCE	m_hInstance = 0;
 		HWND		m_hMainWnd = 0;
@@ -85,7 +88,7 @@ namespace udsdx
 		bool		m_4xMsaaState = false;    // 4X MSAA enabled
 		UINT		m_4xMsaaQuality = 0;      // quality level of 4X MSAA
 
-		XMFLOAT4    m_clearColor = Vector4::One;
+		Color    m_clearColor = Color(0.0f, 0.0f, 0.0f, 1.0f);
 
 		// Current Scene to render with
 		std::shared_ptr<Scene> m_scene;

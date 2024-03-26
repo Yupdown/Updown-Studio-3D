@@ -192,26 +192,32 @@ namespace udsdx
 	
 	void LightDirectional::UpdateShadowTransform(const Time& time)
 	{
-		XMVECTOR lightPos = XMVectorSet(cos(time.totalTime), 10.0f, sin(time.totalTime), 1.0f);
+		XMVECTOR lightPos = XMVectorSet(cos(time.totalTime), 1.0f, sin(time.totalTime), 1.0f);
 		XMVECTOR targetPos = XMVectorSet(0.0f, 0.0f, 0.0f, 1.0f);
 		XMVECTOR lightUp = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
 
 		XMMATRIX lightView = XMMatrixLookAtLH(lightPos, targetPos, lightUp);
-		XMMATRIX lightProj = XMMatrixOrthographicLH(10.0f, 10.0f, 0.0f, 10.0f);
+		XMMATRIX lightProj = XMMatrixOrthographicLH(20.0f, 20.0f, -20.0f, 20.0f);
 
+		XMMATRIX S = lightView * lightProj;
+
+		XMStoreFloat3(&m_lightDirection, XMVector3Normalize(targetPos - lightPos));
+		XMStoreFloat4x4(&m_shadowTransform, S);
+	}
+
+	Matrix4x4 LightDirectional::GetShadowTransform() const
+	{
 		// Transform NDC space [-1,+1]^2 to texture space [0,1]^2
 		XMMATRIX T(
 			0.5f, 0.0f, 0.0f, 0.0f,
 			0.0f, -0.5f, 0.0f, 0.0f,
 			0.0f, 0.0f, 1.0f, 0.0f,
 			0.5f, 0.5f, 0.0f, 1.0f);
-
-		XMMATRIX S = lightView * lightProj * T;
-		XMStoreFloat4x4(&m_shadowTransform, S);
+		return m_shadowTransform * T;
 	}
 
-	Matrix4x4 LightDirectional::GetShadowTransform() const
+	Vector3 LightDirectional::GetLightDirection() const
 	{
-		return m_shadowTransform;
+		return m_lightDirection;
 	}
 }

@@ -611,6 +611,7 @@ namespace udsdx
 	{ ZoneScoped;
 		PassConstants passConstants;
 		passConstants.ShadowTransform = m_directionalLight->GetShadowTransform().Transpose();
+		passConstants.LightDirection = m_directionalLight->GetLightDirection();
 		passConstants.TotalTime = m_timeMeasure->GetTime().totalTime;
 
 		auto frameResource = CurrentFrameResource();
@@ -888,6 +889,16 @@ namespace udsdx
 	int Core::GetClientHeight() const
 	{
 		return m_clientHeight;
+	}
+
+	void Core::SetClearColor(const Color& clearColor)
+	{
+		m_clearColor = clearColor;
+	}
+	
+	void Core::SetClearColor(float r, float g, float b)
+	{
+		m_clearColor = Color(r, g, b, 1.0f);
 	}
 
 	D3D12_CPU_DESCRIPTOR_HANDLE Core::DepthStencilView() const

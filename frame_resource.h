@@ -18,6 +18,7 @@ namespace udsdx
 	struct PassConstants
 	{
 		Matrix4x4 ShadowTransform = Matrix4x4::Identity;
+		Vector3 LightDirection = Vector3::Zero;
 		float TotalTime = 0.0f;
 	};
 

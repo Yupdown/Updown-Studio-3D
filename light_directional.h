@@ -18,7 +18,9 @@ namespace udsdx
 		void BuildPipelineState(ID3D12Device* pDevice, ID3D12RootSignature* pRootSignature);
 		void RenderShadowMap(RenderParam& param, Scene& scene);
 		void UpdateShadowTransform(const Time& time);
+
 		Matrix4x4 GetShadowTransform() const;
+		Vector3 GetLightDirection() const;
 
 	public:
 		D3D12_GPU_DESCRIPTOR_HANDLE GetSrvGpu() const;
@@ -39,6 +41,7 @@ namespace udsdx
 		ComPtr<ID3D12Resource> m_shadowMap;
 		ComPtr<ID3D12PipelineState> m_shadowPso;
 
+		Vector3 m_lightDirection;
 		Matrix4x4 m_shadowTransform;
 	};
 }
