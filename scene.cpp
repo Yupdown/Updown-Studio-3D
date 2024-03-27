@@ -22,7 +22,7 @@ namespace udsdx
 
 	}
 
-	void Scene::Update(const Time& time)
+	void Scene::Update(const Time& time, LightDirectional* light)
 	{ ZoneScoped;
 		m_renderCameraQueue.clear();
 		m_renderObjectQueue.clear();
@@ -31,10 +31,22 @@ namespace udsdx
 		{
 			object->Update(time, *this, *m_rootObject, false);
 		}
+
+		if (!m_renderCameraQueue.empty())
+		{
+			Transform* lightTransform = m_renderCameraQueue[0]->GetSceneObject()->GetTransform();
+			light->UpdateShadowTransform(time, Vector3::Transform(Vector3::Zero, lightTransform->GetWorldSRTMatrix()));
+		}
 	}
 
 	void Scene::Render(RenderParam& param)
 	{ ZoneScoped;
+		param.CommandList->RSSetViewports(1, &param.Viewport);
+		param.CommandList->RSSetScissorRects(1, &param.ScissorRect);
+
+		// Specify the buffers we are going to render to.
+		param.CommandList->OMSetRenderTargets(1, &param.RenderTargetView, true, &param.DepthStencilView);
+
 		for (const auto& camera : m_renderCameraQueue)
 		{
 			Matrix4x4 viewMat = camera->GetViewMatrix();

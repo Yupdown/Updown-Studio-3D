@@ -16,7 +16,7 @@ namespace udsdx
 		~Scene();
 
 	public:
-		void Update(const Time& time);
+		void Update(const Time& time, LightDirectional* light);
 		void Render(RenderParam& param);
 		void RenderShadow(RenderParam& param);
 

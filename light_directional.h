@@ -17,7 +17,7 @@ namespace udsdx
 		void BuildDescriptors(ID3D12Device* device, CD3DX12_CPU_DESCRIPTOR_HANDLE hCpuSrv, CD3DX12_CPU_DESCRIPTOR_HANDLE hCpuDsv, CD3DX12_GPU_DESCRIPTOR_HANDLE hGpuSrv);
 		void BuildPipelineState(ID3D12Device* pDevice, ID3D12RootSignature* pRootSignature);
 		void RenderShadowMap(RenderParam& param, Scene& scene);
-		void UpdateShadowTransform(const Time& time);
+		void UpdateShadowTransform(const Time& time, const Vector3& pivot);
 
 		Matrix4x4 GetShadowTransform() const;
 		Vector3 GetLightDirection() const;

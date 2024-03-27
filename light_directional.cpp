@@ -190,16 +190,18 @@ namespace udsdx
 		return m_srvGpu;
 	}
 	
-	void LightDirectional::UpdateShadowTransform(const Time& time)
+	void LightDirectional::UpdateShadowTransform(const Time& time, const Vector3& pivot)
 	{
-		XMVECTOR lightPos = XMVectorSet(cos(time.totalTime), 1.0f, sin(time.totalTime), 1.0f);
+		XMMATRIX lightWorld = XMMatrixTranslation(-pivot.x, -pivot.y, -pivot.z);
+
+		XMVECTOR lightPos = XMVectorSet(cos(time.totalTime * 0.1f), 1.0f, sin(time.totalTime * 0.1f), 1.0f);
 		XMVECTOR targetPos = XMVectorSet(0.0f, 0.0f, 0.0f, 1.0f);
 		XMVECTOR lightUp = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
 
 		XMMATRIX lightView = XMMatrixLookAtLH(lightPos, targetPos, lightUp);
-		XMMATRIX lightProj = XMMatrixOrthographicLH(20.0f, 20.0f, -20.0f, 20.0f);
+		XMMATRIX lightProj = XMMatrixOrthographicLH(100.0f, 100.0f, -100.0f, 100.0f);
 
-		XMMATRIX S = lightView * lightProj;
+		XMMATRIX S = lightWorld * lightView * lightProj;
 
 		XMStoreFloat3(&m_lightDirection, XMVector3Normalize(targetPos - lightPos));
 		XMStoreFloat4x4(&m_shadowTransform, S);

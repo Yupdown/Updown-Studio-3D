@@ -16,6 +16,12 @@ namespace udsdx
 		ID3D12DescriptorHeap* SRVDescriptorHeap;
 		float AspectRatio;
 		UINT CbvSrvUavDescriptorSize;
+
+		const D3D12_VIEWPORT& Viewport;
+		const D3D12_RECT& ScissorRect;
+
+		const D3D12_CPU_DESCRIPTOR_HANDLE& DepthStencilView;
+		const D3D12_CPU_DESCRIPTOR_HANDLE& RenderTargetView;
 	};
 
 	using Vector2 = DirectX::SimpleMath::Vector2;

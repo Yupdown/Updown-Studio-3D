@@ -67,7 +67,7 @@ namespace udsdx
 		auto resource = Singleton<Resource>::CreateInstance();
 		resource->Initialize(m_d3dDevice.Get(), m_commandQueue.Get(), m_commandList.Get(), m_rootSignature.Get());
 
-		m_directionalLight = std::make_unique<LightDirectional>(4096u, 4096u, m_d3dDevice.Get());
+		m_directionalLight = std::make_unique<LightDirectional>(8192u, 8192u, m_d3dDevice.Get());
 		m_directionalLight->BuildPipelineState(m_d3dDevice.Get(), m_rootSignature.Get());
 
 		BuildDescriptorHeaps();
@@ -482,8 +482,7 @@ namespace udsdx
 		INSTANCE(Audio)->Update();
 
 		BroadcastUpdateMessage();
-		m_directionalLight->UpdateShadowTransform(m_timeMeasure->GetTime());
-		m_scene->Update(m_timeMeasure->GetTime());
+		m_scene->Update(m_timeMeasure->GetTime(), m_directionalLight.get());
 
 		// Update the constant buffer with the latest view and project matrix.
 		UpdateMainPassCB();
@@ -508,11 +507,19 @@ namespace udsdx
 		}
 
 		// Ready all the resources for rendering.
-		RenderParam param;
-		param.CommandList = m_commandList.Get();
-		param.AspectRatio = static_cast<float>(m_clientWidth) / m_clientHeight;
-		param.SRVDescriptorHeap = m_srvHeap.Get();
-		param.CbvSrvUavDescriptorSize = m_cbvSrvUavDescriptorSize;
+		RenderParam param
+		{
+			.CommandList = m_commandList.Get(),
+			.SRVDescriptorHeap = m_srvHeap.Get(),
+			.AspectRatio = static_cast<float>(m_clientWidth) / m_clientHeight,
+			.CbvSrvUavDescriptorSize = m_cbvSrvUavDescriptorSize,
+
+			.Viewport = m_screenViewport,
+			.ScissorRect = m_scissorRect,
+
+			.DepthStencilView = DepthStencilView(),
+			.RenderTargetView = CurrentBackBufferView(),
+		};
 
 		auto frameResource = CurrentFrameResource();
 		auto cmdListAlloc = frameResource->GetCommandListAllocator();
@@ -527,12 +534,12 @@ namespace udsdx
 		m_commandList->SetGraphicsRootSignature(m_rootSignature.Get());
 
 		// Bind the current frame's constant buffer to the pipeline.
-		m_commandList->SetGraphicsRootConstantBufferView(2, CurrentFrameResource()->GetObjectCB()->Resource()->GetGPUVirtualAddress());
+		auto objectCB = frameResource->GetObjectCB();
+		m_commandList->SetGraphicsRootConstantBufferView(2, objectCB->Resource()->GetGPUVirtualAddress());
 
-		m_directionalLight->RenderShadowMap(param, *m_scene);
-
-		m_commandList->RSSetViewports(1, &m_screenViewport);
-		m_commandList->RSSetScissorRects(1, &m_scissorRect);
+		{ TracyD3D12Zone(m_tracyQueueCtx, m_commandList.Get(), "Draw Calls for Shadow");
+			m_directionalLight->RenderShadowMap(param, *m_scene);
+		}
 
 		// Indicate a state transition on the resource usage.
 		m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
@@ -558,14 +565,6 @@ namespace udsdx
 			nullptr
 		);
 		}
-
-		// Specify the buffers we are going to render to.
-		m_commandList->OMSetRenderTargets(
-			1,
-			&CurrentBackBufferView(),
-			true,
-			&DepthStencilView()
-		);
 
 		m_commandList->SetGraphicsRootDescriptorTable(4, m_directionalLight->GetSrvGpu());
 
