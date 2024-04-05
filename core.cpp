@@ -81,11 +81,9 @@ namespace udsdx
 
 	void Core::InitializeDirect3D()
 	{ ZoneScoped;
-#if defined(DEBUG) || defined(_DEBUG) 
-		ThrowIfFailed(::D3D12GetDebugInterface(IID_PPV_ARGS(&m_debugController)));
-		m_debugController->EnableDebugLayer();
+#if defined(DEBUG) || defined(_DEBUG)
+		EnableDebugLayer();
 #endif
-
 		// Create DXGI Factory
 		ThrowIfFailed(::CreateDXGIFactory1(IID_PPV_ARGS(&m_dxgiFactory)));
 		// Create hardware device
@@ -103,9 +101,7 @@ namespace udsdx
 
 		m_tearingSupport = CheckTearingSupport();
 
-		// Create command queue
-		ThrowIfFailed(m_d3dDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_fence)));
-
+		// Get descriptor sizes for offsets
 		m_rtvDescriptorSize = m_d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 		m_dsvDescriptorSize = m_d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
 		m_cbvSrvUavDescriptorSize = m_d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -128,7 +124,7 @@ namespace udsdx
 
 
 #if defined(DEBUG) || defined(_DEBUG)
-		PrintAdapterInfo();
+		LogAdapterInfo();
 #endif
 		CreateCommandObjects();
 		CreateSwapChain();
@@ -142,6 +138,12 @@ namespace udsdx
 		{
 			m_dxgiFactory->MakeWindowAssociation(m_hMainWnd, DXGI_MWA_NO_ALT_ENTER);
 		}
+	}
+
+	void Core::EnableDebugLayer()
+	{
+		ThrowIfFailed(::D3D12GetDebugInterface(IID_PPV_ARGS(&m_debugLayer)));
+		m_debugLayer->EnableDebugLayer();
 	}
 
 	void Core::CreateCommandObjects()
@@ -165,6 +167,9 @@ namespace udsdx
 			nullptr,
 			IID_PPV_ARGS(m_commandList.GetAddressOf())
 		));
+
+		// Create fence for cpu-gpu synchronization
+		ThrowIfFailed(m_d3dDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_fence)));
 
 		m_commandList->Close();
 	}
@@ -367,14 +372,13 @@ namespace udsdx
 		{
 			hr = factory->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &allowTearing, sizeof(allowTearing));
 		}
-
 		return SUCCEEDED(hr) && allowTearing;
 #else
 		return true;
 #endif
 	}
 
-	void Core::PrintAdapterInfo()
+	void Core::LogAdapterInfo()
 	{
 		std::wstring text = L"DXGI Adapters:\n";
 
@@ -384,7 +388,16 @@ namespace udsdx
 		{
 			DXGI_ADAPTER_DESC desc;
 			adapter->GetDesc(&desc);
-			text += std::format(L"> Adapter: {}\n  Output: ", desc.Description);
+			text += L"\n";
+			text += std::format(L"> Adapter: {}\n", desc.Description);
+			text += std::format(L"  > Vendor ID: {}\n", desc.VendorId);
+			text += std::format(L"  > Device ID: {}\n", desc.DeviceId);
+			text += std::format(L"  > SubSys ID: {}\n", desc.SubSysId);
+			text += std::format(L"  > Revision: {}\n", desc.Revision);
+			text += std::format(L"  > Dedicated Video Memory: {} MB\n", desc.DedicatedVideoMemory >> 20);
+			text += std::format(L"  > Dedicated System Memory: {} MB\n", desc.DedicatedSystemMemory >> 20);
+			text += std::format(L"  > Shared System Memory: {} MB\n", desc.SharedSystemMemory >> 20);
+			text += L"  > Outputs: ";
 
 			IDXGIOutput* m_output = nullptr;
 			UINT j = 0;
@@ -392,7 +405,13 @@ namespace udsdx
 			{
 				DXGI_OUTPUT_DESC desc;
 				m_output->GetDesc(&desc);
-				text += std::format(L"\n   > {}", desc.DeviceName);
+				int x = desc.DesktopCoordinates.left;
+				int y = desc.DesktopCoordinates.top;
+				int w = desc.DesktopCoordinates.right - x;
+				int h = desc.DesktopCoordinates.bottom - y;
+				text += std::format(L"\n   > Output: {}\n", desc.DeviceName);
+				text += std::format(L"     > Attached to Desktop: {}\n", desc.AttachedToDesktop ? L"True" : L"False");
+				text += std::format(L"     > Desktop Coordinates: ({}, {}), ({} * {})", x, y, w, h);
 				m_output->Release();
 			}
 			if (j == 0)
@@ -437,7 +456,8 @@ namespace udsdx
 		// Advance the fence value to mark commands up to this fence point.
 		m_currentFence++;
 
-		// Add an instruction to the command queue to set a new fence point. Because we are on the GPU time line, the new fence point won't be set until the GPU finishes processing all the commands prior to this Signal().
+		// Add an instruction to the command queue to set a new fence point.
+		// Because we are on the GPU time line, the new fence point won't be set until the GPU finishes processing all the commands prior to this Signal().
 		ThrowIfFailed(m_commandQueue->Signal(m_fence.Get(), m_currentFence));
 
 		// Wait until the GPU has completed commands up to this fence point.
@@ -526,7 +546,8 @@ namespace udsdx
 
 		ThrowIfFailed(cmdListAlloc->Reset());
 		// Resets a command list back to its initial state as if a new command list was just created.
-		// ID3D12PipelineState: This is optional and can be NULL. If NULL, the runtime sets a dummy initial pipeline state so that drivers don't have to deal with undefined state.
+		// ID3D12PipelineState: This is optional and can be NULL.
+		// If NULL, the runtime sets a dummy initial pipeline state so that drivers don't have to deal with undefined state.
 		ThrowIfFailed(m_commandList->Reset(cmdListAlloc, nullptr));
 
 		ID3D12DescriptorHeap* descriptorHeaps[] = { m_srvHeap.Get() };

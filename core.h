@@ -19,15 +19,10 @@ namespace udsdx
 		virtual ~Core();
 
 		void Initialize(HINSTANCE hInstance, HWND hWnd);
-		void InitializeDirect3D();
 		bool CheckTearingSupport() const;
-		void PrintAdapterInfo();
+
 		void DisplayFrameStats();
 		void OnDestroy();
-
-		void CreateCommandObjects();
-		void CreateSwapChain();
-		void CreateRtvAndDsvDescriptorHeaps();
 
 		void BuildDescriptorHeaps();
 		void BuildConstantBuffers();
@@ -66,6 +61,26 @@ namespace udsdx
 		void SetClearColor(float r, float g, float b);
 
 	protected:
+		// Initialize DXGI Factory, Direct3D 12 Device, etc.
+		void InitializeDirect3D();
+
+		void EnableDebugLayer();
+
+		// Create Direct3D 12 Command Queue, Command List, Command Allocator
+		void CreateCommandObjects();
+
+		// Create Direct3D 12 Swap Chain using DXGI Factory
+		void CreateSwapChain();
+
+		// Create Direct3D 12 Descriptor Heaps for
+		// * Render Target View (RTV)
+		// * Depth/Stencil View (DSV)
+		void CreateRtvAndDsvDescriptorHeaps();
+
+		// Enumerate adapters and outputs using DXGI Factory
+		void LogAdapterInfo();
+
+	protected:
 		HINSTANCE	m_hInstance = 0;
 		HWND		m_hMainWnd = 0;
 
@@ -84,6 +99,7 @@ namespace udsdx
 		RECT		m_windowedRect;
 
 		bool		m_tearingSupport = false;
+
 		// Set true to use 4X MSAA (?.1.8).  The default is false.
 		bool		m_4xMsaaState = false;    // 4X MSAA enabled
 		UINT		m_4xMsaaQuality = 0;      // quality level of 4X MSAA
@@ -99,13 +115,25 @@ namespace udsdx
 		std::unique_ptr<Wrappers::RoInitializeWrapper> m_roInitialization;
 
 		// Factory for creating DXGI objects
+		// For enumerating adapters, monitors, video modes, etc. and tp create swap chains
+		// Has versions for compability with newer versions of OS (inherited from each earlier version)
+		// IDXGIFactory[N] where N is the version number
+		// 
+		// DXGI Objects
+		// * DXGI Adapter: represents a display subsystem (including one or more GPUs)
+		// * DXGI Output: represents an output on an adapter (monitor)
 		ComPtr<IDXGIFactory4> m_dxgiFactory;
+
 		// Direct3D 12 Device
 		ComPtr<ID3D12Device> m_d3dDevice;
+
 		// Swap Chain (front and back buffer, similar as double-buffering)
 		ComPtr<IDXGISwapChain> m_swapChain;
+
 		// Direct3D 12 Debug Layer
-		ComPtr<ID3D12Debug> m_debugController;
+		// Used to enable debug messages in the output window
+		ComPtr<ID3D12Debug> m_debugLayer;
+
 		// Fence for CPU/GPU synchronization
 		ComPtr<ID3D12Fence> m_fence;
 		UINT64 m_currentFence = 0;
@@ -116,10 +144,16 @@ namespace udsdx
 		ComPtr<ID3D12GraphicsCommandList> m_commandList;
 
 		static constexpr int FrameResourceCount = 3;
+		// Frame Resources for parameters of each frame
+		// Each frame resource contains a command allocator and
+		// * Constant Buffer (Per each global pass)
+		// * Render Target
 		std::array<std::unique_ptr<FrameResource>, FrameResourceCount> m_frameResources;
 		int m_currFrameResourceIndex = 0;
 
 		static constexpr int SwapChainBufferCount = 2;
+		// Swap Chain Buffers
+		// Prepared for the next frame and presented to the screen
 		std::array<ComPtr<ID3D12Resource>, SwapChainBufferCount> m_swapChainBuffers;
 		int m_currBackBuffer = 0;
 
