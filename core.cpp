@@ -13,7 +13,7 @@
 #include "debug_console.h"
 #include "audio.h"
 #include "texture.h"
-#include "light_directional.h"
+#include "shadow_map.h"
 
 namespace udsdx
 {
@@ -67,8 +67,8 @@ namespace udsdx
 		auto resource = Singleton<Resource>::CreateInstance();
 		resource->Initialize(m_d3dDevice.Get(), m_commandQueue.Get(), m_commandList.Get(), m_rootSignature.Get());
 
-		m_directionalLight = std::make_unique<LightDirectional>(8192u, 8192u, m_d3dDevice.Get());
-		m_directionalLight->BuildPipelineState(m_d3dDevice.Get(), m_rootSignature.Get());
+		m_shadowMap = std::make_unique<ShadowMap>(8192u, 8192u, m_d3dDevice.Get());
+		m_shadowMap->BuildPipelineState(m_d3dDevice.Get(), m_rootSignature.Get());
 
 		BuildDescriptorHeaps();
 		BuildConstantBuffers();
@@ -121,7 +121,6 @@ namespace udsdx
 
 		m_4xMsaaQuality = msQualityLevels.NumQualityLevels;
 		assert(m_4xMsaaQuality > 0 && "Unexpected MSAA quality level.");
-
 
 #if defined(DEBUG) || defined(_DEBUG)
 		LogAdapterInfo();
@@ -276,7 +275,7 @@ namespace udsdx
 		CD3DX12_CPU_DESCRIPTOR_HANDLE hDsvDescriptor(m_dsvHeap->GetCPUDescriptorHandleForHeapStart(), 1, m_dsvDescriptorSize);
 		CD3DX12_GPU_DESCRIPTOR_HANDLE hSrvGpuDescriptor(m_srvHeap->GetGPUDescriptorHandleForHeapStart(), static_cast<INT>(textures.size()), m_cbvSrvUavDescriptorSize);
 
-		m_directionalLight->BuildDescriptors(m_d3dDevice.Get(), hSrvDescriptor, hDsvDescriptor, hSrvGpuDescriptor);
+		m_shadowMap->BuildDescriptors(m_d3dDevice.Get(), hSrvDescriptor, hDsvDescriptor, hSrvGpuDescriptor);
 	}
 
 	void Core::BuildConstantBuffers()
@@ -302,19 +301,19 @@ namespace udsdx
 
 	void Core::BuildRootSignature()
 	{ ZoneScoped;
-		CD3DX12_ROOT_PARAMETER slotRootParameter[5];
+		CD3DX12_ROOT_PARAMETER slotRootParameter[6];
 
 		CD3DX12_DESCRIPTOR_RANGE texTable;
 		texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
-
 		CD3DX12_DESCRIPTOR_RANGE shadowMapTable;
 		shadowMapTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
 
-		slotRootParameter[0].InitAsConstants(16, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
-		slotRootParameter[1].InitAsConstants(20, 1, 0, D3D12_SHADER_VISIBILITY_VERTEX);
-		slotRootParameter[2].InitAsConstantBufferView(2);
-		slotRootParameter[3].InitAsDescriptorTable(1, &texTable);
-		slotRootParameter[4].InitAsDescriptorTable(1, &shadowMapTable);
+		slotRootParameter[0].InitAsConstants(sizeof(ObjectConstants) / 4, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+		slotRootParameter[1].InitAsConstants(sizeof(CameraConstants) / 4, 1, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+		slotRootParameter[2].InitAsConstants(sizeof(ShadowConstants) / 4, 2, 0, D3D12_SHADER_VISIBILITY_ALL);
+		slotRootParameter[3].InitAsConstantBufferView(3);
+		slotRootParameter[4].InitAsDescriptorTable(1, &texTable);
+		slotRootParameter[5].InitAsDescriptorTable(1, &shadowMapTable);
 
 		CD3DX12_STATIC_SAMPLER_DESC samplerDesc[] = {
 			CD3DX12_STATIC_SAMPLER_DESC(
@@ -502,7 +501,7 @@ namespace udsdx
 		INSTANCE(Audio)->Update();
 
 		BroadcastUpdateMessage();
-		m_scene->Update(m_timeMeasure->GetTime(), m_directionalLight.get());
+		m_scene->Update(m_timeMeasure->GetTime());
 
 		// Update the constant buffer with the latest view and project matrix.
 		UpdateMainPassCB();
@@ -527,8 +526,7 @@ namespace udsdx
 		}
 
 		// Ready all the resources for rendering.
-		RenderParam param
-		{
+		RenderParam param {
 			.CommandList = m_commandList.Get(),
 			.SRVDescriptorHeap = m_srvHeap.Get(),
 			.AspectRatio = static_cast<float>(m_clientWidth) / m_clientHeight,
@@ -539,6 +537,8 @@ namespace udsdx
 
 			.DepthStencilView = DepthStencilView(),
 			.RenderTargetView = CurrentBackBufferView(),
+
+			.RenderShadowMap = m_shadowMap.get()
 		};
 
 		auto frameResource = CurrentFrameResource();
@@ -556,38 +556,15 @@ namespace udsdx
 
 		// Bind the current frame's constant buffer to the pipeline.
 		auto objectCB = frameResource->GetObjectCB();
-		m_commandList->SetGraphicsRootConstantBufferView(2, objectCB->Resource()->GetGPUVirtualAddress());
-
-		{ TracyD3D12Zone(m_tracyQueueCtx, m_commandList.Get(), "Draw Calls for Shadow");
-			m_directionalLight->RenderShadowMap(param, *m_scene);
-		}
+		m_commandList->SetGraphicsRootConstantBufferView(3, objectCB->Resource()->GetGPUVirtualAddress());
+		m_commandList->SetGraphicsRootDescriptorTable(5, m_shadowMap->GetSrvGpu());
 
 		// Indicate a state transition on the resource usage.
-		m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
+		param.CommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
 			CurrentBackBuffer(),
 			D3D12_RESOURCE_STATE_PRESENT,
 			D3D12_RESOURCE_STATE_RENDER_TARGET
 		));
-
-		{ TracyD3D12Zone(m_tracyQueueCtx, m_commandList.Get(), "Clear Buffers");
-		// Clear the back buffer and depth buffer.
-		m_commandList->ClearRenderTargetView(
-			CurrentBackBufferView(),
-			(float*)&m_clearColor,
-			0,
-			nullptr
-		);
-		m_commandList->ClearDepthStencilView(
-			DepthStencilView(),
-			D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,
-			1.0f,
-			0,
-			0,
-			nullptr
-		);
-		}
-
-		m_commandList->SetGraphicsRootDescriptorTable(4, m_directionalLight->GetSrvGpu());
 
 		{ TracyD3D12Zone(m_tracyQueueCtx, m_commandList.Get(), "Draw Calls");
 			// Draw the scene objects. 
@@ -630,8 +607,6 @@ namespace udsdx
 	void Core::UpdateMainPassCB()
 	{ ZoneScoped;
 		PassConstants passConstants;
-		passConstants.ShadowTransform = m_directionalLight->GetShadowTransform().Transpose();
-		passConstants.LightDirection = m_directionalLight->GetLightDirection();
 		passConstants.TotalTime = m_timeMeasure->GetTime().totalTime;
 
 		auto frameResource = CurrentFrameResource();

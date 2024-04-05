@@ -8,7 +8,7 @@ namespace udsdx
 	class FrameResource;
 	class TimeMeasure;
 	class Scene;
-	class LightDirectional;
+	class ShadowMap;
 
 	class Core
 	{
@@ -182,7 +182,7 @@ namespace udsdx
 		std::unique_ptr<FrameDebug> m_frameDebug;
 		TracyD3D12Ctx m_tracyQueueCtx;
 
-		std::unique_ptr<LightDirectional> m_directionalLight;
+		std::unique_ptr<ShadowMap> m_shadowMap;
 	};
 }
 

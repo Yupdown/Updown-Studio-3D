@@ -10,6 +10,7 @@ namespace udsdx
 		float totalTime;
 	};
 
+	class ShadowMap;
 	struct RenderParam
 	{
 		ID3D12GraphicsCommandList* CommandList;
@@ -22,6 +23,8 @@ namespace udsdx
 
 		const D3D12_CPU_DESCRIPTOR_HANDLE& DepthStencilView;
 		const D3D12_CPU_DESCRIPTOR_HANDLE& RenderTargetView;
+
+		ShadowMap* RenderShadowMap;
 	};
 
 	using Vector2 = DirectX::SimpleMath::Vector2;

@@ -83,6 +83,9 @@
     <ClCompile Include="light_directional.cpp">
       <Filter>Engine\Runtime</Filter>
     </ClCompile>
+    <ClCompile Include="shadow_map.cpp">
+      <Filter>Engine</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Precompiled Headers">
@@ -202,10 +205,17 @@
     <ClInclude Include="light_directional.h">
       <Filter>Engine\Runtime</Filter>
     </ClInclude>
+    <ClInclude Include="resource1.h" />
+    <ClInclude Include="shadow_map.h">
+      <Filter>Engine</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="directxtk12\Inc\SimpleMath.inl">
       <Filter>External Sources</Filter>
     </None>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="engine.rc" />
   </ItemGroup>
 </Project>

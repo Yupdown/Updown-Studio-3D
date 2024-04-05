@@ -29,14 +29,14 @@ namespace udsdx
 		ObjectConstants objectConstants;
 		objectConstants.World = worldMat.Transpose();
 
-		param.CommandList->SetGraphicsRoot32BitConstants(0, 16, &objectConstants, 0);
+		param.CommandList->SetGraphicsRoot32BitConstants(0, sizeof(ObjectConstants) / 4, &objectConstants, 0);
 
 		if (m_material != nullptr && m_material->GetMainTexture() != nullptr)
 		{
 			Texture* mainTex = m_material->GetMainTexture();
 			CD3DX12_GPU_DESCRIPTOR_HANDLE handle(param.SRVDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 			handle.Offset(mainTex->GetDescriptorHeapIndex(), param.CbvSrvUavDescriptorSize);
-			param.CommandList->SetGraphicsRootDescriptorTable(3, handle);
+			param.CommandList->SetGraphicsRootDescriptorTable(4, handle);
 		}
 
 		param.CommandList->IASetVertexBuffers(0, 1, &m_mesh->VertexBufferView());

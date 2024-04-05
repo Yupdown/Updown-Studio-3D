@@ -173,6 +173,7 @@
     <ClCompile Include="resource.cpp" />
     <ClCompile Include="resource_object.cpp" />
     <ClCompile Include="shader.cpp" />
+    <ClCompile Include="shadow_map.cpp" />
     <ClCompile Include="texture.cpp" />
     <ClCompile Include="time_measure.cpp" />
     <ClCompile Include="tracy\public\TracyClient.cpp">
@@ -203,12 +204,14 @@
     <ClInclude Include="MathHelper.h" />
     <ClInclude Include="mesh.h" />
     <ClInclude Include="mesh_renderer.h" />
+    <ClInclude Include="resource1.h" />
     <ClInclude Include="scene.h" />
     <ClInclude Include="scene_object.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="resource_object.h" />
     <ClInclude Include="shader.h" />
+    <ClInclude Include="shadow_map.h" />
     <ClInclude Include="singleton.h" />
     <ClInclude Include="stb_image.h" />
     <ClInclude Include="texture.h" />
@@ -231,6 +234,9 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="directxtk12\Inc\SimpleMath.inl" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="engine.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
