@@ -205,7 +205,6 @@
     <ClInclude Include="light_directional.h">
       <Filter>Engine\Runtime</Filter>
     </ClInclude>
-    <ClInclude Include="resource1.h" />
     <ClInclude Include="shadow_map.h">
       <Filter>Engine</Filter>
     </ClInclude>
@@ -214,8 +213,5 @@
     <None Include="directxtk12\Inc\SimpleMath.inl">
       <Filter>External Sources</Filter>
     </None>
-  </ItemGroup>
-  <ItemGroup>
-    <ResourceCompile Include="engine.rc" />
   </ItemGroup>
 </Project>

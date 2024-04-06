@@ -98,6 +98,7 @@ namespace udsdx
 		cameraConstants.CameraPosition = Vector4::UnitW;
 
 		param.CommandList->SetGraphicsRoot32BitConstants(1, sizeof(CameraConstants) / 4, &cameraConstants, 0);
+		param.CommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 		for (const auto& object : m_renderObjectQueue)
 		{
@@ -109,12 +110,14 @@ namespace udsdx
 			0.0f, -0.5f, 0.0f, 0.0f,
 			0.0f, 0.0f, 1.0f, 0.0f,
 			0.5f, 0.5f, 0.0f, 1.0f);
-		shadowTransform = shadowTransform * T;
+
+		XMMATRIX SP = S * T;
+		XMStoreFloat4x4(&shadowTransform, SP);
 
 		ShadowConstants shadowConstants;
 		shadowConstants.LightViewProj = shadowTransform.Transpose();
 		shadowConstants.LightDirection = lightDirection;
-		param.CommandList->SetGraphicsRoot32BitConstants(1, sizeof(ShadowConstants) / 4, &shadowConstants, 0);
+		param.CommandList->SetGraphicsRoot32BitConstants(2, sizeof(ShadowConstants) / 4, &shadowConstants, 0);
 
 		param.RenderShadowMap->End(param.CommandList);
 	}

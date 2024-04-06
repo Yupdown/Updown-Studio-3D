@@ -519,6 +519,7 @@ namespace udsdx
 	{ ZoneScopedC(0xF78104);
 		TracyD3D12Collect(m_tracyQueueCtx);
 		TracyD3D12NewFrame(m_tracyQueueCtx);
+
 		if (m_resizeDirty)
 		{
 			m_resizeDirty = false;

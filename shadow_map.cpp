@@ -5,7 +5,7 @@
 
 namespace udsdx
 {
-	const char* g_psoResource = R"(
+	constexpr char g_psoResource[] = R"(
 		cbuffer cbPerObject : register(b0)
 		{
 			float4x4 gWorld; 
@@ -16,11 +16,6 @@ namespace udsdx
 			float4x4 gViewProj;
 			float4 gEyePosW;
 		}
-
-		cbuffer cbPerFrame : register(b2)
-		{
-			float gTime;
-		};
 
 		Texture2D gMainTex : register(t0);
 		SamplerState gSampler : register(s0);
@@ -49,7 +44,11 @@ namespace udsdx
 			return vout;
 		}
 
-		void PS(VertexOut pin) { }
+		void PS(VertexOut pin)
+		{
+            float alpha = gMainTex.Sample(gSampler, pin.TexC).a;
+			clip(alpha - 0.1f);
+		}
 	)";
 
 	ShadowMap::ShadowMap(UINT mapWidth, UINT mapHeight, ID3D12Device* device)
@@ -183,16 +182,5 @@ namespace udsdx
 	D3D12_GPU_DESCRIPTOR_HANDLE ShadowMap::GetSrvGpu() const
 	{
 		return m_srvGpu;
-	}
-
-	Matrix4x4 ShadowMap::GetShadowTransform() const
-	{
-		// Transform NDC space [-1,+1]^2 to texture space [0,1]^2
-		XMMATRIX T(
-			0.5f, 0.0f, 0.0f, 0.0f,
-			0.0f, -0.5f, 0.0f, 0.0f,
-			0.0f, 0.0f, 1.0f, 0.0f,
-			0.5f, 0.5f, 0.0f, 1.0f);
-		return m_shadowTransform * T;
 	}
 }

@@ -13,6 +13,11 @@ namespace udsdx
 
 	}
 
+	void LightDirectional::Update(const Time& time, Scene& scene)
+	{
+		scene.EnqueueRenderLight(this);
+	}
+
 	Vector3 LightDirectional::GetLightDirection() const
 	{
 		XMMATRIX worldSRTMatrix = XMLoadFloat4x4(&GetSceneObject()->GetTransform()->GetWorldSRTMatrix());

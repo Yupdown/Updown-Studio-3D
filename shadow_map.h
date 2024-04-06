@@ -18,8 +18,6 @@ namespace udsdx
 		void Begin(ID3D12GraphicsCommandList* pCommandList);
 		void End(ID3D12GraphicsCommandList* pCommandList);
 
-		Matrix4x4 GetShadowTransform() const;
-
 	public:
 		D3D12_GPU_DESCRIPTOR_HANDLE GetSrvGpu() const;
 
@@ -38,7 +36,5 @@ namespace udsdx
 
 		ComPtr<ID3D12Resource> m_shadowMap;
 		ComPtr<ID3D12PipelineState> m_shadowPso;
-
-		Matrix4x4 m_shadowTransform;
 	};
 }

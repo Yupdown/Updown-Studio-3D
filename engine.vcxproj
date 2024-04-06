@@ -204,7 +204,6 @@
     <ClInclude Include="MathHelper.h" />
     <ClInclude Include="mesh.h" />
     <ClInclude Include="mesh_renderer.h" />
-    <ClInclude Include="resource1.h" />
     <ClInclude Include="scene.h" />
     <ClInclude Include="scene_object.h" />
     <ClInclude Include="pch.h" />
@@ -234,9 +233,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="directxtk12\Inc\SimpleMath.inl" />
-  </ItemGroup>
-  <ItemGroup>
-    <ResourceCompile Include="engine.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

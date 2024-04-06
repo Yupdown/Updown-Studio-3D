@@ -10,6 +10,7 @@
 #include "shader.h"
 #include "texture.h"
 #include "audio_clip.h"
+#include "shadow_map.h"
 
 #include "time_measure.h"
 #include "input.h"
@@ -22,6 +23,7 @@
 #include "component.h"
 #include "mesh_renderer.h"
 #include "camera.h"
+#include "light_directional.h"
 
 namespace udsdx
 {

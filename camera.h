@@ -19,6 +19,8 @@ namespace udsdx
 		virtual Matrix4x4 GetViewMatrix() const;
 		virtual Matrix4x4 GetProjMatrix(float aspect) const = 0;
 
+	protected:
+		Color m_clearColor = Color(0.0f, 0.0f, 0.0f, 1.0f);
 	};
 
 	class CameraPerspective : public Camera
