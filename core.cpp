@@ -34,7 +34,6 @@ namespace udsdx
 		m_hMainWnd = hWnd;
 
 		m_timeMeasure = std::make_unique<TimeMeasure>();
-		m_timeMeasure->BeginMeasure();
 
 		m_windowedRect = { 0, 0, m_clientWidth, m_clientHeight };
 
@@ -494,8 +493,8 @@ namespace udsdx
 	{ ZoneScopedC(0xFAAB36);
 		DisplayFrameStats();
 
-		m_timeMeasure->EndMeasure();
-		m_timeMeasure->BeginMeasure();
+		// Advance the time measure
+		m_timeMeasure->Tick();
 
 		INSTANCE(Input)->FlushQueue();
 		INSTANCE(Audio)->Update();
@@ -592,6 +591,9 @@ namespace udsdx
 			// result of calling SetFullscreenState.
 			UINT presentFlags = (m_tearingSupport && !m_fullscreen) ? DXGI_PRESENT_ALLOW_TEARING : 0;
 
+			// Sync interval: the way in which the presentation waits for the vertical sync period.
+			// 0: No sync interval, the present occurs immediately. May cause tearing.
+			// 1: Sync with the next vertical blanking period(V-Sync). May cause latency.
 			ThrowIfFailed(m_swapChain->Present(0, presentFlags));
 			// Swap the back and front buffers
 			m_currBackBuffer = (m_currBackBuffer + 1) % SwapChainBufferCount;

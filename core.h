@@ -139,8 +139,15 @@ namespace udsdx
 		UINT64 m_currentFence = 0;
 		HANDLE m_fenceEvent = nullptr;
 
+		// There are three types of command queues: Copy Queue, Rendering Queue, Compute Queue
+		// But Rendering Queue can use all types of engines (Copy, Compute, Direct)
+		// therefore, you can use only Rendering Queue for every purpose
 		ComPtr<ID3D12CommandQueue> m_commandQueue;
+
+		// Allocating memory space for commands
 		ComPtr<ID3D12CommandAllocator> m_directCmdListAlloc;
+
+		// A collection of commands to be appended to a command queue
 		ComPtr<ID3D12GraphicsCommandList> m_commandList;
 
 		static constexpr int FrameResourceCount = 3;
