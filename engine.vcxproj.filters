@@ -86,6 +86,9 @@
     <ClCompile Include="shadow_map.cpp">
       <Filter>Engine</Filter>
     </ClCompile>
+    <ClCompile Include="screen_space_ao.cpp">
+      <Filter>Engine</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Precompiled Headers">
@@ -206,6 +209,9 @@
       <Filter>Engine\Runtime</Filter>
     </ClInclude>
     <ClInclude Include="shadow_map.h">
+      <Filter>Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="screen_space_ao.h">
       <Filter>Engine</Filter>
     </ClInclude>
   </ItemGroup>

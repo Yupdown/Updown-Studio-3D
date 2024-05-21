@@ -145,6 +145,9 @@ namespace udsdx
 		ComPtr<ID3D12CommandQueue> m_commandQueue;
 
 		// Allocating memory space for commands
+		// Has Open / Close states to record commands
+		// Can not be opened simultaneously by multiple command lists
+		// This allocator is used for the initialization (not for rendering)
 		ComPtr<ID3D12CommandAllocator> m_directCmdListAlloc;
 
 		// A collection of commands to be appended to a command queue
@@ -164,7 +167,13 @@ namespace udsdx
 		std::array<ComPtr<ID3D12Resource>, SwapChainBufferCount> m_swapChainBuffers;
 		int m_currBackBuffer = 0;
 
+		//
 		ComPtr<ID3D12Resource> m_depthStencilBuffer;
+
+		// Descriptor Heap
+		// A continuous block of memory containing descriptors which describe resources
+		// There are 4 types of descriptor heaps: CBV, SRV, UAV, Sampler	-> D3D12_DESCRIPTOR_HEAP_TYPE
+		// UINT NumDescriptors: the number of descriptors in the heap
 
 		// Render Target View Descriptor Heap
 		ComPtr<ID3D12DescriptorHeap> m_rtvHeap;

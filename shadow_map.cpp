@@ -131,7 +131,8 @@ namespace udsdx
 		D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc;
 		ZeroMemory(&psoDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
 
-		psoDesc.InputLayout = { Vertex::DescriptionTable, Vertex::DescriptionTableSize };
+		psoDesc.InputLayout.pInputElementDescs = Vertex::DescriptionTable;
+		psoDesc.InputLayout.NumElements = Vertex::DescriptionTableSize;
 		psoDesc.pRootSignature = pRootSignature;
 		psoDesc.VS =
 		{

@@ -458,10 +458,10 @@ namespace udsdx
 		// Because we are on the GPU time line, the new fence point won't be set until the GPU finishes processing all the commands prior to this Signal().
 		ThrowIfFailed(m_commandQueue->Signal(m_fence.Get(), m_currentFence));
 
-		// Wait until the GPU has completed commands up to this fence point.
+		// Check if the fence is still not advanced.
 		if (m_fence->GetCompletedValue() < m_currentFence)
 		{
-			// Fire event when GPU hits current fence.
+			// Generate an event which is automatically fired when the GPU reaches the desired fence.
 			ThrowIfFailed(m_fence->SetEventOnCompletion(m_currentFence, m_fenceEvent));
 
 			// Wait until the GPU hits current fence event is fired.
@@ -560,8 +560,11 @@ namespace udsdx
 		m_commandList->SetGraphicsRootDescriptorTable(5, m_shadowMap->GetSrvGpu());
 
 		// Indicate a state transition on the resource usage.
+		// Transition the back buffer to make it ready for writing.
 		param.CommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
 			CurrentBackBuffer(),
+			// Before state; if the resource is in this state, the resource transitions to the after state.
+			// if the resource is not in this state, the resource is not transitioned.
 			D3D12_RESOURCE_STATE_PRESENT,
 			D3D12_RESOURCE_STATE_RENDER_TARGET
 		));
@@ -572,6 +575,7 @@ namespace udsdx
 		}
 
 		// indicate a state transition on the resource usage.
+		// Transition the back buffer to make it ready for presentation. (Reading memory)
 		m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
 			CurrentBackBuffer(),
 			D3D12_RESOURCE_STATE_RENDER_TARGET,
@@ -581,6 +585,8 @@ namespace udsdx
 		// Done recording commands.
 		ThrowIfFailed(m_commandList->Close());
 
+		// Add the command list to the queue for execution.
+		// Can add multiple lists for optimization.
 		ID3D12CommandList* cmdLists[] = { m_commandList.Get() };
 		m_commandQueue->ExecuteCommandLists(_countof(cmdLists), cmdLists);
 
@@ -600,6 +606,7 @@ namespace udsdx
 		}
 
 		// Advance the fence value to mark commands up to this fence point.
+		// the GPU adds a command to set the fence value to the desired value.
 		frameResource->SetFence(++m_currentFence);
 		m_commandQueue->Signal(m_fence.Get(), m_currentFence);
 
@@ -762,6 +769,7 @@ namespace udsdx
 
 		m_currBackBuffer = 0;
 
+		// Create Resources for Render Target Views.
 		CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHeapHandle(m_rtvHeap->GetCPUDescriptorHandleForHeapStart());
 		for (UINT i = 0; i < SwapChainBufferCount; i++)
 		{
@@ -773,11 +781,11 @@ namespace udsdx
 		// Create the depth/stencil buffer and view.
 		D3D12_RESOURCE_DESC depthStencilDesc;
 		depthStencilDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-		depthStencilDesc.Alignment = 0;
-		depthStencilDesc.Width = width;
-		depthStencilDesc.Height = height;
-		depthStencilDesc.DepthOrArraySize = 1;
-		depthStencilDesc.MipLevels = 1;
+		depthStencilDesc.Alignment = 0;			// alignment size of the resource. 0 means use default alignment.
+		depthStencilDesc.Width = width;			// size of the width.
+		depthStencilDesc.Height = height;		// size of the height.
+		depthStencilDesc.DepthOrArraySize = 1;	// size of the depth.
+		depthStencilDesc.MipLevels = 1;			// number of mip levels.
 
 		// Correction 11/12/2016: SSAO chapter requires an SRV to the depth buffer to read from 
 		// the depth buffer.  Therefore, because we need to create two views to the same resource:
@@ -788,8 +796,8 @@ namespace udsdx
 
 		depthStencilDesc.SampleDesc.Count = m_4xMsaaState ? 4 : 1;
 		depthStencilDesc.SampleDesc.Quality = m_4xMsaaState ? (m_4xMsaaQuality - 1) : 0;
-		depthStencilDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-		depthStencilDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+		depthStencilDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;				// layout of the texture to be used in the pipeline.
+		depthStencilDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;	// resource is used as a depth-stencil buffer.
 
 		D3D12_CLEAR_VALUE optClear;
 		optClear.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
@@ -820,10 +828,7 @@ namespace udsdx
 		));
 
 		// Execute the resize commands.
-		ThrowIfFailed(m_commandList->Close());
-		ID3D12CommandList* cmdsLists[] = { m_commandList.Get() };
-		m_commandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
-
+		ExecuteCommandList();
 		// Wait until resize is complete.
 		FlushCommandQueue();
 
