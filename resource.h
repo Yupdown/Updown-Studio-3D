@@ -66,6 +66,7 @@ namespace udsdx
 
 		std::unordered_map<std::wstring, std::unique_ptr<ResourceLoader>> m_loaders;
 		std::unordered_map<std::wstring, std::wstring> m_extensionDictionary;
+		std::unordered_set<std::wstring> m_ignoreFiles;
 
 	public:
 		Resource();
@@ -76,6 +77,7 @@ namespace udsdx
 	private:
 		void InitializeLoaders(ID3D12Device* device, ID3D12CommandQueue* commandQueue, ID3D12GraphicsCommandList* commandList, ID3D12RootSignature* rootSignature);
 		void InitializeExtensionDictionary();
+		void InitializeIgnoreFiles();
 
 	public:
 		template <typename T>
