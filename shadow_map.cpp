@@ -1,6 +1,10 @@
 #include "pch.h"
 #include "shadow_map.h"
 #include "frame_resource.h"
+#include "camera.h"
+#include "light_directional.h"
+#include "scene_object.h"
+#include "transform.h"
 #include "scene.h"
 
 namespace udsdx
@@ -97,11 +101,15 @@ namespace udsdx
 			IID_PPV_ARGS(&m_shadowMap)));
 	}
 
-	void ShadowMap::BuildDescriptors(ID3D12Device* device, CD3DX12_CPU_DESCRIPTOR_HANDLE hCpuSrv, CD3DX12_CPU_DESCRIPTOR_HANDLE hCpuDsv, CD3DX12_GPU_DESCRIPTOR_HANDLE hGpuSrv)
+	void ShadowMap::BuildDescriptors(DescriptorParam& descriptorParam, ID3D12Device* device)
 	{
-		m_srvCpu = hCpuSrv;
-		m_dsvCpu = hCpuDsv;
-		m_srvGpu = hGpuSrv;
+		m_srvCpu = descriptorParam.SrvCpuHandle;
+		m_dsvCpu = descriptorParam.DsvCpuHandle;
+		m_srvGpu = descriptorParam.SrvGpuHandle;
+
+		descriptorParam.SrvCpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
+		descriptorParam.DsvCpuHandle.Offset(1, descriptorParam.DsvDescriptorSize);
+		descriptorParam.SrvGpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
 
 		// Create SRV to resource so we can sample the shadow map in a shader program.
 		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
@@ -160,8 +168,10 @@ namespace udsdx
 		));
 	}
 
-	void ShadowMap::Begin(ID3D12GraphicsCommandList* pCommandList)
+	void ShadowMap::Pass(RenderParam& param, Scene* target, Camera* camera, LightDirectional* light)
 	{
+		auto pCommandList = param.CommandList;
+
 		pCommandList->RSSetViewports(1, &m_viewport);
 		pCommandList->RSSetScissorRects(1, &m_scissorRect);
 
@@ -172,10 +182,48 @@ namespace udsdx
 		pCommandList->OMSetRenderTargets(0, nullptr, false, &m_dsvCpu);
 
 		pCommandList->SetPipelineState(m_shadowPso.Get());
-	}
 
-	void ShadowMap::End(ID3D12GraphicsCommandList* pCommandList)
-	{
+		//
+
+		Vector3 lightDirection = light->GetLightDirection();
+		Matrix4x4 shadowTransform;
+
+		Vector3 cameraPos = Vector3::Transform(Vector3::Zero, camera->GetSceneObject()->GetTransform()->GetWorldSRTMatrix());
+
+		XMMATRIX lightWorld = XMMatrixTranslation(-cameraPos.x, -cameraPos.y, -cameraPos.z);
+		XMMATRIX lightView = XMMatrixLookAtLH(XMVectorZero(), XMLoadFloat3(&lightDirection), XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f));
+		XMMATRIX lightProj = XMMatrixOrthographicLH(100.0f, 100.0f, -100.0f, 100.0f);
+
+		XMMATRIX S = lightWorld * lightView * lightProj;
+		XMStoreFloat4x4(&shadowTransform, S);
+
+		CameraConstants cameraConstants;
+		cameraConstants.ViewProj = shadowTransform.Transpose();
+		cameraConstants.CameraPosition = Vector4::UnitW;
+
+		param.CommandList->SetGraphicsRoot32BitConstants(1, sizeof(CameraConstants) / 4, &cameraConstants, 0);
+		param.CommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+		// 
+
+		target->RenderSceneObjects(param);
+
+		//
+
+		XMMATRIX T(
+			0.5f, 0.0f, 0.0f, 0.0f,
+			0.0f, -0.5f, 0.0f, 0.0f,
+			0.0f, 0.0f, 1.0f, 0.0f,
+			0.5f, 0.5f, 0.0f, 1.0f);
+
+		XMMATRIX SP = S * T;
+		XMStoreFloat4x4(&shadowTransform, SP);
+
+		ShadowConstants shadowConstants;
+		shadowConstants.LightViewProj = shadowTransform.Transpose();
+		shadowConstants.LightDirection = lightDirection;
+		param.CommandList->SetGraphicsRoot32BitConstants(2, sizeof(ShadowConstants) / 4, &shadowConstants, 0);
+
 		pCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_shadowMap.Get(),
 			D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_GENERIC_READ));
 	}

@@ -6,11 +6,12 @@ namespace udsdx
 	Texture::Texture(std::wstring_view path, ID3D12Device* device, ID3D12CommandQueue* commandQueue) : ResourceObject(path)
 	{
 		ResourceUploadBatch resourceUpload(device);
+		D3D12_RESOURCE_FLAGS resourceFlags = D3D12_RESOURCE_FLAG_NONE;
+		WIC_LOADER_FLAGS wicFlags = WIC_LOADER_DEFAULT;
 
 		resourceUpload.Begin();
-
-		ThrowIfFailed(CreateWICTextureFromFile(
-			device, resourceUpload, path.data(), m_texture.GetAddressOf()
+		ThrowIfFailed(CreateWICTextureFromFileEx(
+			device, resourceUpload, path.data(), 0, resourceFlags, wicFlags, m_texture.GetAddressOf()
 		));
 
 		auto uploadFinished = resourceUpload.End(commandQueue);
@@ -22,10 +23,8 @@ namespace udsdx
 
 	}
 
-	void Texture::CreateShaderResourceView(ID3D12Device* device, ID3D12DescriptorHeap* descriptorHeap, int index)
+	void Texture::CreateShaderResourceView(ID3D12Device* device, DescriptorParam& descriptorParam)
 	{
-		m_descriptorHeapIndex = index;
-
 		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 		srvDesc.Format = m_texture->GetDesc().Format;
@@ -35,14 +34,22 @@ namespace udsdx
 		srvDesc.Texture2D.ResourceMinLODClamp = 0.0f;
 		srvDesc.Texture2D.PlaneSlice = 0;
 
-		CD3DX12_CPU_DESCRIPTOR_HANDLE handle(descriptorHeap->GetCPUDescriptorHandleForHeapStart());
-		handle.Offset(index, device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV));
+		m_srvCpu = descriptorParam.SrvCpuHandle;
+		m_srvGpu = descriptorParam.SrvGpuHandle;
 
-		device->CreateShaderResourceView(m_texture.Get(), &srvDesc, handle);
+		descriptorParam.SrvCpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
+		descriptorParam.SrvGpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
+
+		device->CreateShaderResourceView(m_texture.Get(), &srvDesc, m_srvCpu);
 	}
 
-	int Texture::GetDescriptorHeapIndex() const
+	D3D12_CPU_DESCRIPTOR_HANDLE Texture::GetSrvCpu() const
 	{
-		return m_descriptorHeapIndex;
+		return m_srvCpu;
+	}
+
+	D3D12_GPU_DESCRIPTOR_HANDLE Texture::GetSrvGpu() const
+	{
+		return m_srvGpu;
 	}
 }

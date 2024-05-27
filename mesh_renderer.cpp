@@ -34,9 +34,7 @@ namespace udsdx
 		if (m_material != nullptr && m_material->GetMainTexture() != nullptr)
 		{
 			Texture* mainTex = m_material->GetMainTexture();
-			CD3DX12_GPU_DESCRIPTOR_HANDLE handle(param.SRVDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
-			handle.Offset(mainTex->GetDescriptorHeapIndex(), param.CbvSrvUavDescriptorSize);
-			param.CommandList->SetGraphicsRootDescriptorTable(4, handle);
+			param.CommandList->SetGraphicsRootDescriptorTable(4, mainTex->GetSrvGpu());
 		}
 
 		param.CommandList->IASetVertexBuffers(0, 1, &m_mesh->VertexBufferView());

@@ -4,6 +4,10 @@
 
 namespace udsdx
 {
+	class Scene;
+	class Camera;
+	class LightDirectional;
+
 	class ShadowMap
 	{
 	public:
@@ -12,11 +16,10 @@ namespace udsdx
 
 	public:
 		void OnResize(UINT newWidth, UINT newHeight, ID3D12Device* device);
-		void BuildDescriptors(ID3D12Device* device, CD3DX12_CPU_DESCRIPTOR_HANDLE hCpuSrv, CD3DX12_CPU_DESCRIPTOR_HANDLE hCpuDsv, CD3DX12_GPU_DESCRIPTOR_HANDLE hGpuSrv);
+		void BuildDescriptors(DescriptorParam& descriptorParam, ID3D12Device* device);
 		void BuildPipelineState(ID3D12Device* pDevice, ID3D12RootSignature* pRootSignature);
 
-		void Begin(ID3D12GraphicsCommandList* pCommandList);
-		void End(ID3D12GraphicsCommandList* pCommandList);
+		void Pass(RenderParam& param, Scene* target, Camera* camera, LightDirectional* light);
 
 	public:
 		D3D12_GPU_DESCRIPTOR_HANDLE GetSrvGpu() const;

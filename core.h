@@ -9,6 +9,7 @@ namespace udsdx
 	class TimeMeasure;
 	class Scene;
 	class ShadowMap;
+	class ScreenSpaceAO;
 
 	class Core
 	{
@@ -199,6 +200,7 @@ namespace udsdx
 		TracyD3D12Ctx m_tracyQueueCtx;
 
 		std::unique_ptr<ShadowMap> m_shadowMap;
+		std::unique_ptr<ScreenSpaceAO> m_screenSpaceAO;
 	};
 }
 

@@ -2,6 +2,7 @@
 #include "scene.h"
 #include "light_directional.h"
 #include "shadow_map.h"
+#include "screen_space_ao.h"
 #include "mesh_renderer.h"
 #include "frame_resource.h"
 #include "scene_object.h"
@@ -37,13 +38,22 @@ namespace udsdx
 
 	void Scene::Render(RenderParam& param)
 	{ ZoneScoped;
+	
+		// Shadow map rendering pass
+		if (!m_renderLightQueue.empty() && !m_renderCameraQueue.empty())
+		{
+			PassRenderShadow(param, m_renderCameraQueue.front(), m_renderLightQueue[0]);
+		}
 
 		for (const auto& camera : m_renderCameraQueue)
 		{
-			if (!m_renderLightQueue.empty())
-			{
-				PassRenderShadow(param, camera, m_renderLightQueue[0]);
-			}
+			// Normal map rendering pass
+			PassRenderNormal(param, camera);
+
+			// SSAO map rendering pass
+			PassRenderSSAO(param);
+
+			// Main pass
 			PassRenderMain(param, camera);
 		}
 	}
@@ -79,53 +89,23 @@ namespace udsdx
 
 	void Scene::PassRenderShadow(RenderParam& param, Camera* camera, LightDirectional* light)
 	{ ZoneScoped;
-		param.RenderShadowMap->Begin(param.CommandList);
+		param.RenderShadowMap->Pass(param, this, camera, light);
+	}
 
-		Vector3 lightDirection = light->GetLightDirection();
-		Matrix4x4 shadowTransform;
+	void Scene::PassRenderNormal(RenderParam& param, Camera* camera)
+	{ ZoneScoped;
+		param.RenderScreenSpaceAO->PassNormal(param, this, camera);
+	}
 
-		Vector3 cameraPos = Vector3::Transform(Vector3::Zero, camera->GetSceneObject()->GetTransform()->GetWorldSRTMatrix());
-
-	    XMMATRIX lightWorld = XMMatrixTranslation(-cameraPos.x, -cameraPos.y, -cameraPos.z);
-		XMMATRIX lightView = XMMatrixLookAtLH(XMVectorZero(), XMLoadFloat3(&lightDirection), XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f));
-		XMMATRIX lightProj = XMMatrixOrthographicLH(100.0f, 100.0f, -100.0f, 100.0f);
-
-		XMMATRIX S = lightWorld * lightView * lightProj;
-		XMStoreFloat4x4(&shadowTransform, S);
-
-		CameraConstants cameraConstants;
-		cameraConstants.ViewProj = shadowTransform.Transpose();
-		cameraConstants.CameraPosition = Vector4::UnitW;
-
-		param.CommandList->SetGraphicsRoot32BitConstants(1, sizeof(CameraConstants) / 4, &cameraConstants, 0);
-		param.CommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-		for (const auto& object : m_renderObjectQueue)
-		{
-			object->Render(param);
-		}
-
-		XMMATRIX T(
-			0.5f, 0.0f, 0.0f, 0.0f,
-			0.0f, -0.5f, 0.0f, 0.0f,
-			0.0f, 0.0f, 1.0f, 0.0f,
-			0.5f, 0.5f, 0.0f, 1.0f);
-
-		XMMATRIX SP = S * T;
-		XMStoreFloat4x4(&shadowTransform, SP);
-
-		ShadowConstants shadowConstants;
-		shadowConstants.LightViewProj = shadowTransform.Transpose();
-		shadowConstants.LightDirection = lightDirection;
-		param.CommandList->SetGraphicsRoot32BitConstants(2, sizeof(ShadowConstants) / 4, &shadowConstants, 0);
-
-		param.RenderShadowMap->End(param.CommandList);
+	void Scene::PassRenderSSAO(RenderParam& param)
+	{ ZoneScoped;
+		param.RenderScreenSpaceAO->PassSSAO(param);
 	}
 
 	void Scene::PassRenderMain(RenderParam& param, Camera* camera)
 	{ ZoneScoped;
 
-		Color clearColor = Color(0.1f, 0.1f, 0.1f, 1.0f);
+		Color clearColor = Color(1.0f, 1.0f, 1.0f, 1.0f);
 
 		// Clear the back buffer and depth buffer.
 		param.CommandList->ClearRenderTargetView(
@@ -162,10 +142,21 @@ namespace udsdx
 		param.CommandList->SetGraphicsRoot32BitConstants(1, sizeof(CameraConstants) / 4, &cameraConstants, 0);
 		param.CommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
+		RenderSceneObjects(param, [](RenderParam& p, MeshRenderer* o) {
+			p.CommandList->SetPipelineState(o->GetShader()->PipelineState());
+		});
+	}
+
+	void Scene::RenderSceneObjects(RenderParam& param, std::function<void(RenderParam&, MeshRenderer*)> preProcessor)
+	{
 		for (const auto& object : m_renderObjectQueue)
 		{
-			param.CommandList->SetPipelineState(object->GetShader()->PipelineState());
+			if (preProcessor != nullptr)
+			{
+				preProcessor(param, object);
+			}
 			object->Render(param);
 		}
+	
 	}
 }
