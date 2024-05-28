@@ -51,7 +51,6 @@ namespace udsdx
 		m_mainWndCaption = buffer;
 
 		InitializeDirect3D();
-		OnResizeWindow(m_clientWidth, m_clientHeight);
 
 		// Reset the command list to prep for initialization commands.
 		ThrowIfFailed(m_commandList->Reset(m_directCmdListAlloc.Get(), nullptr));
@@ -67,6 +66,13 @@ namespace udsdx
 
 		BuildDescriptorHeaps();
 		BuildConstantBuffers();
+
+		ExecuteCommandList();
+
+		OnResizeWindow(m_clientWidth, m_clientHeight);
+
+		// Reset the command list to prep for initialization commands.
+		ThrowIfFailed(m_commandList->Reset(m_directCmdListAlloc.Get(), nullptr));
 
 		m_fenceEvent = ::CreateEventEx(nullptr, false, false, EVENT_ALL_ACCESS);
 
@@ -274,7 +280,7 @@ namespace udsdx
 		DescriptorParam descriptorParam{
 			.CbvCpuHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_cbvHeap->GetCPUDescriptorHandleForHeapStart()),
 			.SrvCpuHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_srvHeap->GetCPUDescriptorHandleForHeapStart()),
-			.RtvCpuHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_rtvHeap->GetCPUDescriptorHandleForHeapStart()),
+			.RtvCpuHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_rtvHeap->GetCPUDescriptorHandleForHeapStart(), SwapChainBufferCount, m_rtvDescriptorSize),
 			.DsvCpuHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_dsvHeap->GetCPUDescriptorHandleForHeapStart(), 1, m_dsvDescriptorSize),
 
 			.CbvGpuHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_cbvHeap->GetGPUDescriptorHandleForHeapStart()),

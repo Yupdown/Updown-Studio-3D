@@ -284,7 +284,8 @@ namespace udsdx
 
 		float clearValue[] = { 0.0f, 0.0f, 1.0f, 0.0f };
 		pCommandList->ClearRenderTargetView(m_normalMapCpuRtv, clearValue, 0, nullptr);
-		pCommandList->OMSetRenderTargets(1, &m_normalMapCpuRtv, true, nullptr);
+		pCommandList->ClearDepthStencilView(param.DepthStencilView, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+		pCommandList->OMSetRenderTargets(1, &m_normalMapCpuRtv, true, &param.DepthStencilView);
 
 		pCommandList->SetGraphicsRootSignature(param.RootSignature);
 		pCommandList->SetPipelineState(m_normalPSO.Get());
@@ -302,6 +303,7 @@ namespace udsdx
 
 	void ScreenSpaceAO::PassSSAO(RenderParam& param)
 	{
+		return;
 		auto pCommandList = param.CommandList;
 
 		pCommandList->RSSetViewports(1, &m_viewport);
@@ -524,7 +526,7 @@ namespace udsdx
 				IID_PPV_ARGS(m_normalPSO.GetAddressOf())
 			));
 		}
-
+		return;
 		{
 			// Build the SSAO PSO
 			auto vsByteCode = d3dUtil::CompileShaderFromMemory(g_psoSSAOResource, nullptr, "VS", "vs_5_0");
