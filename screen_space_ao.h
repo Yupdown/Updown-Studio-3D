@@ -1,6 +1,7 @@
 #pragma once
 
 #include "pch.h"
+#include "frame_resource.h"
 
 namespace udsdx
 {
@@ -22,6 +23,8 @@ namespace udsdx
 		ScreenSpaceAO& operator=(const ScreenSpaceAO& rhs) = delete;
 		~ScreenSpaceAO() = default;
 
+		void UpdateSSAOConstants(RenderParam& param, Camera* pCamera);
+
 		void PassNormal(RenderParam& param, Scene* target, Camera* camera);
 		void PassSSAO(RenderParam& param);
 
@@ -31,6 +34,7 @@ namespace udsdx
 		void RebuildDescriptors(ID3D12Resource* depthStencilBuffer);
 		void BuildRootSignature(ID3D12Device* pDevice);
 		void BuildPipelineState(ID3D12Device* pDevice, ID3D12RootSignature* pRootSignature);
+		void BuildOffsetVectors();
 
 	private:
 		ID3D12Device* m_device;
@@ -59,5 +63,11 @@ namespace udsdx
 
 		D3D12_VIEWPORT m_viewport;
 		D3D12_RECT m_scissorRect;
+
+		XMFLOAT4 m_offsets[14];
+
+		// this should be many as the number of frame resources
+		// but for now, it's just one (temporary)
+		std::unique_ptr<UploadBuffer<SSAOConstants>> m_ssaoCB = nullptr;
 	};
 }

@@ -183,7 +183,9 @@ namespace udsdx
 
 		pCommandList->SetPipelineState(m_shadowPso.Get());
 
-		//
+		// Bind the current frame's constant buffer to the pipeline.
+		pCommandList->SetGraphicsRootConstantBufferView(3, param.ConstantBufferView);
+		pCommandList->SetGraphicsRootDescriptorTable(5, m_srvGpu);
 
 		Vector3 lightDirection = light->GetLightDirection();
 		Matrix4x4 shadowTransform;

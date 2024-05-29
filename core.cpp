@@ -328,11 +328,11 @@ namespace udsdx
 		CD3DX12_DESCRIPTOR_RANGE texTable;
 		texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
 		CD3DX12_DESCRIPTOR_RANGE shadowMapTable;
-		shadowMapTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
+		shadowMapTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 1);
 
-		slotRootParameter[0].InitAsConstants(sizeof(ObjectConstants) / 4, 0, 0);
-		slotRootParameter[1].InitAsConstants(sizeof(CameraConstants) / 4, 1, 0);
-		slotRootParameter[2].InitAsConstants(sizeof(ShadowConstants) / 4, 2, 0);
+		slotRootParameter[0].InitAsConstants(sizeof(ObjectConstants) / 4, 0);
+		slotRootParameter[1].InitAsConstants(sizeof(CameraConstants) / 4, 1);
+		slotRootParameter[2].InitAsConstants(sizeof(ShadowConstants) / 4, 2);
 		slotRootParameter[3].InitAsConstantBufferView(3);
 		slotRootParameter[4].InitAsDescriptorTable(1, &texTable);
 		slotRootParameter[5].InitAsDescriptorTable(1, &shadowMapTable);
@@ -548,8 +548,12 @@ namespace udsdx
 			OnResizeWindow(m_clientWidth, m_clientHeight);
 		}
 
+		auto frameResource = CurrentFrameResource();
+		auto cmdListAlloc = frameResource->GetCommandListAllocator();
+		auto objectCB = frameResource->GetObjectCB();
+
 		// Ready all the resources for rendering.
-		RenderParam param {
+		RenderParam param{
 			.Device = m_d3dDevice.Get(),
 			.CommandList = m_commandList.Get(),
 			.RootSignature = m_rootSignature.Get(),
@@ -561,15 +565,15 @@ namespace udsdx
 			.Viewport = m_screenViewport,
 			.ScissorRect = m_scissorRect,
 
+			.ConstantBufferView = objectCB->Resource()->GetGPUVirtualAddress(),
 			.DepthStencilView = DepthStencilView(),
 			.RenderTargetView = CurrentBackBufferView(),
 
 			.RenderShadowMap = m_shadowMap.get(),
-			.RenderScreenSpaceAO = m_screenSpaceAO.get()
-		};
+			.RenderScreenSpaceAO = m_screenSpaceAO.get(),
 
-		auto frameResource = CurrentFrameResource();
-		auto cmdListAlloc = frameResource->GetCommandListAllocator();
+			.TracyQueueContext = &m_tracyQueueCtx
+		};
 
 		ThrowIfFailed(cmdListAlloc->Reset());
 		// Resets a command list back to its initial state as if a new command list was just created.
@@ -581,11 +585,6 @@ namespace udsdx
 		m_commandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
 		m_commandList->SetGraphicsRootSignature(m_rootSignature.Get());
 
-		// Bind the current frame's constant buffer to the pipeline.
-		auto objectCB = frameResource->GetObjectCB();
-		m_commandList->SetGraphicsRootConstantBufferView(3, objectCB->Resource()->GetGPUVirtualAddress());
-		m_commandList->SetGraphicsRootDescriptorTable(5, m_shadowMap->GetSrvGpu());
-
 		// Indicate a state transition on the resource usage.
 		// Transition the back buffer to make it ready for writing.
 		param.CommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
@@ -596,10 +595,8 @@ namespace udsdx
 			D3D12_RESOURCE_STATE_RENDER_TARGET
 		));
 
-		{ TracyD3D12Zone(m_tracyQueueCtx, m_commandList.Get(), "Draw Calls");
-			// Draw the scene objects. 
-			m_scene->Render(param);
-		}
+		// Draw the scene objects. 
+		m_scene->Render(param);
 
 		// indicate a state transition on the resource usage.
 		// Transition the back buffer to make it ready for presentation. (Reading memory)

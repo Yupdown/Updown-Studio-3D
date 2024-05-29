@@ -21,6 +21,18 @@ namespace udsdx
 		Vector3 LightDirection = Vector3::Zero;
 	};
 
+	struct SSAOConstants
+	{
+		Matrix4x4 Proj = Matrix4x4::Identity;
+		Matrix4x4 InvProj = Matrix4x4::Identity;
+		Matrix4x4 ProjTex = Matrix4x4::Identity;
+		Vector4 OffsetVectors[14];
+		float OcclusionRadius = 0.5f;
+		float OcclusionFadeStart = 0.2f;
+		float OcclusionFadeEnd = 1.0f;
+		float SurfaceEpsilon = 0.05f;
+	};
+
 	struct PassConstants
 	{
 		float TotalTime = 0.0f;

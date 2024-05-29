@@ -11,6 +11,7 @@
 #include "camera.h"
 #include "shader.h"
 #include "core.h"
+#include "input.h"
 
 namespace udsdx
 {
@@ -51,7 +52,7 @@ namespace udsdx
 			PassRenderNormal(param, camera);
 
 			// SSAO map rendering pass
-			PassRenderSSAO(param);
+			PassRenderSSAO(param, camera);
 
 			// Main pass
 			PassRenderMain(param, camera);
@@ -88,23 +89,31 @@ namespace udsdx
 	}
 
 	void Scene::PassRenderShadow(RenderParam& param, Camera* camera, LightDirectional* light)
-	{ ZoneScoped;
+	{
+		ZoneScopedN("Shadow Render Pass");
+		TracyD3D12Zone(*param.TracyQueueContext, param.CommandList, "Shadow Render Pass");
 		param.RenderShadowMap->Pass(param, this, camera, light);
 	}
 
 	void Scene::PassRenderNormal(RenderParam& param, Camera* camera)
-	{ ZoneScoped;
+	{
+		ZoneScopedN("Normal / Depth Render Pass");
+		TracyD3D12Zone(*param.TracyQueueContext, param.CommandList, "Normal / Depth Render Pass");
 		param.RenderScreenSpaceAO->PassNormal(param, this, camera);
 	}
 
-	void Scene::PassRenderSSAO(RenderParam& param)
-	{ ZoneScoped;
+	void Scene::PassRenderSSAO(RenderParam& param, Camera* camera)
+	{
+		ZoneScopedN("SSAO Render Pass");
+		TracyD3D12Zone(*param.TracyQueueContext, param.CommandList, "SSAO Render Pass");
+		param.RenderScreenSpaceAO->UpdateSSAOConstants(param, camera);
 		param.RenderScreenSpaceAO->PassSSAO(param);
 	}
 
 	void Scene::PassRenderMain(RenderParam& param, Camera* camera)
-	{ ZoneScoped;
-
+	{
+		ZoneScopedN("Main Pass");
+		TracyD3D12Zone(*param.TracyQueueContext, param.CommandList, "Main Pass");
 		Color clearColor = Color(1.0f, 1.0f, 1.0f, 1.0f);
 
 		// Clear the back buffer and depth buffer.
@@ -122,6 +131,8 @@ namespace udsdx
 			0,
 			nullptr
 		);
+
+		param.CommandList->SetGraphicsRootSignature(param.RootSignature);
 
 		param.CommandList->RSSetViewports(1, &param.Viewport);
 		param.CommandList->RSSetScissorRects(1, &param.ScissorRect);
