@@ -1,6 +1,7 @@
 #pragma once
 
 #include "pch.h"
+#include "frame_resource.h"
 
 namespace udsdx
 {
@@ -39,5 +40,7 @@ namespace udsdx
 
 		ComPtr<ID3D12Resource> m_shadowMap;
 		ComPtr<ID3D12PipelineState> m_shadowPso;
+
+		std::array<std::unique_ptr<UploadBuffer<ShadowConstants>>, FrameResourceCount> m_constantBuffers;
 	};
 }

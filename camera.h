@@ -2,6 +2,7 @@
 
 #include "pch.h"
 #include "component.h"
+#include "frame_resource.h"
 
 namespace udsdx
 {
@@ -19,7 +20,12 @@ namespace udsdx
 		virtual Matrix4x4 GetViewMatrix() const;
 		virtual Matrix4x4 GetProjMatrix(float aspect) const = 0;
 
+		void SetClearColor(const Color& color);
+		Color GetClearColor() const;
+
 	protected:
+		std::array<std::unique_ptr<UploadBuffer<CameraConstants>>, FrameResourceCount> m_constantBuffers;
+
 		Color m_clearColor = Color(0.0f, 0.0f, 0.0f, 1.0f);
 	};
 

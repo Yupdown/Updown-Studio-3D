@@ -66,8 +66,6 @@ namespace udsdx
 
 		XMFLOAT4 m_offsets[14];
 
-		// this should be many as the number of frame resources
-		// but for now, it's just one (temporary)
-		std::unique_ptr<UploadBuffer<SSAOConstants>> m_ssaoCB = nullptr;
+		std::array<std::unique_ptr<UploadBuffer<SSAOConstants>>, FrameResourceCount> m_constantBuffers;
 	};
 }

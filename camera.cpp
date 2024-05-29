@@ -8,6 +8,7 @@ namespace udsdx
 {
 	Camera::Camera(const std::shared_ptr<SceneObject>& object) : Component(object)
 	{
+
 	}
 
 	void Camera::Update(const Time& time, Scene& scene)
@@ -24,6 +25,16 @@ namespace udsdx
 		Matrix4x4 m;
 		XMStoreFloat4x4(&m, XMMatrixLookAtLH(eye, at, up));
 		return m;
+	}
+
+	void Camera::SetClearColor(const Color& color)
+	{
+		m_clearColor = color;
+	}
+
+	Color Camera::GetClearColor() const
+	{
+		return m_clearColor;
 	}
 
 	CameraPerspective::CameraPerspective(const std::shared_ptr<SceneObject>& object) : Camera(object)

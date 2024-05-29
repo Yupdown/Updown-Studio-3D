@@ -114,7 +114,7 @@ namespace udsdx
 	{
 		ZoneScopedN("Main Pass");
 		TracyD3D12Zone(*param.TracyQueueContext, param.CommandList, "Main Pass");
-		Color clearColor = Color(1.0f, 1.0f, 1.0f, 1.0f);
+		Color clearColor = camera->GetClearColor();
 
 		// Clear the back buffer and depth buffer.
 		param.CommandList->ClearRenderTargetView(
@@ -142,10 +142,10 @@ namespace udsdx
 
 		Matrix4x4 viewMat = camera->GetViewMatrix();
 		Matrix4x4 projMat = camera->GetProjMatrix(param.AspectRatio);
-		Matrix4x4 viewProjMat = viewMat * projMat;
 
 		CameraConstants cameraConstants;
-		cameraConstants.ViewProj = viewProjMat.Transpose();
+		cameraConstants.View = viewMat.Transpose();
+		cameraConstants.Proj = projMat.Transpose();
 
 		Matrix4x4 worldMat = camera->GetSceneObject()->GetTransform()->GetWorldSRTMatrix();
 		cameraConstants.CameraPosition = Vector4::Transform(Vector4::UnitW, worldMat);
@@ -168,6 +168,5 @@ namespace udsdx
 			}
 			object->Render(param);
 		}
-	
 	}
 }

@@ -332,7 +332,7 @@ namespace udsdx
 
 		slotRootParameter[0].InitAsConstants(sizeof(ObjectConstants) / 4, 0);
 		slotRootParameter[1].InitAsConstants(sizeof(CameraConstants) / 4, 1);
-		slotRootParameter[2].InitAsConstants(sizeof(ShadowConstants) / 4, 2);
+		slotRootParameter[2].InitAsConstantBufferView(2);
 		slotRootParameter[3].InitAsConstantBufferView(3);
 		slotRootParameter[4].InitAsDescriptorTable(1, &texTable);
 		slotRootParameter[5].InitAsDescriptorTable(1, &shadowMapTable);
@@ -560,7 +560,7 @@ namespace udsdx
 			.SRVDescriptorHeap = m_srvHeap.Get(),
 
 			.AspectRatio = static_cast<float>(m_clientWidth) / m_clientHeight,
-			.CbvSrvUavDescriptorSize = m_cbvSrvUavDescriptorSize,
+			.FrameResourceIndex = m_currFrameResourceIndex,
 
 			.Viewport = m_screenViewport,
 			.ScissorRect = m_scissorRect,

@@ -32,7 +32,7 @@ namespace udsdx
 		ID3D12DescriptorHeap* SRVDescriptorHeap;
 
 		float AspectRatio;
-		UINT CbvSrvUavDescriptorSize;
+		int FrameResourceIndex;
 
 		const D3D12_VIEWPORT& Viewport;
 		const D3D12_RECT& ScissorRect;
@@ -61,4 +61,7 @@ namespace udsdx
 		UINT RtvDescriptorSize;
 		UINT DsvDescriptorSize;
 	};
+
+	static constexpr int FrameResourceCount = 3;
+	static constexpr int SwapChainBufferCount = 2;
 }

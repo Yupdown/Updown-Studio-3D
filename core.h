@@ -154,7 +154,6 @@ namespace udsdx
 		// A collection of commands to be appended to a command queue
 		ComPtr<ID3D12GraphicsCommandList> m_commandList;
 
-		static constexpr int FrameResourceCount = 3;
 		// Frame Resources for parameters of each frame
 		// Each frame resource contains a command allocator and
 		// * Constant Buffer (Per each global pass)
@@ -162,7 +161,6 @@ namespace udsdx
 		std::array<std::unique_ptr<FrameResource>, FrameResourceCount> m_frameResources;
 		int m_currFrameResourceIndex = 0;
 
-		static constexpr int SwapChainBufferCount = 2;
 		// Swap Chain Buffers
 		// Prepared for the next frame and presented to the screen
 		std::array<ComPtr<ID3D12Resource>, SwapChainBufferCount> m_swapChainBuffers;
