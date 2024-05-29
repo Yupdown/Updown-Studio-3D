@@ -27,6 +27,7 @@ namespace udsdx
 
 		void PassNormal(RenderParam& param, Scene* target, Camera* camera);
 		void PassSSAO(RenderParam& param);
+		void PassBlur(RenderParam& param);
 
 		void OnResize(UINT newWidth, UINT newHeight, ID3D12Device* device);
 		void BuildResources();
@@ -43,16 +44,23 @@ namespace udsdx
 		UINT m_height;
 
 		ComPtr<ID3D12RootSignature> m_ssaoRootSignature;
+		ComPtr< ID3D12RootSignature> m_blurRootSignature;
 
 		ComPtr<ID3D12PipelineState> m_normalPSO;
 		ComPtr<ID3D12PipelineState> m_ssaoPSO;
+		ComPtr<ID3D12PipelineState> m_blurPSO;
 
 		ComPtr<ID3D12Resource> m_ambientMap;
+		ComPtr<ID3D12Resource> m_blurMap;
 		ComPtr<ID3D12Resource> m_normalMap;
 		
 		CD3DX12_CPU_DESCRIPTOR_HANDLE m_ambientMapCpuSrv;
 		CD3DX12_GPU_DESCRIPTOR_HANDLE m_ambientMapGpuSrv;
 		CD3DX12_CPU_DESCRIPTOR_HANDLE m_ambientMapCpuRtv;
+
+		CD3DX12_CPU_DESCRIPTOR_HANDLE m_blurMapCpuSrv;
+		CD3DX12_GPU_DESCRIPTOR_HANDLE m_blurMapGpuSrv;
+		CD3DX12_CPU_DESCRIPTOR_HANDLE m_blurMapCpuRtv;
 
 		CD3DX12_CPU_DESCRIPTOR_HANDLE m_normalMapCpuSrv;
 		CD3DX12_GPU_DESCRIPTOR_HANDLE m_normalMapGpuSrv;

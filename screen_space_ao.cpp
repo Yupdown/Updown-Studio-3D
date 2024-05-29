@@ -35,7 +35,7 @@ namespace udsdx
 		struct VertexOut
 		{
 			float4 PosH : SV_POSITION;
-			float2 Tex : TEXCOORD;
+			float2 TexC : TEXCOORD;
 			float3 Normal : NORMAL;
 			float3 WorldPos : POSITION;
 		};
@@ -46,7 +46,7 @@ namespace udsdx
 
 			float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);
 			vout.PosH = mul(mul(posW, gView), gProj);
-			vout.Tex = vin.Tex;
+			vout.TexC = vin.Tex;
 			vout.Normal = mul(vin.Normal, (float3x3)gWorld);
 			vout.WorldPos = posW.xyz;
 
@@ -55,6 +55,9 @@ namespace udsdx
 
 		float4 PS(VertexOut pin) : SV_Target
 		{
+			float alpha = gMainTex.Sample(gSampler, pin.TexC).a;
+			clip(alpha - 0.1f);
+
 			pin.Normal = normalize(pin.Normal);
 			float3 N = mul(pin.Normal, (float3x3)gView);
 			N = normalize(N);
@@ -199,6 +202,113 @@ namespace udsdx
 		}
 	)";
 
+	constexpr char g_psoBlurResource[] = R"(
+		cbuffer cbBlur : register(b0)
+		{
+			bool gOrientation;
+		};
+
+		Texture2D gSrcTex : register(t0);
+		Texture2D gNormalMap : register(t1);
+		Texture2D gDepthMap : register(t2);
+
+		SamplerState gsamPointClamp : register(s0);
+		SamplerState gsamLinearClamp : register(s1);
+		SamplerState gsamDepthMap : register(s2);
+		SamplerState gsamLinearWrap : register(s3);
+ 
+		static const float2 gTexCoords[6] =
+		{
+			float2(0.0f, 1.0f),
+			float2(0.0f, 0.0f),
+			float2(1.0f, 0.0f),
+			float2(0.0f, 1.0f),
+			float2(1.0f, 0.0f),
+			float2(1.0f, 1.0f)
+		};
+
+		static const int gBlurRadius = 5;
+		static const float gBlurWeights[11] = 
+		{
+			0.0221905485f,
+			0.0455890037f,
+			0.0798114091f,
+			0.119064637f,
+			0.151360810f,
+			0.163967222f,
+			0.151360810f,
+			0.119064637f,
+			0.0798114091f,
+			0.0455890037f,
+			0.0221905485f
+		};
+
+		struct VertexOut
+		{
+			float4 PosH : SV_POSITION;
+			float2 TexC : TEXCOORD;
+		};
+
+		VertexOut VS(uint vid : SV_VertexID)
+		{
+			VertexOut vout;
+
+			vout.TexC = gTexCoords[vid];
+
+			// Quad covering screen in NDC space.
+			vout.PosH = float4(2.0f*vout.TexC.x - 1.0f, 1.0f - 2.0f*vout.TexC.y, 0.0f, 1.0f);
+
+			return vout;
+		}
+
+		float4 PS(VertexOut pin) : SV_Target
+		{
+			float2 texOffset;
+
+			uint width, height, numMips;
+			gSrcTex.GetDimensions(0, width, height, numMips);
+
+			if (gOrientation)
+			{
+				texOffset = float2(0.0f, 1.0f) / float(height);
+			}
+			else
+			{
+				texOffset = float2(1.0f, 0.0f) / float(width);
+			}
+
+			float4 color = gBlurWeights[gBlurRadius] * gSrcTex.Sample(gsamPointClamp, pin.TexC);
+			float weightSum = gBlurWeights[gBlurRadius];
+
+			float3 normal = gNormalMap.Sample(gsamPointClamp, pin.TexC).xyz;
+			float depth = gDepthMap.Sample(gsamPointClamp, pin.TexC).r;
+
+			for (int i = -gBlurRadius; i <= gBlurRadius; ++i)
+			{
+				if (i == 0)
+				{
+					continue;
+				}
+
+				float2 offset = float2(i, i) * texOffset;
+				float4 sample = gSrcTex.Sample(gsamPointClamp, pin.TexC + offset);
+
+				float3 sampleNormal = gNormalMap.Sample(gsamPointClamp, pin.TexC + offset).xyz;
+				float sampleDepth = gDepthMap.Sample(gsamPointClamp, pin.TexC + offset).r;
+
+				float weight = gBlurWeights[gBlurRadius + i];
+
+				if (dot(normal, sampleNormal) > 0.8f && abs(depth - sampleDepth) < 0.1f)
+				{
+					color += weight * sample;
+					weightSum += weight;
+				}
+			}
+
+			return color / weightSum;
+		}
+	)";
+
 	ScreenSpaceAO::ScreenSpaceAO(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, UINT width, UINT height)
 	{
 		m_device = device;
@@ -236,9 +346,9 @@ namespace udsdx
 		memcpy(ssaoCB.OffsetVectors, m_offsets, sizeof(m_offsets));
 
 		// Coordinates given in view space.
-		ssaoCB.OcclusionRadius = 0.8f;
+		ssaoCB.OcclusionRadius = 1.0f;
 		ssaoCB.OcclusionFadeStart = 0.2f;
-		ssaoCB.OcclusionFadeEnd = 0.5f;
+		ssaoCB.OcclusionFadeEnd = 1.0f;
 		ssaoCB.SurfaceEpsilon = 0.05f;
 
 		m_constantBuffers[param.FrameResourceIndex]->CopyData(0, ssaoCB);
@@ -304,8 +414,6 @@ namespace udsdx
 				D3D12_RESOURCE_STATE_GENERIC_READ,
 				D3D12_RESOURCE_STATE_RENDER_TARGET));
 
-		float clearValue[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-		pCommandList->ClearRenderTargetView(m_ambientMapCpuRtv, clearValue, 0, nullptr);
 		pCommandList->OMSetRenderTargets(1, &m_ambientMapCpuRtv, true, nullptr);
 
 		pCommandList->SetGraphicsRootSignature(m_ssaoRootSignature.Get());
@@ -322,6 +430,60 @@ namespace udsdx
 		pCommandList->DrawInstanced(6, 1, 0, 0);
 
 		// Transition the normal map and ambient occlusion map to generic read state
+		pCommandList->ResourceBarrier(1,
+			&CD3DX12_RESOURCE_BARRIER::Transition(
+				m_ambientMap.Get(),
+				D3D12_RESOURCE_STATE_RENDER_TARGET,
+				D3D12_RESOURCE_STATE_GENERIC_READ));
+	}
+
+	void ScreenSpaceAO::PassBlur(RenderParam& param)
+	{
+		auto pCommandList = param.CommandList;
+
+		pCommandList->RSSetViewports(1, &m_viewport);
+		pCommandList->RSSetScissorRects(1, &m_scissorRect);
+
+		pCommandList->SetGraphicsRootSignature(m_blurRootSignature.Get());
+		pCommandList->SetPipelineState(m_blurPSO.Get());
+
+		pCommandList->IASetVertexBuffers(0, 0, nullptr);
+		pCommandList->IASetIndexBuffer(nullptr);
+
+		pCommandList->ResourceBarrier(1,
+			&CD3DX12_RESOURCE_BARRIER::Transition(
+				m_blurMap.Get(),
+				D3D12_RESOURCE_STATE_GENERIC_READ,
+				D3D12_RESOURCE_STATE_RENDER_TARGET));
+
+		pCommandList->OMSetRenderTargets(1, &m_blurMapCpuRtv, true, nullptr);
+
+		pCommandList->SetGraphicsRoot32BitConstant(0, 0, 0);
+		pCommandList->SetGraphicsRootDescriptorTable(1, m_ambientMapGpuSrv);
+		pCommandList->SetGraphicsRootDescriptorTable(2, m_normalMapGpuSrv);
+
+		pCommandList->DrawInstanced(6, 1, 0, 0);
+
+		pCommandList->ResourceBarrier(1,
+			&CD3DX12_RESOURCE_BARRIER::Transition(
+				m_blurMap.Get(),
+				D3D12_RESOURCE_STATE_RENDER_TARGET,
+				D3D12_RESOURCE_STATE_GENERIC_READ));
+
+		pCommandList->ResourceBarrier(1,
+			&CD3DX12_RESOURCE_BARRIER::Transition(
+				m_ambientMap.Get(),
+				D3D12_RESOURCE_STATE_GENERIC_READ,
+				D3D12_RESOURCE_STATE_RENDER_TARGET));
+
+		pCommandList->OMSetRenderTargets(1, &m_ambientMapCpuRtv, true, nullptr);
+
+		pCommandList->SetGraphicsRoot32BitConstant(0, 1, 0);
+		pCommandList->SetGraphicsRootDescriptorTable(1, m_blurMapGpuSrv);
+		pCommandList->SetGraphicsRootDescriptorTable(2, m_normalMapGpuSrv);
+
+		pCommandList->DrawInstanced(6, 1, 0, 0);
+
 		pCommandList->ResourceBarrier(1,
 			&CD3DX12_RESOURCE_BARRIER::Transition(
 				m_ambientMap.Get(),
@@ -392,20 +554,31 @@ namespace udsdx
 			D3D12_RESOURCE_STATE_GENERIC_READ,
 			&clearValue,
 			IID_PPV_ARGS(m_ambientMap.GetAddressOf())));
+
+		ThrowIfFailed(m_device->CreateCommittedResource(
+			&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+			D3D12_HEAP_FLAG_NONE,
+			&texDesc,
+			D3D12_RESOURCE_STATE_GENERIC_READ,
+			&clearValue,
+			IID_PPV_ARGS(m_blurMap.GetAddressOf())));
 	}
 
 	void ScreenSpaceAO::BuildDescriptors(DescriptorParam& descriptorParam, ID3D12Resource* depthStencilBuffer)
 	{
 		m_ambientMapCpuSrv = descriptorParam.SrvCpuHandle;
+		m_blurMapCpuSrv = descriptorParam.SrvCpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
 		m_normalMapCpuSrv = descriptorParam.SrvCpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
 		m_depthMapCpuSrv = descriptorParam.SrvCpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
 
 		m_ambientMapGpuSrv = descriptorParam.SrvGpuHandle;
+		m_blurMapGpuSrv = descriptorParam.SrvGpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
 		m_normalMapGpuSrv = descriptorParam.SrvGpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
 		m_depthMapGpuSrv = descriptorParam.SrvGpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
 
-		m_normalMapCpuRtv = descriptorParam.RtvCpuHandle;
-		m_ambientMapCpuRtv = descriptorParam.RtvCpuHandle.Offset(1, descriptorParam.RtvDescriptorSize);
+		m_ambientMapCpuRtv = descriptorParam.RtvCpuHandle;
+		m_blurMapCpuRtv = descriptorParam.RtvCpuHandle.Offset(1, descriptorParam.RtvDescriptorSize);
+		m_normalMapCpuRtv = descriptorParam.RtvCpuHandle.Offset(1, descriptorParam.RtvDescriptorSize);
 
 		descriptorParam.SrvCpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
 		descriptorParam.SrvGpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
@@ -430,6 +603,7 @@ namespace udsdx
 
 		srvDesc.Format = AO_FORMAT;
 		m_device->CreateShaderResourceView(m_ambientMap.Get(), &srvDesc, m_ambientMapCpuSrv);
+		m_device->CreateShaderResourceView(m_blurMap.Get(), &srvDesc, m_blurMapCpuSrv);
 
 		// Create the render target view
 		D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
@@ -441,20 +615,11 @@ namespace udsdx
 
 		rtvDesc.Format = AO_FORMAT;
 		m_device->CreateRenderTargetView(m_ambientMap.Get(), &rtvDesc, m_ambientMapCpuRtv);
+		m_device->CreateRenderTargetView(m_blurMap.Get(), &rtvDesc, m_blurMapCpuRtv);
 	}
 
 	void ScreenSpaceAO::BuildRootSignature(ID3D12Device* pDevice)
 	{
-		CD3DX12_DESCRIPTOR_RANGE texTable;
-		texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0, 0);
-
-		// Root parameter can be a table, root descriptor or root constants.
-		CD3DX12_ROOT_PARAMETER slotRootParameter[2];
-
-		// Perfomance TIP: Order from most frequent to least frequent.
-		slotRootParameter[0].InitAsConstantBufferView(0);
-		slotRootParameter[1].InitAsDescriptorTable(1, &texTable, D3D12_SHADER_VISIBILITY_PIXEL);
-
 		const CD3DX12_STATIC_SAMPLER_DESC pointClamp(
 			0, // shaderRegister
 			D3D12_FILTER_MIN_MAG_MIP_POINT, // filter
@@ -492,28 +657,77 @@ namespace udsdx
 			pointClamp, linearClamp, depthMapSam, linearWrap
 		};
 
-		// A root signature is an array of root parameters.
-		CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(2, slotRootParameter,
-			(UINT)staticSamplers.size(), staticSamplers.data(),
-			D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
-
-		// create a root signature with a single slot which points to a descriptor range consisting of a single constant buffer
-		ComPtr<ID3DBlob> serializedRootSig = nullptr;
-		ComPtr<ID3DBlob> errorBlob = nullptr;
-		HRESULT hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1,
-			serializedRootSig.GetAddressOf(), errorBlob.GetAddressOf());
-
-		if (errorBlob != nullptr)
 		{
-			::OutputDebugStringA((char*)errorBlob->GetBufferPointer());
-		}
-		ThrowIfFailed(hr);
+			CD3DX12_DESCRIPTOR_RANGE texTable;
+			texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0, 0);
 
-		ThrowIfFailed(pDevice->CreateRootSignature(
-			0,
-			serializedRootSig->GetBufferPointer(),
-			serializedRootSig->GetBufferSize(),
-			IID_PPV_ARGS(m_ssaoRootSignature.GetAddressOf())));
+			// Root parameter can be a table, root descriptor or root constants.
+			CD3DX12_ROOT_PARAMETER slotRootParameter[2];
+
+			// Perfomance TIP: Order from most frequent to least frequent.
+			slotRootParameter[0].InitAsConstantBufferView(0);
+			slotRootParameter[1].InitAsDescriptorTable(1, &texTable, D3D12_SHADER_VISIBILITY_PIXEL);
+
+			// A root signature is an array of root parameters.
+			CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(2, slotRootParameter,
+				(UINT)staticSamplers.size(), staticSamplers.data(),
+				D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+			// create a root signature with a single slot which points to a descriptor range consisting of a single constant buffer
+			ComPtr<ID3DBlob> serializedRootSig = nullptr;
+			ComPtr<ID3DBlob> errorBlob = nullptr;
+			HRESULT hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1,
+				serializedRootSig.GetAddressOf(), errorBlob.GetAddressOf());
+
+			if (errorBlob != nullptr)
+			{
+				::OutputDebugStringA((char*)errorBlob->GetBufferPointer());
+			}
+			ThrowIfFailed(hr);
+
+			ThrowIfFailed(pDevice->CreateRootSignature(
+				0,
+				serializedRootSig->GetBufferPointer(),
+				serializedRootSig->GetBufferSize(),
+				IID_PPV_ARGS(m_ssaoRootSignature.GetAddressOf())));
+		}
+
+		{
+			CD3DX12_DESCRIPTOR_RANGE texTable1;
+			texTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+
+			CD3DX12_DESCRIPTOR_RANGE texTable2;
+			texTable2.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 1);
+
+			CD3DX12_ROOT_PARAMETER slotRootParameter[3];
+
+			slotRootParameter[0].InitAsConstants(1, 0);
+			slotRootParameter[1].InitAsDescriptorTable(1, &texTable1, D3D12_SHADER_VISIBILITY_PIXEL);
+			slotRootParameter[2].InitAsDescriptorTable(1, &texTable2, D3D12_SHADER_VISIBILITY_PIXEL);
+
+			// A root signature is an array of root parameters.
+			CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(3, slotRootParameter,
+				(UINT)staticSamplers.size(), staticSamplers.data(),
+				D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+			// create a root signature with a single slot which points to a descriptor range consisting of a single constant buffer
+			ComPtr<ID3DBlob> serializedRootSig = nullptr;
+			ComPtr<ID3DBlob> errorBlob = nullptr;
+			HRESULT hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1,
+				serializedRootSig.GetAddressOf(), errorBlob.GetAddressOf());
+
+			if (errorBlob != nullptr)
+			{
+				::OutputDebugStringA((char*)errorBlob->GetBufferPointer());
+			}
+			ThrowIfFailed(hr);
+
+			ThrowIfFailed(pDevice->CreateRootSignature(
+				0,
+				serializedRootSig->GetBufferPointer(),
+				serializedRootSig->GetBufferSize(),
+				IID_PPV_ARGS(m_blurRootSignature.GetAddressOf())));
+		}
 	}
 
 	void ScreenSpaceAO::BuildPipelineState(ID3D12Device* pDevice, ID3D12RootSignature* pRootSignature)
@@ -592,6 +806,45 @@ namespace udsdx
 			ThrowIfFailed(pDevice->CreateGraphicsPipelineState(
 				&psoDesc,
 				IID_PPV_ARGS(m_ssaoPSO.GetAddressOf())
+			));
+		}
+
+		{
+			// Build the blur PSO
+			auto vsByteCode = d3dUtil::CompileShaderFromMemory(g_psoBlurResource, nullptr, "VS", "vs_5_0");
+			auto psByteCode = d3dUtil::CompileShaderFromMemory(g_psoBlurResource, nullptr, "PS", "ps_5_0");
+
+			D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc;
+			ZeroMemory(&psoDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
+
+			// There's no vertex input in this case
+			psoDesc.InputLayout.pInputElementDescs = nullptr;
+			psoDesc.InputLayout.NumElements = 0;
+			psoDesc.pRootSignature = m_blurRootSignature.Get();
+			psoDesc.VS =
+			{
+				reinterpret_cast<BYTE*>(vsByteCode->GetBufferPointer()),
+				vsByteCode->GetBufferSize()
+			};
+			psoDesc.PS =
+			{
+				reinterpret_cast<BYTE*>(psByteCode->GetBufferPointer()),
+				psByteCode->GetBufferSize()
+			};
+			psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+			psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+			psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+			psoDesc.SampleMask = UINT_MAX;
+			psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+			psoDesc.NumRenderTargets = 1;
+			psoDesc.SampleDesc.Count = 1;
+			psoDesc.SampleDesc.Quality = 0;
+			psoDesc.RTVFormats[0] = AO_FORMAT;
+			psoDesc.DSVFormat = DXGI_FORMAT_UNKNOWN;
+
+			ThrowIfFailed(pDevice->CreateGraphicsPipelineState(
+				&psoDesc,
+				IID_PPV_ARGS(m_blurPSO.GetAddressOf())
 			));
 		}
 	}

@@ -108,6 +108,7 @@ namespace udsdx
 		TracyD3D12Zone(*param.TracyQueueContext, param.CommandList, "SSAO Render Pass");
 		param.RenderScreenSpaceAO->UpdateSSAOConstants(param, camera);
 		param.RenderScreenSpaceAO->PassSSAO(param);
+		param.RenderScreenSpaceAO->PassBlur(param);
 	}
 
 	void Scene::PassRenderMain(RenderParam& param, Camera* camera)

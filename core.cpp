@@ -229,7 +229,7 @@ namespace udsdx
 	void Core::CreateRtvAndDsvDescriptorHeaps()
 	{ ZoneScoped;
 		D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc;
-		rtvHeapDesc.NumDescriptors = SwapChainBufferCount + 2;
+		rtvHeapDesc.NumDescriptors = SwapChainBufferCount + 3;
 		rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
 		rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 		rtvHeapDesc.NodeMask = 0;
@@ -271,7 +271,7 @@ namespace udsdx
 
 		// Create SRV heap
 		D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc;
-		srvHeapDesc.NumDescriptors = static_cast<UINT>(textures.size() + 4);
+		srvHeapDesc.NumDescriptors = static_cast<UINT>(textures.size() + 5);
 		srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 		srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 		srvHeapDesc.NodeMask = 0;
