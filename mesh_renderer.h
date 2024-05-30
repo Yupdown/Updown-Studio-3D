@@ -17,7 +17,7 @@ namespace udsdx
 
 	public:
 		virtual void Update(const Time& time, Scene& scene) override;
-		virtual void Render(RenderParam& param);
+		virtual void Render(RenderParam& param, int instances = 1);
 
 	public:
 		void SetMesh(Mesh* mesh);

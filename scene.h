@@ -27,7 +27,7 @@ namespace udsdx
 		void EnqueueRenderLight(LightDirectional* light);
 		void EnqueueRenderObject(MeshRenderer* object);
 
-		void RenderSceneObjects(RenderParam& param, std::function<void(RenderParam&, MeshRenderer*)> preProcessor = nullptr);
+		void RenderSceneObjects(RenderParam& param, int instances = 1, std::function<void(RenderParam&, MeshRenderer*)> preProcessor = nullptr);
 
 	private:
 		void PassRenderShadow(RenderParam& param, Camera* camera, LightDirectional* light);

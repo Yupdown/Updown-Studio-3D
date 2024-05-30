@@ -15,12 +15,11 @@ namespace udsdx
 			float4x4 gWorld; 
 		};
 
-		cbuffer cbPerCamera : register(b1)
+		cbuffer cbPerShadow : register(b2)
 		{
-			float4x4 gView;
-			float4x4 gProj;
-			float4 gEyePosW;
-		}
+			float4x4 gLightViewProj[4];
+			float3 gDirLight;
+		};
 
 		Texture2D gMainTex : register(t0);
 		SamplerState gSampler : register(s0);
@@ -37,12 +36,12 @@ namespace udsdx
 			float2 TexC    : TEXCOORD;
 		};
 
-		VertexOut VS(VertexIn vin)
+		VertexOut VS(VertexIn vin, uint iid : SV_InstanceID)
 		{
 			VertexOut vout = (VertexOut)0.0f;
 	
 			float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);
-			vout.PosH = mul(mul(posW, gView), gProj);
+			vout.PosH = mul(posW, gLightViewProj[iid]);
 			vout.TexC = vin.TexC;
 	
 			return vout;
@@ -191,39 +190,25 @@ namespace udsdx
 		pCommandList->SetGraphicsRootConstantBufferView(3, param.ConstantBufferView);
 		pCommandList->SetGraphicsRootDescriptorTable(5, m_srvGpu);
 
-		Vector3 lightDirection = light->GetLightDirection();
-		Matrix4x4 shadowTransform;
-
-		Vector3 cameraPos = Vector3::Transform(Vector3::Zero, camera->GetSceneObject()->GetTransform()->GetWorldSRTMatrix());
-
-		XMMATRIX lightView = XMMatrixLookAtLH(cameraPos, XMLoadFloat3(&(cameraPos + lightDirection)), XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f));
-		XMMATRIX lightProj = XMMatrixOrthographicLH(100.0f, 100.0f, -100.0f, 100.0f);
-
-		CameraConstants cameraConstants;
-		XMStoreFloat4x4(&cameraConstants.View, XMMatrixTranspose(lightView));
-		XMStoreFloat4x4(&cameraConstants.Proj, XMMatrixTranspose(lightProj));
-		cameraConstants.CameraPosition = Vector4::UnitW;
-
-		XMMATRIX T(
-			0.5f, 0.0f, 0.0f, 0.0f,
-			0.0f, -0.5f, 0.0f, 0.0f,
-			0.0f, 0.0f, 1.0f, 0.0f,
-			0.5f, 0.5f, 0.0f, 1.0f);
-
-		XMMATRIX SP = lightView * lightProj * T;
-		XMStoreFloat4x4(&shadowTransform, SP);
-
 		ShadowConstants shadowConstants;
-		shadowConstants.LightViewProj = shadowTransform.Transpose();
+		Vector3 lightDirection = light->GetLightDirection();
+		Vector3 cameraPos = Vector3::Transform(Vector3::Zero, camera->GetSceneObject()->GetTransform()->GetWorldSRTMatrix());
+		XMMATRIX lightView = XMMatrixLookAtLH(cameraPos, XMLoadFloat3(&(cameraPos + lightDirection)), XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f));
+		for (int i = 0; i < 4; ++i)
+		{
+			float f = static_cast<float>(1 << i * 2) * 10.0f;
+			XMMATRIX lightProj = XMMatrixOrthographicLH(f, f, -f, f);
+			lightProj *= XMMatrixScaling(0.5f, 0.5f, 1.0f) * XMMatrixTranslation(static_cast<float>(i % 2) - 0.5f, static_cast<float>(i / 2) - 0.5f, 0.0f);
+			XMStoreFloat4x4(&shadowConstants.LightViewProj[i], XMMatrixTranspose(lightView * lightProj));
+		}
 		shadowConstants.LightDirection = lightDirection;
 
 		m_constantBuffers[param.FrameResourceIndex]->CopyData(0, shadowConstants);
 
-		param.CommandList->SetGraphicsRoot32BitConstants(1, sizeof(CameraConstants) / 4, &cameraConstants, 0);
 		param.CommandList->SetGraphicsRootConstantBufferView(2, m_constantBuffers[param.FrameResourceIndex]->Resource()->GetGPUVirtualAddress());
 		param.CommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-		target->RenderSceneObjects(param);
+		target->RenderSceneObjects(param, 4);
 
 		pCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_shadowMap.Get(),
 			D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_GENERIC_READ));

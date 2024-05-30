@@ -21,7 +21,7 @@ namespace udsdx
 		scene.EnqueueRenderObject(this);
 	}
 
-	void MeshRenderer::Render(RenderParam& param)
+	void MeshRenderer::Render(RenderParam& param, int instances)
 	{
 		Transform* transform = GetSceneObject()->GetTransform();
 		Matrix4x4 worldMat = transform->GetWorldSRTMatrix();
@@ -40,7 +40,7 @@ namespace udsdx
 		param.CommandList->IASetVertexBuffers(0, 1, &m_mesh->VertexBufferView());
 		param.CommandList->IASetIndexBuffer(&m_mesh->IndexBufferView());
 
-		param.CommandList->DrawIndexedInstanced(m_mesh->GetSubmesh("box").IndexCount, 1, 0, 0, 0);
+		param.CommandList->DrawIndexedInstanced(m_mesh->GetSubmesh("box").IndexCount, instances, 0, 0, 0);
 	}
 
 	void MeshRenderer::SetMesh(Mesh* mesh)

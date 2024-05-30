@@ -154,10 +154,10 @@ namespace udsdx
 		param.CommandList->SetGraphicsRoot32BitConstants(1, sizeof(CameraConstants) / 4, &cameraConstants, 0);
 		param.CommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-		RenderSceneObjects(param, [](RenderParam& p, MeshRenderer* o) { p.CommandList->SetPipelineState(o->GetShader()->PipelineState()); });
+		RenderSceneObjects(param, 1, [](RenderParam& p, MeshRenderer* o) { p.CommandList->SetPipelineState(o->GetShader()->PipelineState()); });
 	}
 
-	void Scene::RenderSceneObjects(RenderParam& param, std::function<void(RenderParam&, MeshRenderer*)> preProcessor)
+	void Scene::RenderSceneObjects(RenderParam& param, int instances, std::function<void(RenderParam&, MeshRenderer*)> preProcessor)
 	{
 		for (const auto& object : m_renderObjectQueue)
 		{
@@ -165,7 +165,7 @@ namespace udsdx
 			{
 				preProcessor(param, object);
 			}
-			object->Render(param);
+			object->Render(param, instances);
 		}
 	}
 }

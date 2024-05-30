@@ -376,7 +376,7 @@ namespace udsdx
 
 		param.CommandList->SetGraphicsRoot32BitConstants(1, sizeof(CameraConstants) / 4, &cameraConstants, 0);
 		pCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		target->RenderSceneObjects(param, nullptr);
+		target->RenderSceneObjects(param);
 
 		// Transition the normal map to generic read state
 		pCommandList->ResourceBarrier(1,
