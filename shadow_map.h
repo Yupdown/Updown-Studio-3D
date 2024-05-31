@@ -25,11 +25,15 @@ namespace udsdx
 	public:
 		D3D12_GPU_DESCRIPTOR_HANDLE GetSrvGpu() const;
 
+		void SetShadowRange(UINT index, float value);
+
 	protected:
 		DXGI_FORMAT m_shadowMapFormat = DXGI_FORMAT_R24G8_TYPELESS;
 
 		UINT m_mapWidth;
 		UINT m_mapHeight;
+
+		float m_shadowRanges[4] = { 20.0f, 60.0f, 240.0f, 1280.0f };
 
 		D3D12_VIEWPORT m_viewport;
 		D3D12_RECT m_scissorRect;

@@ -55,8 +55,7 @@ namespace udsdx
 		{
             float alpha = gMainTex.Sample(gSampler, pin.TexC).a;
 			clip(alpha - 0.1f);
-			clip(1.0f - abs(pin.PosC.x));
-			clip(1.0f - abs(pin.PosC.y));
+			clip(1.0f - max(abs(pin.PosC.x), abs(pin.PosC.y)));
 		}
 	)";
 
@@ -202,7 +201,7 @@ namespace udsdx
 		XMMATRIX lightView = XMMatrixLookAtLH(cameraPos, XMLoadFloat3(&(cameraPos + lightDirection)), XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f));
 		for (int i = 0; i < 4; ++i)
 		{
-			float f = static_cast<float>(1 << i) * 40.0f;
+			float f = m_shadowRanges[i];
 			XMMATRIX lightProj = XMMatrixOrthographicLH(f, f, -f * 2.0f, f * 2.0f);
 			XMMATRIX lightClip = XMMatrixScaling(0.5f, 0.5f, 1.0f) * XMMatrixTranslation(static_cast<float>(i % 2) - 0.5f, static_cast<float>(i / 2) - 0.5f, 0.0f);
 			XMMATRIX lightViewProj = lightView * lightProj;
@@ -226,5 +225,10 @@ namespace udsdx
 	D3D12_GPU_DESCRIPTOR_HANDLE ShadowMap::GetSrvGpu() const
 	{
 		return m_srvGpu;
+	}
+
+	void ShadowMap::SetShadowRange(UINT index, float value)
+	{
+		m_shadowRanges[index] = value;
 	}
 }
