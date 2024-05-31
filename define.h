@@ -62,6 +62,6 @@ namespace udsdx
 		UINT DsvDescriptorSize;
 	};
 
-	static constexpr int FrameResourceCount = 3;
+	static constexpr int FrameResourceCount = 2;
 	static constexpr int SwapChainBufferCount = 2;
 }

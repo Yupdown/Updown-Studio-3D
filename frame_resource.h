@@ -19,6 +19,8 @@ namespace udsdx
 	struct ShadowConstants
 	{
 		Matrix4x4 LightViewProj[4];
+		Matrix4x4 LightViewProjClip[4];
+		float ShadowDistance[4];
 		Vector3 LightDirection = Vector3::Zero;
 	};
 

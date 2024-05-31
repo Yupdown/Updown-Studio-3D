@@ -18,6 +18,8 @@ namespace udsdx
 		cbuffer cbPerShadow : register(b2)
 		{
 			float4x4 gLightViewProj[4];
+			float4x4 gLightViewProjClip[4];
+			float4 gShadowDistance;
 			float3 gDirLight;
 		};
 
@@ -33,7 +35,8 @@ namespace udsdx
 		struct VertexOut
 		{
 			float4 PosH    : SV_POSITION;
-			float2 TexC    : TEXCOORD;
+			float4 PosC    : POSITION;
+			float2 TexC    : TEXCOORD0;
 		};
 
 		VertexOut VS(VertexIn vin, uint iid : SV_InstanceID)
@@ -41,9 +44,10 @@ namespace udsdx
 			VertexOut vout = (VertexOut)0.0f;
 	
 			float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);
-			vout.PosH = mul(posW, gLightViewProj[iid]);
+			vout.PosH = mul(posW, gLightViewProjClip[iid]);
+			vout.PosC = mul(posW, gLightViewProj[iid]);
 			vout.TexC = vin.TexC;
-	
+
 			return vout;
 		}
 
@@ -51,6 +55,8 @@ namespace udsdx
 		{
             float alpha = gMainTex.Sample(gSampler, pin.TexC).a;
 			clip(alpha - 0.1f);
+			clip(1.0f - abs(pin.PosC.x));
+			clip(1.0f - abs(pin.PosC.y));
 		}
 	)";
 
@@ -196,10 +202,13 @@ namespace udsdx
 		XMMATRIX lightView = XMMatrixLookAtLH(cameraPos, XMLoadFloat3(&(cameraPos + lightDirection)), XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f));
 		for (int i = 0; i < 4; ++i)
 		{
-			float f = static_cast<float>(1 << i * 2) * 10.0f;
-			XMMATRIX lightProj = XMMatrixOrthographicLH(f, f, -f, f);
-			lightProj *= XMMatrixScaling(0.5f, 0.5f, 1.0f) * XMMatrixTranslation(static_cast<float>(i % 2) - 0.5f, static_cast<float>(i / 2) - 0.5f, 0.0f);
-			XMStoreFloat4x4(&shadowConstants.LightViewProj[i], XMMatrixTranspose(lightView * lightProj));
+			float f = static_cast<float>(1 << i) * 40.0f;
+			XMMATRIX lightProj = XMMatrixOrthographicLH(f, f, -f * 2.0f, f * 2.0f);
+			XMMATRIX lightClip = XMMatrixScaling(0.5f, 0.5f, 1.0f) * XMMatrixTranslation(static_cast<float>(i % 2) - 0.5f, static_cast<float>(i / 2) - 0.5f, 0.0f);
+			XMMATRIX lightViewProj = lightView * lightProj;
+			XMStoreFloat4x4(&shadowConstants.LightViewProj[i], XMMatrixTranspose(lightViewProj));
+			XMStoreFloat4x4(&shadowConstants.LightViewProjClip[i], XMMatrixTranspose(lightViewProj * lightClip));
+			shadowConstants.ShadowDistance[i] = f * 0.5f;
 		}
 		shadowConstants.LightDirection = lightDirection;
 
