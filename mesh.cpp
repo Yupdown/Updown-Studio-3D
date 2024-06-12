@@ -34,6 +34,11 @@ namespace udsdx
 		m_indexBufferUploader = nullptr;
 	}
 
+	BoundingBox Mesh::GetBounds() const
+	{
+		return m_bounds;
+	}
+
 	Mesh::Mesh(const std::vector<Vertex>& vertices, const std::vector<uint16_t> indices) : ResourceObject()
 	{
 		const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
@@ -49,6 +54,8 @@ namespace udsdx
 		m_vertexBufferByteSize = vbByteSize;
 		m_indexFormat = DXGI_FORMAT_R16_UINT;
 		m_indexBufferByteSize = ibByteSize;
+
+		BoundingBox::CreateFromPoints(m_bounds, vertices.size(), &vertices[0].position, sizeof(Vertex));
 
 		SubmeshGeometry submesh;
 		submesh.IndexCount = (UINT)indices.size();

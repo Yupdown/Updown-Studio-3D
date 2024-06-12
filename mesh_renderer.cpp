@@ -18,7 +18,15 @@ namespace udsdx
 
 	void MeshRenderer::Update(const Time& time, Scene& scene)
 	{
+		if (m_mesh == nullptr)
+		{
+			return;
+		}
 		scene.EnqueueRenderObject(this);
+		if (m_castShadow)
+		{
+			scene.EnqueueRenderShadowObject(this);
+		}
 	}
 
 	void MeshRenderer::Render(RenderParam& param, int instances)
@@ -71,5 +79,25 @@ namespace udsdx
 	Material* MeshRenderer::GetMaterial() const
 	{
 		return m_material;
+	}
+
+	void MeshRenderer::SetCastShadow(bool value)
+	{
+		m_castShadow = value;
+	}
+
+	void MeshRenderer::SetReceiveShadow(bool value)
+	{
+		m_receiveShadow = value;
+	}
+
+	bool MeshRenderer::GetCastShadow() const
+	{
+		return m_castShadow;
+	}
+
+	bool MeshRenderer::GetReceiveShadow() const
+	{
+		return m_receiveShadow;
 	}
 }

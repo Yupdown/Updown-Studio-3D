@@ -16,7 +16,7 @@ namespace udsdx
 		~Scene();
 
 	public:
-		void Update(const Time& time);
+		virtual void Update(const Time& time);
 		void Render(RenderParam& param);
 
 		void AddObject(std::shared_ptr<SceneObject> object);
@@ -26,7 +26,9 @@ namespace udsdx
 		void EnqueueRenderCamera(Camera* camera);
 		void EnqueueRenderLight(LightDirectional* light);
 		void EnqueueRenderObject(MeshRenderer* object);
+		void EnqueueRenderShadowObject(MeshRenderer* object);
 
+		void RenderShadowSceneObjects(RenderParam& param, int instances = 1);
 		void RenderSceneObjects(RenderParam& param, int instances = 1, std::function<void(RenderParam&, MeshRenderer*)> preProcessor = nullptr);
 
 	private:
@@ -42,6 +44,7 @@ namespace udsdx
 		std::vector<Camera*> m_renderCameraQueue;
 		std::vector<LightDirectional*> m_renderLightQueue;
 		std::vector<MeshRenderer*> m_renderObjectQueue;
+		std::vector<MeshRenderer*> m_renderShadowObjectQueue;
 	};
 }
 

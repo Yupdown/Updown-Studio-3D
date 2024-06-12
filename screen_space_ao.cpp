@@ -228,6 +228,20 @@ namespace udsdx
 		};
 
 		static const int gBlurRadius = 5;
+		static const float gBlurWeights[11] = 
+		{
+			0.0221905485f,
+			0.0455890037f,
+			0.0798114091f,
+			0.119064637f,
+			0.151360810f,
+			0.163967222f,
+			0.151360810f,
+			0.119064637f,
+			0.0798114091f,
+			0.0455890037f,
+			0.0221905485f
+		};
 
 		struct VertexOut
 		{
@@ -263,8 +277,8 @@ namespace udsdx
 				texOffset = float2(1.0f, 0.0f) / float(width);
 			}
 
-			float4 color = gSrcTex.Sample(gsamPointClamp, pin.TexC);
-			float weightSum = 1.0f;
+			float4 color = gBlurWeights[gBlurRadius] * gSrcTex.Sample(gsamPointClamp, pin.TexC);
+			float weightSum = gBlurWeights[gBlurRadius];
 
 			float3 normal = gNormalMap.Sample(gsamPointClamp, pin.TexC).xyz;
 			float depth = gDepthMap.Sample(gsamPointClamp, pin.TexC).r;
@@ -282,7 +296,7 @@ namespace udsdx
 				float3 sampleNormal = gNormalMap.Sample(gsamPointClamp, pin.TexC + offset).xyz;
 				float sampleDepth = gDepthMap.Sample(gsamPointClamp, pin.TexC + offset).r;
 
-				float weight = 1.0f;
+				float weight = gBlurWeights[gBlurRadius + i];
 
 				if (dot(normal, sampleNormal) > 0.8f && abs(depth - sampleDepth) < 0.1f)
 				{

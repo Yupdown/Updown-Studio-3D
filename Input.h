@@ -62,6 +62,12 @@ namespace udsdx
 				return iter->second == tick;
 			}
 
+			void Clear()
+			{
+				keyDownTick.clear();
+				keyUpTick.clear();
+			}
+
 		private:
 			std::unordered_map<T, unsigned long long> keyDownTick;
 			std::unordered_map<T, unsigned long long> keyUpTick;
@@ -73,6 +79,7 @@ namespace udsdx
 
 		bool ProcessMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 		void FlushQueue();
+		void Reset();
 
 		// Check if a key is pressed
 		bool GetKey(int key) const;
@@ -94,7 +101,7 @@ namespace udsdx
 		int GetMouseY() const;
 
 	private:
-		unsigned long long m_tick = 0;
+		unsigned long long m_tick = 0ull;
 
 		std::queue<std::tuple<HWND, UINT, WPARAM, LPARAM>> m_messageQueue;
 		std::mutex m_queueLock;

@@ -105,6 +105,13 @@ namespace udsdx
 		}
 	}
 
+	void Input::Reset()
+	{
+		m_keyMap.Clear();
+		m_mouseMap.Clear();
+		m_tick = 0ull;
+	}
+
 	bool Input::GetKey(int key) const
 	{
 		return m_keyMap.GetKey(key, m_tick);

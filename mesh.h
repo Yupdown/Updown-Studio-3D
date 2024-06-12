@@ -19,6 +19,8 @@ namespace udsdx
 		// We can free this memory after we finish upload to the GPU.
 		void DisposeUploaders();
 
+		BoundingBox GetBounds() const;
+
 	protected:
 		// System memory copies.  Use Blobs because the vertex/index format can be generic.
 		// It is up to the client to cast appropriately.  
@@ -36,6 +38,8 @@ namespace udsdx
 		UINT m_vertexBufferByteSize = 0;
 		DXGI_FORMAT m_indexFormat = DXGI_FORMAT_R16_UINT;
 		UINT m_indexBufferByteSize = 0;
+
+		BoundingBox m_bounds;
 
 		// A MeshGeometry may store multiple geometries in one vertex/index buffer.
 		// Use this container to define the Submesh geometries so we can draw

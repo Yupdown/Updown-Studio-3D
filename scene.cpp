@@ -30,6 +30,7 @@ namespace udsdx
 		m_renderCameraQueue.clear();
 		m_renderLightQueue.clear();
 		m_renderObjectQueue.clear();
+		m_renderShadowObjectQueue.clear();
 
 		for (auto& object : m_objects)
 		{
@@ -86,6 +87,11 @@ namespace udsdx
 	void Scene::EnqueueRenderObject(MeshRenderer* object)
 	{
 		m_renderObjectQueue.emplace_back(object);
+	}
+
+	void Scene::EnqueueRenderShadowObject(MeshRenderer* object)
+	{
+		m_renderShadowObjectQueue.emplace_back(object);
 	}
 
 	void Scene::PassRenderShadow(RenderParam& param, Camera* camera, LightDirectional* light)
@@ -155,6 +161,14 @@ namespace udsdx
 		param.CommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 		RenderSceneObjects(param, 1, [](RenderParam& p, MeshRenderer* o) { p.CommandList->SetPipelineState(o->GetShader()->PipelineState()); });
+	}
+
+	void Scene::RenderShadowSceneObjects(RenderParam& param, int instances)
+	{
+		for (const auto& object : m_renderObjectQueue)
+		{
+			object->Render(param, instances);
+		}
 	}
 
 	void Scene::RenderSceneObjects(RenderParam& param, int instances, std::function<void(RenderParam&, MeshRenderer*)> preProcessor)

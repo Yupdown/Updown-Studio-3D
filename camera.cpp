@@ -21,7 +21,7 @@ namespace udsdx
 		XMMATRIX worldSRTMatrix = XMLoadFloat4x4(&GetSceneObject()->GetTransform()->GetWorldSRTMatrix());
 		XMVECTOR eye = XMVector4Transform(XMVectorSet(0.0f, 0.0f, 0.0f, 1.0f), worldSRTMatrix);
 		XMVECTOR at = XMVector4Transform(XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f), worldSRTMatrix) + eye;
-		XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 1.0f);
+		XMVECTOR up = XMVector4Transform(XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f), worldSRTMatrix);
 		Matrix4x4 m;
 		XMStoreFloat4x4(&m, XMMatrixLookAtLH(eye, at, up));
 		return m;
