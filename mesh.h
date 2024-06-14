@@ -14,7 +14,7 @@ namespace udsdx
 		void CreateBuffers(ID3D12Device* device, ID3D12GraphicsCommandList* commandList);
 		D3D12_VERTEX_BUFFER_VIEW VertexBufferView() const;
 		D3D12_INDEX_BUFFER_VIEW IndexBufferView() const;
-		SubmeshGeometry& GetSubmesh(std::string name);
+		UINT IndexCount() const;
 
 		// We can free this memory after we finish upload to the GPU.
 		void DisposeUploaders();
@@ -38,12 +38,8 @@ namespace udsdx
 		UINT m_vertexBufferByteSize = 0;
 		DXGI_FORMAT m_indexFormat = DXGI_FORMAT_R16_UINT;
 		UINT m_indexBufferByteSize = 0;
+		UINT m_indexCount = 0;
 
 		BoundingBox m_bounds;
-
-		// A MeshGeometry may store multiple geometries in one vertex/index buffer.
-		// Use this container to define the Submesh geometries so we can draw
-		// the Submeshes individually.
-		std::unordered_map<std::string, SubmeshGeometry> m_drawArgs;
 	};
 }

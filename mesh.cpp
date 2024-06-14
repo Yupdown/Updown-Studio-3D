@@ -23,15 +23,18 @@ namespace udsdx
 		return ibv;
 	}
 
-	SubmeshGeometry& Mesh::GetSubmesh(std::string name)
+	UINT Mesh::IndexCount() const
 	{
-		return m_drawArgs[name];
+		return m_indexCount;
 	}
 
 	void Mesh::DisposeUploaders()
 	{
 		m_vertexBufferUploader = nullptr;
 		m_indexBufferUploader = nullptr;
+
+		m_vertexBufferCPU = nullptr;
+		m_indexBufferCPU = nullptr;
 	}
 
 	BoundingBox Mesh::GetBounds() const
@@ -56,13 +59,7 @@ namespace udsdx
 		m_indexBufferByteSize = ibByteSize;
 
 		BoundingBox::CreateFromPoints(m_bounds, vertices.size(), &vertices[0].position, sizeof(Vertex));
-
-		SubmeshGeometry submesh;
-		submesh.IndexCount = (UINT)indices.size();
-		submesh.StartIndexLocation = 0;
-		submesh.BaseVertexLocation = 0;
-
-		m_drawArgs["box"] = submesh;
+		m_indexCount = (UINT)indices.size();
 	}
 
 	void Mesh::CreateBuffers(ID3D12Device* device, ID3D12GraphicsCommandList* commandList)

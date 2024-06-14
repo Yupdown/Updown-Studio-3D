@@ -48,7 +48,7 @@ namespace udsdx
 		param.CommandList->IASetVertexBuffers(0, 1, &m_mesh->VertexBufferView());
 		param.CommandList->IASetIndexBuffer(&m_mesh->IndexBufferView());
 
-		param.CommandList->DrawIndexedInstanced(m_mesh->GetSubmesh("box").IndexCount, instances, 0, 0, 0);
+		param.CommandList->DrawIndexedInstanced(m_mesh->IndexCount(), instances, 0, 0, 0);
 	}
 
 	void MeshRenderer::SetMesh(Mesh* mesh)

@@ -71,6 +71,11 @@ namespace udsdx
 
 		OnResizeWindow(m_clientWidth, m_clientHeight);
 
+		for (auto& resource_mesh : resource->LoadAll<Mesh>())
+		{
+			resource_mesh->DisposeUploaders();
+		}
+
 		// Reset the command list to prep for initialization commands.
 		ThrowIfFailed(m_commandList->Reset(m_directCmdListAlloc.Get(), nullptr));
 
@@ -252,7 +257,7 @@ namespace udsdx
 			::CloseHandle(m_fenceEvent);
 
 			// Release the context
-			DestroyD3D12Context(m_tracyQueueCtx);
+			TracyD3D12Destroy(m_tracyQueueCtx);
 		}
 	}
 
