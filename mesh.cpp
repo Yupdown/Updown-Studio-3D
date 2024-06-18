@@ -37,7 +37,7 @@ namespace udsdx
 		m_indexBufferCPU = nullptr;
 	}
 
-	BoundingBox Mesh::GetBounds() const
+	const BoundingBox& Mesh::GetBounds() const
 	{
 		return m_bounds;
 	}

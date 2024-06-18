@@ -37,6 +37,9 @@ namespace udsdx
 		const D3D12_VIEWPORT& Viewport;
 		const D3D12_RECT& ScissorRect;
 
+		BoundingFrustum ViewFrustumWorld;
+		bool UseFrustumCulling;
+
 		const D3D12_GPU_VIRTUAL_ADDRESS& ConstantBufferView;
 		const D3D12_CPU_DESCRIPTOR_HANDLE& DepthStencilView;
 		const D3D12_CPU_DESCRIPTOR_HANDLE& RenderTargetView;

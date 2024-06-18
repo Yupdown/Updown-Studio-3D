@@ -10,6 +10,7 @@ namespace udsdx
 	class Component
 	{
 	public:
+		Component() = delete;
 		Component(const std::shared_ptr<SceneObject>& object);
 		virtual ~Component();
 

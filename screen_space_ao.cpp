@@ -381,6 +381,8 @@ namespace udsdx
 		Matrix4x4 projMat = camera->GetProjMatrix(param.AspectRatio);
 		Matrix4x4 viewProjMat = viewMat * projMat;
 
+		param.ViewFrustumWorld = camera->GetViewFrustumWorld(param.AspectRatio);
+
 		CameraConstants cameraConstants;
 		cameraConstants.View = viewMat.Transpose();
 		cameraConstants.Proj = projMat.Transpose();

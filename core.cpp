@@ -570,6 +570,8 @@ namespace udsdx
 			.Viewport = m_screenViewport,
 			.ScissorRect = m_scissorRect,
 
+			.UseFrustumCulling = true,
+
 			.ConstantBufferView = objectCB->Resource()->GetGPUVirtualAddress(),
 			.DepthStencilView = DepthStencilView(),
 			.RenderTargetView = CurrentBackBufferView(),

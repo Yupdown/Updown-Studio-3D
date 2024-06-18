@@ -34,6 +34,17 @@ namespace udsdx
 		Transform* transform = GetSceneObject()->GetTransform();
 		Matrix4x4 worldMat = transform->GetWorldSRTMatrix();
 
+		if (param.UseFrustumCulling)
+		{
+			// Perform frustum culling
+			BoundingBox boundsWorld;
+			m_mesh->GetBounds().Transform(boundsWorld, worldMat);
+			if (param.ViewFrustumWorld.Contains(boundsWorld) == ContainmentType::DISJOINT)
+			{
+				return;
+			}
+		}
+
 		ObjectConstants objectConstants;
 		objectConstants.World = worldMat.Transpose();
 

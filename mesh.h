@@ -19,7 +19,7 @@ namespace udsdx
 		// We can free this memory after we finish upload to the GPU.
 		void DisposeUploaders();
 
-		BoundingBox GetBounds() const;
+		const BoundingBox& GetBounds() const;
 
 	protected:
 		// System memory copies.  Use Blobs because the vertex/index format can be generic.

@@ -27,6 +27,15 @@ namespace udsdx
 		return m;
 	}
 
+	BoundingFrustum Camera::GetViewFrustumWorld(float aspect) const
+	{
+		BoundingFrustum frustum;
+		frustum.CreateFromMatrix(frustum, GetProjMatrix(aspect));
+		Matrix4x4 viewInv = GetViewMatrix().Invert();
+		frustum.Transform(frustum, XMLoadFloat4x4(&viewInv));
+		return frustum;
+	}
+
 	void Camera::SetClearColor(const Color& color)
 	{
 		m_clearColor = color;

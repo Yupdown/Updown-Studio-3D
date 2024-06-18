@@ -33,6 +33,13 @@ namespace udsdx
 		InitializeIgnoreFiles();
 
 		DebugConsole::Log("Registering resources...");
+		
+		// if the directory does not exist, create it
+		if (!std::filesystem::exists(path))
+		{
+			std::filesystem::create_directory(path);
+		}
+
 		for (const auto& directory : std::filesystem::recursive_directory_iterator(path))
 		{
 			// if the file is not a regular file(e.g. if it is a directory), skip it

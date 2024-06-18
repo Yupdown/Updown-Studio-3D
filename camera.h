@@ -19,6 +19,7 @@ namespace udsdx
 	public:
 		virtual Matrix4x4 GetViewMatrix() const;
 		virtual Matrix4x4 GetProjMatrix(float aspect) const = 0;
+		BoundingFrustum GetViewFrustumWorld(float aspect) const;
 
 		void SetClearColor(const Color& color);
 		Color GetClearColor() const;
