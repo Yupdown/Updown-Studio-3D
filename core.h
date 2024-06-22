@@ -55,6 +55,8 @@ namespace udsdx
 		D3D12_CPU_DESCRIPTOR_HANDLE CurrentBackBufferView() const;
 		D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilView() const;
 
+		int GetClientPosX() const;
+		int GetClientPosY() const;
 		int GetClientWidth() const;
 		int GetClientHeight() const;
 
@@ -87,6 +89,8 @@ namespace udsdx
 
 		std::wstring m_mainWndCaption;
 
+		int			m_clientPosX = 100;
+		int			m_clientPosY = 100;
 		int			m_clientWidth = 800;
 		int			m_clientHeight = 600;
 

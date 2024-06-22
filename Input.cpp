@@ -17,6 +17,26 @@ namespace udsdx
 	{
 		switch (message)
 		{
+		case WM_ACTIVATE:
+		case WM_ACTIVATEAPP:
+			if (wParam)
+			{
+				m_inFocus = true;
+				if (m_relativeMouse)
+				{
+					ShowCursor(FALSE);
+					ClipToWindow(hWnd);
+				}
+			}
+			else
+			{
+				if (m_relativeMouse)
+				{
+					ClipCursor(nullptr);
+				}
+				m_inFocus = false;
+			}
+			return false;
 		case WM_KEYDOWN:
 		case WM_KEYUP:
 		case WM_LBUTTONDOWN:
@@ -33,6 +53,15 @@ namespace udsdx
 			{ ZoneScoped;
 				std::unique_lock<std::mutex> lock(m_queueLock);
 				m_messageQueue.push(tuple);
+			}
+			if (m_relativeMouse && m_inFocus && message == WM_MOUSEMOVE)
+			{
+				// Center mouse
+				RECT rect = {};
+				std::ignore = GetClientRect(hWnd, &rect);
+				POINT center = { (rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2 };
+				std::ignore = ClientToScreen(hWnd, &center);
+				SetCursorPos(center.x, center.y);
 			}
 			return true;
 		}
@@ -99,6 +128,14 @@ namespace udsdx
 			case WM_MOUSEMOVE:
 				m_mouseX = GET_X_LPARAM(lParam);
 				m_mouseY = GET_Y_LPARAM(lParam);
+				if (m_relativeMouse)
+				{
+					RECT rect = {};
+					std::ignore = GetClientRect(hWnd, &rect);
+					POINT center = { (rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2 };
+					m_mouseX -= center.x;
+					m_mouseY -= center.y;
+				}
 				break;
 			}
 			m_messageQueue.pop();
@@ -110,6 +147,38 @@ namespace udsdx
 		m_keyMap.Clear();
 		m_mouseMap.Clear();
 		m_tick = 0ull;
+	}
+
+	void Input::ClipToWindow(HWND hWnd)
+	{
+		assert(hWnd != nullptr);
+
+		RECT rect = {};
+		std::ignore = GetClientRect(hWnd, &rect);
+
+		POINT ul;
+		ul.x = rect.left;
+		ul.y = rect.top;
+
+		POINT lr;
+		lr.x = rect.right;
+		lr.y = rect.bottom;
+
+		std::ignore = MapWindowPoints(hWnd, nullptr, &ul, 1);
+		std::ignore = MapWindowPoints(hWnd, nullptr, &lr, 1);
+
+		rect.left = ul.x;
+		rect.top = ul.y;
+
+		rect.right = lr.x;
+		rect.bottom = lr.y;
+
+		ClipCursor(&rect);
+	}
+
+	void Input::SetRelativeMouse(bool value)
+	{
+		m_relativeMouse = value;
 	}
 
 	bool Input::GetKey(int key) const

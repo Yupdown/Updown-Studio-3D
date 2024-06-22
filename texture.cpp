@@ -7,7 +7,7 @@ namespace udsdx
 	{
 		ResourceUploadBatch resourceUpload(device);
 		D3D12_RESOURCE_FLAGS resourceFlags = D3D12_RESOURCE_FLAG_NONE;
-		WIC_LOADER_FLAGS wicFlags = WIC_LOADER_DEFAULT;
+		WIC_LOADER_FLAGS wicFlags = WIC_LOADER_IGNORE_SRGB;
 
 		resourceUpload.Begin();
 		ThrowIfFailed(CreateWICTextureFromFileEx(

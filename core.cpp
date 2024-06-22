@@ -658,6 +658,11 @@ namespace udsdx
 	{ ZoneScoped;
 		switch (message)
 		{
+		case WM_MOVE:
+			m_clientPosX = LOWORD(lParam);
+			m_clientPosY = HIWORD(lParam);
+			break;
+
 		case WM_SIZE:
 			// Save the new client area dimensions.
 			m_clientWidth = LOWORD(lParam);
@@ -740,11 +745,11 @@ namespace udsdx
 				HWND_TOP,
 				windowRect.left,
 				windowRect.top,
-				windowRect.right,
-				windowRect.bottom,
+				windowRect.right - windowRect.left,
+				windowRect.bottom - windowRect.top,
 				SWP_FRAMECHANGED | SWP_NOACTIVATE
 			);
-			ShowWindow(m_hMainWnd, SW_MAXIMIZE);
+			ShowWindow(m_hMainWnd, SW_NORMAL);
 		}
 		else
 		{
@@ -941,5 +946,15 @@ namespace udsdx
 	D3D12_CPU_DESCRIPTOR_HANDLE Core::DepthStencilView() const
 	{
 		return m_dsvHeap->GetCPUDescriptorHandleForHeapStart();
+	}
+
+	int Core::GetClientPosX() const
+	{
+		return m_clientPosX;
+	}
+
+	int Core::GetClientPosY() const
+	{
+		return m_clientPosY;
 	}
 }

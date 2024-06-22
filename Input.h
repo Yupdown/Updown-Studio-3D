@@ -80,6 +80,10 @@ namespace udsdx
 		bool ProcessMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 		void FlushQueue();
 		void Reset();
+		void ClipToWindow(HWND hWnd);
+
+		// Set relative mouse mode
+		void SetRelativeMouse(bool value);
 
 		// Check if a key is pressed
 		bool GetKey(int key) const;
@@ -111,6 +115,9 @@ namespace udsdx
 
 		int m_mouseX = 0;
 		int m_mouseY = 0;
+
+		bool m_relativeMouse = false;
+		bool m_inFocus = false;
 	};
 }
 
