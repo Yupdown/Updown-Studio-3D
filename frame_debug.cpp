@@ -78,7 +78,7 @@ namespace udsdx
 
 		std::wstring text = std::format(L"{:4} fps", static_cast<int>(1.0f / time.deltaTime));
 		TextOutW(m_hMemDC, 0, 0, text.c_str(), (int)text.size());
-		text = std::format(L"{:6.1} ms", time.deltaTime * 1000);
+		text = std::format(L"{:.1f} ms", time.deltaTime * 1000);
 		TextOutW(m_hMemDC, 0, 16, text.c_str(), (int)text.size());
 
 		SelectBitmap(m_hDC, m_memBitmap);
