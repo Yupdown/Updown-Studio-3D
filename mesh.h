@@ -8,7 +8,7 @@ namespace udsdx
 	class Mesh : public ResourceObject
 	{
 	public:
-		Mesh(const std::vector<Vertex>& vertices, const std::vector<uint16_t> indices);
+		Mesh(const std::vector<Vertex>& vertices, const std::vector<UINT> indices);
 
 	public:
 		void CreateBuffers(ID3D12Device* device, ID3D12GraphicsCommandList* commandList);
@@ -36,7 +36,7 @@ namespace udsdx
 		// Data about the buffers.
 		UINT m_vertexByteStride = 0;
 		UINT m_vertexBufferByteSize = 0;
-		DXGI_FORMAT m_indexFormat = DXGI_FORMAT_R16_UINT;
+		DXGI_FORMAT m_indexFormat = DXGI_FORMAT_R32_UINT;
 		UINT m_indexBufferByteSize = 0;
 		UINT m_indexCount = 0;
 

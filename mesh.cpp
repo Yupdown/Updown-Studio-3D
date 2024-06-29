@@ -42,10 +42,10 @@ namespace udsdx
 		return m_bounds;
 	}
 
-	Mesh::Mesh(const std::vector<Vertex>& vertices, const std::vector<uint16_t> indices) : ResourceObject()
+	Mesh::Mesh(const std::vector<Vertex>& vertices, const std::vector<UINT> indices) : ResourceObject()
 	{
 		const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
-		const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
+		const UINT ibByteSize = (UINT)indices.size() * sizeof(UINT);
 
 		ThrowIfFailed(D3DCreateBlob(vbByteSize, &m_vertexBufferCPU));
 		CopyMemory(m_vertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
@@ -55,7 +55,6 @@ namespace udsdx
 
 		m_vertexByteStride = sizeof(Vertex);
 		m_vertexBufferByteSize = vbByteSize;
-		m_indexFormat = DXGI_FORMAT_R16_UINT;
 		m_indexBufferByteSize = ibByteSize;
 
 		BoundingBox::CreateFromPoints(m_bounds, vertices.size(), &vertices[0].position, sizeof(Vertex));

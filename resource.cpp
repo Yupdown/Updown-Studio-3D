@@ -133,7 +133,7 @@ namespace udsdx
 	std::unique_ptr<ResourceObject> ModelLoader::Load(std::wstring_view path)
 	{ ZoneScoped;
 		std::vector<Vertex> vertices;
-		std::vector<std::uint16_t> indices;
+		std::vector<UINT> indices;
 
 		// Read the model from file
 		ComPtr<ID3DBlob> modelData;
