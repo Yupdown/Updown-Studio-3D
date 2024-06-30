@@ -858,6 +858,9 @@ namespace udsdx
 		// opposites sides of the cubes.  This way we still get the vectors spread out even
 		// if we choose to use less than 14 samples.
 
+		std::default_random_engine dre;
+		std::uniform_real_distribution<float> urd(0.25f, 1.0f);
+
 		// 8 cube corners
 		m_offsets[0] = XMFLOAT4(+1.0f, +1.0f, +1.0f, 0.0f);
 		m_offsets[1] = XMFLOAT4(-1.0f, -1.0f, -1.0f, 0.0f);
@@ -884,7 +887,7 @@ namespace udsdx
 		for (int i = 0; i < 14; ++i)
 		{
 			// Create random lengths in [0.25, 1.0].
-			float s = MathHelper::RandF(0.25f, 1.0f);
+			float s = urd(dre);
 
 			XMVECTOR v = s * XMVector4Normalize(XMLoadFloat4(&m_offsets[i]));
 

@@ -1,7 +1,5 @@
 #pragma once
 
-#include "d3dUtil.h"
-
 template<typename T>
 class UploadBuffer
 {

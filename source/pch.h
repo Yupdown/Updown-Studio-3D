@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -60,26 +61,25 @@ using namespace Microsoft::WRL;
 #include <DirectXCollision.h>
 #include <DirectXPackedVector.h>
 
-#include "directxtk12/Inc/SimpleMath.h"
-
 using namespace DirectX;
 
 // DirectXTK Library
-#include "directxtk12/Inc/Audio.h"
-#include "directxtk12/Inc/ResourceUploadBatch.h"
-#include "directxtk12/Inc/DDSTextureLoader.h"
-#include "directxtk12/Inc/WICTextureLoader.h"
+#include <directxtk12/Audio.h>
+#include <directxtk12/SimpleMath.h>
+#include <directxtk12/ResourceUploadBatch.h>
+#include <directxtk12/DDSTextureLoader.h>
+#include <directxtk12/WICTextureLoader.h>
 
 // Tracy Profiler
-#include "tracy/public/tracy/Tracy.hpp"
-#include "tracy/public/tracy/TracyD3D12.hpp"
+#include "../tracy/public/tracy/Tracy.hpp"
+#include "../tracy/public/tracy/TracyD3D12.hpp"
 
 // In-Engine Library
 #include "define.h"
+#include "d3dUtil.h"
 #include "custom_math.h"
 #include "singleton.h"
 #include "vertex.h"
-#include "d3dUtil.h"
 #include "UploadBuffer.h"
 
 // Link Static Library
@@ -88,3 +88,15 @@ using namespace DirectX;
 #pragma comment(lib, "d3dcompiler.lib")
 #pragma comment(lib, "dxguid.lib")
 #pragma comment(lib, "runtimeobject.lib")
+
+#if defined(DEBUG) || defined(_DEBUG)
+#pragma comment(lib, "debug/assimp-vc143-mtd.lib")
+#pragma comment(lib, "debug/DirectXTex.lib")
+#pragma comment(lib, "debug/DirectXTK12.lib")
+
+#else
+#pragma comment(lib, "release/assimp-vc143-mt.lib")
+#pragma comment(lib, "release/DirectXTex.lib")
+#pragma comment(lib, "release/DirectXTK12.lib")
+
+#endif

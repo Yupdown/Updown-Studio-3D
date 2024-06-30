@@ -99,16 +99,19 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>$(ProjectDir)directxtex\DirectXTex;$(ProjectDir)directxtk12\Inc;$(ProjectDir)assimp\include;$(ProjectDir)include\;$(IncludePath)</IncludePath>
-    <LibraryPath>$(ProjectDir)library\;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(ProjectDir)include\;$(IncludePath)</IncludePath>
+    <LibraryPath>$(ProjectDir)library\;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64)</LibraryPath>
+    <ExternalIncludePath>$(ProjectDir)external-include\;$(ExternalIncludePath)</ExternalIncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>$(ProjectDir)directxtex\DirectXTex;$(ProjectDir)directxtk12\Inc;$(ProjectDir)assimp\include;$(ProjectDir)include\;$(IncludePath)</IncludePath>
-    <LibraryPath>$(ProjectDir)library\;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(ProjectDir)include\;$(IncludePath)</IncludePath>
+    <LibraryPath>$(ProjectDir)library\;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64)</LibraryPath>
+    <ExternalIncludePath>$(ProjectDir)external-include\;$(ExternalIncludePath)</ExternalIncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Publish|x64'">
-    <IncludePath>$(ProjectDir)directxtex\DirectXTex;$(ProjectDir)directxtk12\Inc;$(ProjectDir)assimp\include;$(ProjectDir)include\;$(IncludePath)</IncludePath>
-    <LibraryPath>$(ProjectDir)library\;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(ProjectDir)include\;$(IncludePath)</IncludePath>
+    <LibraryPath>$(ProjectDir)library\;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64)</LibraryPath>
+    <ExternalIncludePath>$(ProjectDir)external-include\;$(ExternalIncludePath)</ExternalIncludePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -209,103 +212,81 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="allocation.cpp" />
-    <ClCompile Include="audio.cpp" />
-    <ClCompile Include="audio_clip.cpp" />
-    <ClCompile Include="camera.cpp" />
-    <ClCompile Include="component.cpp" />
-    <ClCompile Include="core.cpp" />
-    <ClCompile Include="d3dUtil.cpp">
+    <ClCompile Include="source\allocation.cpp" />
+    <ClCompile Include="source\audio.cpp" />
+    <ClCompile Include="source\audio_clip.cpp" />
+    <ClCompile Include="source\camera.cpp" />
+    <ClCompile Include="source\component.cpp" />
+    <ClCompile Include="source\core.cpp" />
+    <ClCompile Include="source\d3dUtil.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Publish|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="debug_console.cpp" />
-    <ClCompile Include="frame_debug.cpp" />
-    <ClCompile Include="frame_resource.cpp" />
-    <ClCompile Include="input.cpp" />
-    <ClCompile Include="light_directional.cpp" />
-    <ClCompile Include="material.cpp" />
-    <ClCompile Include="MathHelper.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Publish|x64'">NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="mesh.cpp" />
-    <ClCompile Include="mesh_renderer.cpp" />
-    <ClCompile Include="scene.cpp" />
-    <ClCompile Include="scene_object.cpp" />
-    <ClCompile Include="pch.cpp">
+    <ClCompile Include="source\debug_console.cpp" />
+    <ClCompile Include="source\frame_debug.cpp" />
+    <ClCompile Include="source\frame_resource.cpp" />
+    <ClCompile Include="source\input.cpp" />
+    <ClCompile Include="source\light_directional.cpp" />
+    <ClCompile Include="source\material.cpp" />
+    <ClCompile Include="source\mesh.cpp" />
+    <ClCompile Include="source\mesh_renderer.cpp" />
+    <ClCompile Include="source\pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Publish|x64'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="resource.cpp" />
-    <ClCompile Include="resource_object.cpp" />
-    <ClCompile Include="shader.cpp" />
-    <ClCompile Include="shadow_map.cpp" />
-    <ClCompile Include="screen_space_ao.cpp" />
-    <ClCompile Include="texture.cpp" />
-    <ClCompile Include="time_measure.cpp" />
+    <ClCompile Include="source\resource.cpp" />
+    <ClCompile Include="source\resource_object.cpp" />
+    <ClCompile Include="source\scene.cpp" />
+    <ClCompile Include="source\scene_object.cpp" />
+    <ClCompile Include="source\screen_space_ao.cpp" />
+    <ClCompile Include="source\shader.cpp" />
+    <ClCompile Include="source\shadow_map.cpp" />
+    <ClCompile Include="source\texture.cpp" />
+    <ClCompile Include="source\time_measure.cpp" />
+    <ClCompile Include="source\transform.cpp" />
+    <ClCompile Include="source\updown_studio.cpp" />
+    <ClCompile Include="source\vertex.cpp" />
     <ClCompile Include="tracy\public\TracyClient.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Publish|x64'">NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="transform.cpp" />
-    <ClCompile Include="updown_studio.cpp" />
-    <ClCompile Include="vertex.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="audio.h" />
-    <ClInclude Include="audio_clip.h" />
-    <ClInclude Include="camera.h" />
-    <ClInclude Include="component.h" />
-    <ClInclude Include="core.h" />
-    <ClInclude Include="custom_math.h" />
-    <ClInclude Include="d3dUtil.h" />
-    <ClInclude Include="d3dx12.h" />
-    <ClInclude Include="debug_console.h" />
-    <ClInclude Include="define.h" />
-    <ClInclude Include="directxtk12\Inc\SimpleMath.h" />
-    <ClInclude Include="frame_debug.h" />
-    <ClInclude Include="frame_resource.h" />
-    <ClInclude Include="input.h" />
-    <ClInclude Include="light_directional.h" />
-    <ClInclude Include="material.h" />
-    <ClInclude Include="MathHelper.h" />
-    <ClInclude Include="mesh.h" />
-    <ClInclude Include="mesh_renderer.h" />
-    <ClInclude Include="scene.h" />
-    <ClInclude Include="scene_object.h" />
-    <ClInclude Include="pch.h" />
-    <ClInclude Include="resource.h" />
-    <ClInclude Include="resource_object.h" />
-    <ClInclude Include="shader.h" />
-    <ClInclude Include="shadow_map.h" />
-    <ClInclude Include="singleton.h" />
-    <ClInclude Include="screen_space_ao.h" />
-    <ClInclude Include="stb_image.h" />
-    <ClInclude Include="texture.h" />
-    <ClInclude Include="time_measure.h" />
-    <ClInclude Include="transform.h" />
-    <ClInclude Include="updown_studio.h" />
-    <ClInclude Include="UploadBuffer.h" />
-    <ClInclude Include="vertex.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="assimp\code\assimp.vcxproj">
-      <Project>{5702aa31-21c6-3a17-947b-6e4d18966d17}</Project>
-    </ProjectReference>
-    <ProjectReference Include="directxtex\DirectXTex\DirectXTex_Desktop_2022_Win10.vcxproj">
-      <Project>{371b9fa9-4c90-4ac6-a123-aced756d6c77}</Project>
-    </ProjectReference>
-    <ProjectReference Include="directxtk12\DirectXTK_Desktop_2022_Win10.vcxproj">
-      <Project>{3e0e8608-cd9b-4c76-af33-29ca38f2c9f0}</Project>
-    </ProjectReference>
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="directxtk12\Inc\SimpleMath.inl" />
+    <ClInclude Include="external-include\d3dx12.h" />
+    <ClInclude Include="external-include\stb_image.h" />
+    <ClInclude Include="external-include\UploadBuffer.h" />
+    <ClInclude Include="source\audio.h" />
+    <ClInclude Include="source\audio_clip.h" />
+    <ClInclude Include="source\camera.h" />
+    <ClInclude Include="source\component.h" />
+    <ClInclude Include="source\core.h" />
+    <ClInclude Include="source\custom_math.h" />
+    <ClInclude Include="source\d3dUtil.h" />
+    <ClInclude Include="source\debug_console.h" />
+    <ClInclude Include="source\define.h" />
+    <ClInclude Include="source\frame_debug.h" />
+    <ClInclude Include="source\frame_resource.h" />
+    <ClInclude Include="source\input.h" />
+    <ClInclude Include="source\light_directional.h" />
+    <ClInclude Include="source\material.h" />
+    <ClInclude Include="source\mesh.h" />
+    <ClInclude Include="source\mesh_renderer.h" />
+    <ClInclude Include="source\pch.h" />
+    <ClInclude Include="source\resource.h" />
+    <ClInclude Include="source\resource_object.h" />
+    <ClInclude Include="source\scene.h" />
+    <ClInclude Include="source\scene_object.h" />
+    <ClInclude Include="source\shader.h" />
+    <ClInclude Include="source\shadow_map.h" />
+    <ClInclude Include="source\singleton.h" />
+    <ClInclude Include="source\texture.h" />
+    <ClInclude Include="source\time_measure.h" />
+    <ClInclude Include="source\transform.h" />
+    <ClInclude Include="source\updown_studio.h" />
+    <ClInclude Include="source\vertex.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
