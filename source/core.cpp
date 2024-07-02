@@ -52,9 +52,6 @@ namespace udsdx
 
 		InitializeDirect3D();
 
-		// Reset the command list to prep for initialization commands.
-		ThrowIfFailed(m_commandList->Reset(m_directCmdListAlloc.Get(), nullptr));
-
 		for (int i = 0; i < FrameResourceCount; ++i)
 		{
 			m_frameResources[i] = std::make_unique<FrameResource>(m_d3dDevice.Get());
@@ -68,7 +65,6 @@ namespace udsdx
 		BuildConstantBuffers();
 
 		ExecuteCommandList();
-
 		OnResizeWindow(m_clientWidth, m_clientHeight);
 
 		for (auto& resource_mesh : resource->LoadAll<Mesh>())
@@ -186,6 +182,9 @@ namespace udsdx
 		ThrowIfFailed(m_d3dDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_fence)));
 
 		m_commandList->Close();
+
+		// Reset the command list to prep for initialization commands.
+		ThrowIfFailed(m_commandList->Reset(m_directCmdListAlloc.Get(), nullptr));
 	}
 
 	void Core::RegisterUpdateCallback(std::function<void(const Time&)> callback)
@@ -524,7 +523,6 @@ namespace udsdx
 		// Advance the time measure
 		m_timeMeasure->Tick();
 
-		INSTANCE(Input)->FlushQueue();
 		INSTANCE(Audio)->Update();
 
 		BroadcastUpdateMessage();
@@ -532,6 +530,8 @@ namespace udsdx
 
 		// Update the constant buffer with the latest view and project matrix.
 		UpdateMainPassCB();
+
+		INSTANCE(Input)->IncreaseTick();
 	}
 
 	void Core::BroadcastUpdateMessage()
@@ -546,12 +546,6 @@ namespace udsdx
 	{ ZoneScopedC(0xF78104);
 		TracyD3D12Collect(m_tracyQueueCtx);
 		TracyD3D12NewFrame(m_tracyQueueCtx);
-
-		if (m_resizeDirty)
-		{
-			m_resizeDirty = false;
-			OnResizeWindow(m_clientWidth, m_clientHeight);
-		}
 
 		auto frameResource = CurrentFrameResource();
 		auto cmdListAlloc = frameResource->GetCommandListAllocator();
@@ -669,7 +663,7 @@ namespace udsdx
 			m_clientHeight = HIWORD(lParam);
 
 			// Notify the display associated resources for the resize event.
-			m_resizeDirty = true;
+			OnResizeWindow(m_clientWidth, m_clientHeight);
 			break;
 
 		// Catch this message so to prevent the window from becoming too small.

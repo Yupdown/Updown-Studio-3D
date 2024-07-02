@@ -78,7 +78,7 @@ namespace udsdx
 		~Input();
 
 		bool ProcessMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
-		void FlushQueue();
+		void IncreaseTick();
 		void Reset();
 		void ClipToWindow(HWND hWnd);
 
@@ -106,9 +106,6 @@ namespace udsdx
 
 	private:
 		unsigned long long m_tick = 0ull;
-
-		std::queue<std::tuple<HWND, UINT, WPARAM, LPARAM>> m_messageQueue;
-		std::mutex m_queueLock;
 
 		KeyMap<int> m_keyMap;
 		KeyMap<int> m_mouseMap;

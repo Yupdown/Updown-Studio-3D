@@ -38,23 +38,56 @@ namespace udsdx
 			}
 			return false;
 		case WM_KEYDOWN:
+			m_keyMap.SetKey(static_cast<int>(wParam), true, m_tick);
+			break;
 		case WM_KEYUP:
+			m_keyMap.SetKey(static_cast<int>(wParam), false, m_tick);
+			break;
 		case WM_LBUTTONDOWN:
+			m_mouseMap.SetKey(MK_LBUTTON, true, m_tick);
+			break;
 		case WM_LBUTTONUP:
+			m_mouseMap.SetKey(MK_LBUTTON, false, m_tick);
+			break;
 		case WM_RBUTTONDOWN:
+			m_mouseMap.SetKey(MK_RBUTTON, true, m_tick);
+			break;
 		case WM_RBUTTONUP:
+			m_mouseMap.SetKey(MK_RBUTTON, false, m_tick);
+			break;
 		case WM_MBUTTONDOWN:
+			m_mouseMap.SetKey(MK_MBUTTON, true, m_tick);
+			break;
 		case WM_MBUTTONUP:
+			m_mouseMap.SetKey(MK_MBUTTON, false, m_tick);
+			break;
 		case WM_XBUTTONDOWN:
-		case WM_XBUTTONUP:
-		case WM_MOUSEMOVE:
-		{
-			auto tuple = std::make_tuple(hWnd, message, wParam, lParam);
-			{ ZoneScoped;
-				std::unique_lock<std::mutex> lock(m_queueLock);
-				m_messageQueue.push(tuple);
+			switch (HIWORD(wParam))
+			{
+			case XBUTTON1:
+				m_mouseMap.SetKey(XBUTTON1, true, m_tick);
+				break;
+			case XBUTTON2:
+				m_mouseMap.SetKey(XBUTTON2, true, m_tick);
+				break;
 			}
-			if (m_relativeMouse && m_inFocus && message == WM_MOUSEMOVE)
+			break;
+		case WM_XBUTTONUP:
+			switch (HIWORD(wParam))
+			{
+			case XBUTTON1:
+				m_mouseMap.SetKey(XBUTTON1, false, m_tick);
+				break;
+			case XBUTTON2:
+				m_mouseMap.SetKey(XBUTTON2, false, m_tick);
+				break;
+			}
+			break;
+		case WM_MOUSEMOVE:
+			m_mouseX = GET_X_LPARAM(lParam);
+			m_mouseY = GET_Y_LPARAM(lParam);
+
+			if (m_relativeMouse && m_inFocus)
 			{
 				// Center mouse
 				RECT rect = {};
@@ -63,83 +96,25 @@ namespace udsdx
 				std::ignore = ClientToScreen(hWnd, &center);
 				SetCursorPos(center.x, center.y);
 			}
-			return true;
+
+			if (m_relativeMouse)
+			{
+				RECT rect = {};
+				std::ignore = GetClientRect(hWnd, &rect);
+				POINT center = { (rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2 };
+				m_mouseX -= center.x;
+				m_mouseY -= center.y;
+			}
+			break;
+		default:
+			return false;
 		}
-		}
-		return false;
+		return true;
 	}
 
-	void Input::FlushQueue()
+	void Input::IncreaseTick()
 	{ ZoneScoped;
 		m_tick += 1ull;
-
-		std::unique_lock<std::mutex> lock(m_queueLock);
-		while (!m_messageQueue.empty())
-		{
-			auto& [hWnd, message, wParam, lParam] = m_messageQueue.front();
-			switch (message)
-			{
-			case WM_KEYDOWN:
-				m_keyMap.SetKey(static_cast<int>(wParam), true, m_tick);
-				break;
-			case WM_KEYUP:
-				m_keyMap.SetKey(static_cast<int>(wParam), false, m_tick);
-				break;
-			case WM_LBUTTONDOWN:
-				m_mouseMap.SetKey(MK_LBUTTON, true, m_tick);
-				break;
-			case WM_LBUTTONUP:
-				m_mouseMap.SetKey(MK_LBUTTON, false, m_tick);
-				break;
-			case WM_RBUTTONDOWN:
-				m_mouseMap.SetKey(MK_RBUTTON, true, m_tick);
-				break;
-			case WM_RBUTTONUP:
-				m_mouseMap.SetKey(MK_RBUTTON, false, m_tick);
-				break;
-			case WM_MBUTTONDOWN:
-				m_mouseMap.SetKey(MK_MBUTTON, true, m_tick);
-				break;
-			case WM_MBUTTONUP:
-				m_mouseMap.SetKey(MK_MBUTTON, false, m_tick);
-				break;
-			case WM_XBUTTONDOWN:
-				switch (HIWORD(wParam))
-				{
-				case XBUTTON1:
-					m_mouseMap.SetKey(XBUTTON1, true, m_tick);
-					break;
-				case XBUTTON2:
-					m_mouseMap.SetKey(XBUTTON2, true, m_tick);
-					break;
-				}
-				break;
-			case WM_XBUTTONUP:
-				switch (HIWORD(wParam))
-				{
-				case XBUTTON1:
-					m_mouseMap.SetKey(XBUTTON1, false, m_tick);
-					break;
-				case XBUTTON2:
-					m_mouseMap.SetKey(XBUTTON2, false, m_tick);
-					break;
-				}
-				break;
-			case WM_MOUSEMOVE:
-				m_mouseX = GET_X_LPARAM(lParam);
-				m_mouseY = GET_Y_LPARAM(lParam);
-				if (m_relativeMouse)
-				{
-					RECT rect = {};
-					std::ignore = GetClientRect(hWnd, &rect);
-					POINT center = { (rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2 };
-					m_mouseX -= center.x;
-					m_mouseY -= center.y;
-				}
-				break;
-			}
-			m_messageQueue.pop();
-		}
 	}
 
 	void Input::Reset()

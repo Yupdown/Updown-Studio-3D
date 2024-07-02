@@ -99,8 +99,6 @@ namespace udsdx
 
 		bool		m_fullscreen = false;
 
-		std::atomic_bool m_resizeDirty = false;
-
 		RECT		m_windowedRect;
 
 		bool		m_tearingSupport = false;

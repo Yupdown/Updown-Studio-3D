@@ -11,9 +11,6 @@ namespace udsdx
     HINSTANCE UpdownStudio::m_hInstance = nullptr;
     HWND UpdownStudio::m_hWnd = nullptr;
 
-    std::atomic_bool UpdownStudio::m_running = false;
-    std::thread g_engineThread;
-
     int UpdownStudio::Initialize(HINSTANCE hInstance)
     {
         m_hInstance = hInstance;
@@ -49,59 +46,40 @@ namespace udsdx
 
     int udsdx::UpdownStudio::Run(std::shared_ptr<Scene> beginScene, int nCmdShow)
     {
+        auto core = INSTANCE(Core);
+
         if (!m_hWnd)
 		{
 			return -1;
 		}
 
-        INSTANCE(Core)->ExecuteCommandList();
-        INSTANCE(Core)->FlushCommandQueue();
-        INSTANCE(Core)->SetScene(beginScene);
-
-        m_running = true;
+        core->ExecuteCommandList();
+        core->FlushCommandQueue();
+        core->SetScene(beginScene);
 
         ShowWindow(m_hWnd, nCmdShow);
         UpdateWindow(m_hWnd);
 
-        g_engineThread = std::thread(UpdownStudio::MainLoop);
-
-        MSG message;
-        while (GetMessage(&message, nullptr, 0, 0))
-        { ZoneScopedN("Windows32 Main Loop");
-            TranslateMessage(&message);
-            DispatchMessage(&message);
-
-            if (!m_running)
+        MSG message{};
+        while (message.message != WM_QUIT)
+        { ZoneScopedN("Updown Studio Main Loop");
+            while (PeekMessage(&message, nullptr, 0, 0, PM_REMOVE))
             {
-                PostQuitMessage(0);
-                if (g_engineThread.joinable())
-                {
-                    g_engineThread.join();
-                }
-            }
-        }
-        return static_cast<int>(message.wParam);
-    }
-
-    void UpdownStudio::MainLoop()
-    {
-        tracy::SetThreadName("Engine Thread");
-
-        auto core = INSTANCE(Core);
-        while (m_running)
-        { ZoneScopedNC("Engine Main Loop", 0x27449F);
+				TranslateMessage(&message);
+				DispatchMessage(&message);
+			}
             core->AcquireNextFrameResource();
             core->Update();
             core->Render();
-
             FrameMark;
-		}
+        }
         core->OnDestroy();
-	}
+        return static_cast<int>(message.wParam);
+    }
 
     void UpdownStudio::Quit()
     {
-        m_running = false;
+        PostQuitMessage(0);
     }
 
     LRESULT CALLBACK UpdownStudio::ProcessMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -113,10 +91,9 @@ namespace udsdx
 
         switch (message)
         {
-        case WM_CLOSE:
-            m_running = false;
-            g_engineThread.join();
-            break;
+        case WM_DESTROY:
+			PostQuitMessage(0);
+			break;
 
         default:
             if (!INSTANCE(Core)->ProcessMessage(hWnd, message, wParam, lParam))
