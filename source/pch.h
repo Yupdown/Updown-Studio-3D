@@ -90,7 +90,8 @@ using namespace DirectX;
 #pragma comment(lib, "runtimeobject.lib")
 
 #if defined(DEBUG) || defined(_DEBUG)
-#pragma comment(lib, "debug/assimp-vc143-mtd.lib")
+// #pragma comment(lib, "debug/assimp-vc143-mtd.lib")
+#pragma comment(lib, "release/assimp-vc143-mt.lib") // Debug build is not working, temporarily using release build
 #pragma comment(lib, "debug/DirectXTex.lib")
 #pragma comment(lib, "debug/DirectXTK12.lib")
 
