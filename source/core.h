@@ -111,7 +111,7 @@ namespace udsdx
 
 		// Current Scene to render with
 		std::shared_ptr<Scene> m_scene;
-		std::function<void(const Time&)> m_updateCallback;
+		std::function<void(const Time&)> m_updateCallback = nullptr;
 
 	protected:
 		std::unique_ptr<TimeMeasure> m_timeMeasure;

@@ -62,7 +62,11 @@ namespace udsdx
 
         MSG message{};
         while (message.message != WM_QUIT)
-        { ZoneScopedN("Updown Studio Main Loop");
+        { ZoneScopedN("Updown Studio Main Loop"); FrameMark;
+            if (m_ioUpdateCallback)
+            {
+                m_ioUpdateCallback();
+            }
             while (PeekMessage(&message, nullptr, 0, 0, PM_REMOVE))
             {
 				TranslateMessage(&message);
@@ -71,7 +75,6 @@ namespace udsdx
             core->AcquireNextFrameResource();
             core->Update();
             core->Render();
-            FrameMark;
         }
         core->OnDestroy();
         return static_cast<int>(message.wParam);
@@ -104,6 +107,11 @@ namespace udsdx
         }
         return 0;
     }
+
+    void UpdownStudio::RegisterIOUpdateCallback(std::function<void()> callback)
+	{
+        m_ioUpdateCallback = callback;
+	}
 
     void UpdownStudio::RegisterUpdateCallback(std::function<void(const Time&)> callback)
     {
