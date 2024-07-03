@@ -10,6 +10,8 @@ namespace udsdx
 
     HINSTANCE UpdownStudio::m_hInstance = nullptr;
     HWND UpdownStudio::m_hWnd = nullptr;
+    std::function<void()> UpdownStudio::m_ioUpdateCallback = nullptr;
+
 
     int UpdownStudio::Initialize(HINSTANCE hInstance)
     {
