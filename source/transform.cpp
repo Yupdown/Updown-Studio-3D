@@ -83,6 +83,11 @@ namespace udsdx
 		return m_scale;
 	}
 
+	Vector3 Transform::GetWorldPosition() const
+	{
+		return Vector3(m_worldSRTMatrix._41, m_worldSRTMatrix._42, m_worldSRTMatrix._43);
+	}
+
 	Matrix4x4 Transform::GetLocalSRTMatrix() const
 	{
 		return m_localSRTMatrix;

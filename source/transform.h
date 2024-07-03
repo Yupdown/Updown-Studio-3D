@@ -26,6 +26,8 @@ namespace udsdx
 		Quaternion GetLocalRotation() const;
 		Vector3 GetLocalScale() const;
 
+		Vector3 GetWorldPosition() const;
+
 		Matrix4x4 GetLocalSRTMatrix() const;
 		Matrix4x4 GetWorldSRTMatrix() const;
 
