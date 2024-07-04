@@ -114,7 +114,7 @@ namespace udsdx
 		std::function<void(const Time&)> m_updateCallback = nullptr;
 
 	protected:
-		std::unique_ptr<TimeMeasure> m_timeMeasure;
+		TimeMeasure* m_timeMeasure;
 		std::unique_ptr<Wrappers::RoInitializeWrapper> m_roInitialization;
 
 		// Factory for creating DXGI objects

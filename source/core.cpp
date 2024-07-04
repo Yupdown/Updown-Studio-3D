@@ -25,6 +25,7 @@ namespace udsdx
 
 	Core::~Core()
 	{
+		Singleton<TimeMeasure>::ReleaseInstance();
 		Singleton<Resource>::ReleaseInstance();
 		Singleton<Audio>::ReleaseInstance();
 	}
@@ -33,8 +34,6 @@ namespace udsdx
 	{ ZoneScoped;
 		m_hInstance = hInstance;
 		m_hMainWnd = hWnd;
-
-		m_timeMeasure = std::make_unique<TimeMeasure>();
 
 		m_windowedRect = { 0, 0, m_clientWidth, m_clientHeight };
 
@@ -59,6 +58,8 @@ namespace udsdx
 
 		auto audio = Singleton<Audio>::CreateInstance();
 		auto resource = Singleton<Resource>::CreateInstance();
+		m_timeMeasure = Singleton<TimeMeasure>::CreateInstance();
+
 		resource->Initialize(m_d3dDevice.Get(), m_commandQueue.Get(), m_commandList.Get(), m_rootSignature.Get());
 
 		BuildDescriptorHeaps();
