@@ -78,9 +78,9 @@ namespace udsdx
 		~Input();
 
 		bool ProcessMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
-		void IncreaseTick();
+		void Initialize(HWND hWnd);
 		void Reset();
-		void ClipToWindow(HWND hWnd);
+		void Update();
 
 		// Set relative mouse mode
 		void SetRelativeMouse(bool value);
@@ -105,16 +105,15 @@ namespace udsdx
 		int GetMouseY() const;
 
 	private:
-		unsigned long long m_tick = 0ull;
+		unsigned long long m_tick = 1ull;
+
+		std::unique_ptr<Mouse> m_mouse;
 
 		KeyMap<int> m_keyMap;
 		KeyMap<int> m_mouseMap;
 
 		int m_mouseX = 0;
 		int m_mouseY = 0;
-
-		bool m_relativeMouse = false;
-		bool m_inFocus = false;
 	};
 }
 

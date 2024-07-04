@@ -60,6 +60,7 @@ namespace udsdx
 		auto resource = Singleton<Resource>::CreateInstance();
 		m_timeMeasure = Singleton<TimeMeasure>::CreateInstance();
 
+		INSTANCE(Input)->Initialize(m_hMainWnd);
 		resource->Initialize(m_d3dDevice.Get(), m_commandQueue.Get(), m_commandList.Get(), m_rootSignature.Get());
 
 		BuildDescriptorHeaps();
@@ -525,14 +526,13 @@ namespace udsdx
 		m_timeMeasure->Tick();
 
 		INSTANCE(Audio)->Update();
+		INSTANCE(Input)->Update();
 
 		BroadcastUpdateMessage();
 		m_scene->Update(m_timeMeasure->GetTime());
 
 		// Update the constant buffer with the latest view and project matrix.
 		UpdateMainPassCB();
-
-		INSTANCE(Input)->IncreaseTick();
 	}
 
 	void Core::BroadcastUpdateMessage()

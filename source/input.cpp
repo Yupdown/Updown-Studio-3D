@@ -5,7 +5,7 @@ namespace udsdx
 {
 	Input::Input()
 	{
-
+		m_mouse = std::make_unique<Mouse>();
 	}
 
 	Input::~Input()
@@ -17,26 +17,16 @@ namespace udsdx
 	{
 		switch (message)
 		{
+		case WM_MOUSEACTIVATE:
+			// When you click to activate the window, we want Mouse to ignore that event.
+			return false;
 		case WM_ACTIVATE:
 		case WM_ACTIVATEAPP:
-			if (wParam)
-			{
-				m_inFocus = true;
-				if (m_relativeMouse)
-				{
-					ShowCursor(FALSE);
-					ClipToWindow(hWnd);
-				}
-			}
-			else
-			{
-				if (m_relativeMouse)
-				{
-					ClipCursor(nullptr);
-				}
-				m_inFocus = false;
-			}
-			return false;
+		case WM_INPUT:
+		case WM_MOUSEMOVE:
+		case WM_MOUSEHOVER:
+			m_mouse->ProcessMessage(message, wParam, lParam);
+			return true;
 		case WM_KEYDOWN:
 			m_keyMap.SetKey(static_cast<int>(wParam), true, m_tick);
 			break;
@@ -83,107 +73,66 @@ namespace udsdx
 				break;
 			}
 			break;
-		case WM_MOUSEMOVE:
-			m_mouseX = GET_X_LPARAM(lParam);
-			m_mouseY = GET_Y_LPARAM(lParam);
-
-			if (m_relativeMouse && m_inFocus)
-			{
-				// Center mouse
-				RECT rect = {};
-				std::ignore = GetClientRect(hWnd, &rect);
-				POINT center = { (rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2 };
-				std::ignore = ClientToScreen(hWnd, &center);
-				SetCursorPos(center.x, center.y);
-			}
-
-			if (m_relativeMouse)
-			{
-				RECT rect = {};
-				std::ignore = GetClientRect(hWnd, &rect);
-				POINT center = { (rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2 };
-				m_mouseX -= center.x;
-				m_mouseY -= center.y;
-			}
-			break;
 		default:
 			return false;
 		}
 		return true;
 	}
 
-	void Input::IncreaseTick()
-	{ ZoneScoped;
-		m_tick += 1ull;
+	void Input::Initialize(HWND hWnd)
+	{
+		m_mouse->SetWindow(hWnd);
 	}
 
 	void Input::Reset()
 	{
 		m_keyMap.Clear();
 		m_mouseMap.Clear();
-		m_tick = 0ull;
+		m_tick = 1ull;
 	}
 
-	void Input::ClipToWindow(HWND hWnd)
+	void Input::Update()
 	{
-		assert(hWnd != nullptr);
+		m_tick += 1ull;
 
-		RECT rect = {};
-		std::ignore = GetClientRect(hWnd, &rect);
-
-		POINT ul;
-		ul.x = rect.left;
-		ul.y = rect.top;
-
-		POINT lr;
-		lr.x = rect.right;
-		lr.y = rect.bottom;
-
-		std::ignore = MapWindowPoints(hWnd, nullptr, &ul, 1);
-		std::ignore = MapWindowPoints(hWnd, nullptr, &lr, 1);
-
-		rect.left = ul.x;
-		rect.top = ul.y;
-
-		rect.right = lr.x;
-		rect.bottom = lr.y;
-
-		ClipCursor(&rect);
+		auto& state = m_mouse->GetState();
+		m_mouseX = state.x;
+		m_mouseY = state.y;
 	}
 
 	void Input::SetRelativeMouse(bool value)
 	{
-		m_relativeMouse = value;
+		m_mouse->SetMode(value ? Mouse::MODE_RELATIVE : Mouse::MODE_ABSOLUTE);
 	}
 
 	bool Input::GetKey(int key) const
 	{
-		return m_keyMap.GetKey(key, m_tick);
+		return m_keyMap.GetKey(key, m_tick - 1);
 	}
 
 	bool Input::GetKeyDown(int key) const
 	{
-		return m_keyMap.GetKeyDown(key, m_tick);
+		return m_keyMap.GetKeyDown(key, m_tick - 1);
 	}
 
 	bool Input::GetKeyUp(int key) const
 	{
-		return m_keyMap.GetKeyUp(key, m_tick);
+		return m_keyMap.GetKeyUp(key, m_tick - 1);
 	}
 
 	bool Input::GetMouseButton(int button) const
 	{
-		return m_mouseMap.GetKey(button, m_tick);
+		return m_mouseMap.GetKey(button, m_tick - 1);
 	}
 
 	bool Input::GetMouseButtonDown(int button) const
 	{
-		return m_mouseMap.GetKeyDown(button, m_tick);
+		return m_mouseMap.GetKeyDown(button, m_tick - 1);
 	}
 
 	bool Input::GetMouseButtonUp(int button) const
 	{
-		return m_mouseMap.GetKeyUp(button, m_tick);
+		return m_mouseMap.GetKeyUp(button, m_tick - 1);
 	}
 
 	int Input::GetMouseX() const
