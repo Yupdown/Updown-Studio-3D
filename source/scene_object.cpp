@@ -7,7 +7,7 @@ namespace udsdx
 {
 	SceneObject::SceneObject()
 	{
-		m_transform = std::make_unique<Transform>();
+
 	}
 
 	SceneObject::~SceneObject()
@@ -15,9 +15,9 @@ namespace udsdx
 
 	}
 
-	Transform* SceneObject::GetTransform() const
+	Transform* SceneObject::GetTransform()
 	{
-		return m_transform.get();
+		return &m_transform;
 	}
 
 	void SceneObject::RemoveAllComponents()
@@ -25,13 +25,13 @@ namespace udsdx
 		m_components.clear();
 	}
 
-	void SceneObject::Update(const Time& time, Scene& scene, const SceneObject& parent, bool forceValidate)
+	void SceneObject::Update(const Time& time, Scene& scene, bool forceValidate)
 	{
 		// Validate SRT matrix
-		forceValidate |= m_transform->ValidateLocalSRTMatrix();
+		forceValidate |= m_transform.ValidateLocalSRTMatrix();
 		if (forceValidate)
 		{
-			m_transform->ValidateWorldSRTMatrix(*parent.GetTransform());
+			m_transform.ValidateWorldSRTMatrix();
 		}
 
 		// Update components
@@ -43,13 +43,14 @@ namespace udsdx
 		// Update children, recursively
 		for (auto& child : m_children)
 		{
-			child->Update(time, scene, *this, forceValidate);
+			child->Update(time, scene, forceValidate);
 		}
 	}
 
 	void SceneObject::AddChild(std::shared_ptr<SceneObject> child)
 	{
 		child->m_parent = weak_from_this();
+		child->m_transform.SetParent(&m_transform);
 		m_children.push_back(child);
 	}
 
@@ -59,6 +60,7 @@ namespace udsdx
 		if (iter != m_children.end())
 		{
 			(*iter)->m_parent.reset();
+			(*iter)->m_transform.SetParent(nullptr);
 			m_children.erase(iter);
 		}
 	}

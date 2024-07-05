@@ -11,6 +11,8 @@ namespace udsdx
 		~Transform();
 
 	public:
+		void SetParent(Transform* parent);
+
 		void SetLocalPosition(const Vector3& position);
 		void SetLocalRotation(const Quaternion& rotation);
 		void SetLocalScale(const Vector3& scale);
@@ -26,15 +28,19 @@ namespace udsdx
 		Quaternion GetLocalRotation() const;
 		Vector3 GetLocalScale() const;
 
-		Vector3 GetWorldPosition() const;
+		Vector3 GetWorldPosition();
+		Quaternion GetWorldRotation();
 
 		Matrix4x4 GetLocalSRTMatrix() const;
 		Matrix4x4 GetWorldSRTMatrix() const;
 
 		bool ValidateLocalSRTMatrix();
-		void ValidateWorldSRTMatrix(const Transform& parent);
+		void ValidateWorldSRTMatrix();
+		void ValidateMatrixRecursive();
 
 	protected:
+		Transform*	m_parent;
+
 		Vector3		m_position;
 		Quaternion	m_rotation;
 		Vector3		m_scale;
@@ -42,6 +48,6 @@ namespace udsdx
 		Matrix4x4	m_localSRTMatrix;
 		Matrix4x4	m_worldSRTMatrix;
 
-		bool		m_isMatrixDirty;
+		bool		m_isLocalMatrixDirty;
 	};
 }

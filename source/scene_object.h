@@ -1,10 +1,10 @@
 #pragma once
 
 #include "pch.h"
+#include "transform.h"
 
 namespace udsdx
 {
-	class Transform;
 	class Component;
 	class Scene;
 
@@ -17,8 +17,8 @@ namespace udsdx
 		~SceneObject();
 
 	public:
-		Transform* GetTransform() const;
-		void Update(const Time& time, Scene& scene, const SceneObject& parent, bool forceValidate);
+		Transform* GetTransform();
+		void Update(const Time& time, Scene& scene, bool forceValidate);
 
 	public:
 		void AddChild(std::shared_ptr<SceneObject> child);
@@ -51,7 +51,7 @@ namespace udsdx
 		void RemoveAllComponents();
 
 	protected:
-		std::unique_ptr<Transform> m_transform;
+		Transform m_transform = Transform();
 		std::vector<std::unique_ptr<Component>> m_components;
 
 	protected:

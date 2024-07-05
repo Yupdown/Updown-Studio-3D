@@ -17,7 +17,7 @@ namespace udsdx
 {
 	Scene::Scene()
 	{
-		m_rootObject = std::make_unique<SceneObject>();
+
 	}
 
 	Scene::~Scene()
@@ -34,7 +34,7 @@ namespace udsdx
 
 		for (auto& object : m_objects)
 		{
-			object->Update(time, *this, *m_rootObject, false);
+			object->Update(time, *this, false);
 		}
 	}
 
