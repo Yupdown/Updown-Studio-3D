@@ -8,13 +8,23 @@ namespace udsdx
 	class Mesh : public ResourceObject
 	{
 	public:
+		struct Submesh
+		{
+			std::string Name;
+			UINT IndexCount = 0;
+			UINT StartIndexLocation = 0;
+			UINT BaseVertexLocation = 0;
+		};
+
+	public:
 		Mesh(const std::vector<Vertex>& vertices, const std::vector<UINT> indices);
+		Mesh(std::wstring_view resourcePath);
 
 	public:
 		void CreateBuffers(ID3D12Device* device, ID3D12GraphicsCommandList* commandList);
 		D3D12_VERTEX_BUFFER_VIEW VertexBufferView() const;
 		D3D12_INDEX_BUFFER_VIEW IndexBufferView() const;
-		UINT IndexCount() const;
+		const std::vector<Submesh>& GetSubmeshes() const;
 
 		// We can free this memory after we finish upload to the GPU.
 		void DisposeUploaders();
@@ -33,12 +43,13 @@ namespace udsdx
 		ComPtr<ID3D12Resource> m_vertexBufferUploader = nullptr;
 		ComPtr<ID3D12Resource> m_indexBufferUploader = nullptr;
 
+		std::vector<Submesh> m_submeshes;
+
 		// Data about the buffers.
 		UINT m_vertexByteStride = 0;
 		UINT m_vertexBufferByteSize = 0;
 		DXGI_FORMAT m_indexFormat = DXGI_FORMAT_R32_UINT;
 		UINT m_indexBufferByteSize = 0;
-		UINT m_indexCount = 0;
 
 		BoundingBox m_bounds;
 	};

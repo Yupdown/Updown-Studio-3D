@@ -7,11 +7,6 @@
 #include "audio.h"
 #include "audio_clip.h"
 
-// Assimp Library
-#include <assimp/Importer.hpp>
-#include <assimp/scene.h>
-#include <assimp/postprocess.h>
-
 namespace udsdx
 {
 	Resource::Resource()
@@ -132,58 +127,7 @@ namespace udsdx
 
 	std::unique_ptr<ResourceObject> ModelLoader::Load(std::wstring_view path)
 	{ ZoneScoped;
-		std::vector<Vertex> vertices;
-		std::vector<UINT> indices;
-
-		// Read the model from file
-		ComPtr<ID3DBlob> modelData;
-		ThrowIfFailed(D3DReadFileToBlob(path.data(), &modelData));
-
-		// Load the model using Assimp
-		Assimp::Importer importer;
-		auto model = importer.ReadFileFromMemory(
-			modelData->GetBufferPointer(),
-			static_cast<size_t>(modelData->GetBufferSize()),
-			aiProcess_Triangulate | aiProcess_ConvertToLeftHanded
-		);
-		assert(model != nullptr);
-		
-		for (UINT k = 0; k < model->mNumMeshes; ++k)
-		{
-			auto mesh = model->mMeshes[k];
-			UINT indexBase = static_cast<UINT>(vertices.size());
-
-			for (UINT i = 0; i < mesh->mNumVertices; ++i)
-			{
-				Vertex vertex;
-				vertex.position.x = mesh->mVertices[i].x;
-				vertex.position.y = mesh->mVertices[i].y;
-				vertex.position.z = mesh->mVertices[i].z;
-				if (mesh->HasNormals())
-				{
-					vertex.normal.x = mesh->mNormals[i].x;
-					vertex.normal.y = mesh->mNormals[i].y;
-					vertex.normal.z = mesh->mNormals[i].z;
-				}
-				if (mesh->HasTextureCoords(0))
-				{
-					vertex.uv.x = mesh->mTextureCoords[0][i].x;
-					vertex.uv.y = mesh->mTextureCoords[0][i].y;
-				}
-				vertices.push_back(vertex);
-			}
-
-			for (UINT i = 0; i < mesh->mNumFaces; ++i)
-			{
-				auto face = mesh->mFaces[i];
-				for (UINT j = 0; j < face.mNumIndices; ++j)
-				{
-					indices.push_back(indexBase + face.mIndices[j]);
-				}
-			}
-		}
-
-		auto modelResource = std::make_unique<Mesh>(vertices, indices);
+		auto modelResource = std::make_unique<Mesh>(path);
 		modelResource->CreateBuffers(m_device, m_commandList);
 
 		return modelResource;
