@@ -69,16 +69,25 @@ namespace udsdx
             {
                 m_ioUpdateCallback();
             }
+            bool terminated = false;
             while (PeekMessage(&message, nullptr, 0, 0, PM_REMOVE))
             {
 				TranslateMessage(&message);
 				DispatchMessage(&message);
+                terminated |= message.message == WM_QUIT;
 			}
+            if (terminated)
+            {
+                break;
+            }
+
             core->AcquireNextFrameResource();
             core->Update();
             core->Render();
         }
+
         core->OnDestroy();
+
         return static_cast<int>(message.wParam);
     }
 
