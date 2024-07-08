@@ -6,73 +6,6 @@ namespace udsdx
 {
 	class Input
 	{
-	private:
-		template <typename T>
-		struct KeyMap
-		{
-		public:
-			void SetKey(T key, bool state, unsigned long long tick)
-			{
-				if (state)
-				{
-					keyDownTick[key] = tick;
-				}
-				else
-				{
-					keyUpTick[key] = tick;
-				}
-			}
-
-			bool GetKey(T key, unsigned long long tick) const
-			{
-				auto iterDown = keyDownTick.find(key);
-				if (iterDown == keyDownTick.end())
-				{
-					return false;
-				}
-				auto iterUp = keyUpTick.find(key);
-				if (iterUp == keyUpTick.end())
-				{
-					return true;
-				}
-				if (iterDown->second > iterUp->second)
-				{
-					return true;
-				}
-				return iterDown->second == tick;
-			}
-
-			bool GetKeyDown(T key, unsigned long long tick) const
-			{
-				auto iter = keyDownTick.find(key);
-				if (iter == keyDownTick.end())
-				{
-					return false;
-				}
-				return iter->second == tick;
-			}
-
-			bool GetKeyUp(T key, unsigned long long tick) const
-			{
-				auto iter = keyUpTick.find(key);
-				if (iter == keyUpTick.end())
-				{
-					return false;
-				}
-				return iter->second == tick;
-			}
-
-			void Clear()
-			{
-				keyDownTick.clear();
-				keyUpTick.clear();
-			}
-
-		private:
-			std::unordered_map<T, unsigned long long> keyDownTick;
-			std::unordered_map<T, unsigned long long> keyUpTick;
-		};
-
 	public:
 		Input();
 		~Input();
@@ -86,31 +19,60 @@ namespace udsdx
 		void SetRelativeMouse(bool value);
 
 		// Check if a key is pressed
-		bool GetKey(int key) const;
+		bool GetKey(Keyboard::Keys key) const;
 		// Check if a key is pressed this frame
-		bool GetKeyDown(int key) const;
+		bool GetKeyDown(Keyboard::Keys key) const;
 		// Check if a key is released this frame
-		bool GetKeyUp(int key) const;
+		bool GetKeyUp(Keyboard::Keys key) const;
 
 		// Check if a mouse button is pressed
-		bool GetMouseButton(int button) const;
+		bool GetMouseLeftButton() const;
 		// Check if a mouse button is pressed this frame
-		bool GetMouseButtonDown(int button) const;
+		bool GetMouseLeftButtonDown() const;
 		// Check if a mouse button is released this frame
-		bool GetMouseButtonUp(int button) const;
+		bool GetMouseLeftButtonUp() const;
+
+		// Check if a mouse button is pressed
+		bool GetMouseRightButton() const;
+		// Check if a mouse button is pressed this frame
+		bool GetMouseRightButtonDown() const;
+		// Check if a mouse button is released this frame
+		bool GetMouseRightButtonUp() const;
+
+		// Check if a mouse button is pressed
+		bool GetMouseMiddleButton() const;
+		// Check if a mouse button is pressed this frame
+		bool GetMouseMiddleButtonDown() const;
+		// Check if a mouse button is released this frame
+		bool GetMouseMiddleButtonUp() const;
+
+		// Check if a mouse button is pressed
+		bool GetMouseXButton1() const;
+		// Check if a mouse button is pressed this frame
+		bool GetMouseXButton1Down() const;
+		// Check if a mouse button is released this frame
+		bool GetMouseXButton1Up() const;
+
+		// Check if a mouse button is pressed
+		bool GetMouseXButton2() const;
+		// Check if a mouse button is pressed this frame
+		bool GetMouseXButton2Down() const;
+		// Check if a mouse button is released this frame
+		bool GetMouseXButton2Up() const;
 
 		// Mouse x position in screen space (up-left origin)
 		int GetMouseX() const;
 		// Mouse y position in screen space (up-left origin)
 		int GetMouseY() const;
+		// Mouse scroll wheel value
+		int GetMouseScrollValue() const;
 
 	private:
-		unsigned long long m_tick = 1ull;
-
+		std::unique_ptr<Keyboard> m_keyboard;
 		std::unique_ptr<Mouse> m_mouse;
 
-		KeyMap<int> m_keyMap;
-		KeyMap<int> m_mouseMap;
+		Mouse::ButtonStateTracker m_mouseTracker;
+		Keyboard::KeyboardStateTracker m_keyboardTracker;
 
 		int m_mouseX = 0;
 		int m_mouseY = 0;

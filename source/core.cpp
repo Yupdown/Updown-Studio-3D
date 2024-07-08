@@ -683,8 +683,6 @@ namespace udsdx
 					break;
 				}
 			}
-			return false;
-
 		default:
 			return INSTANCE(Input)->ProcessMessage(hWnd, message, wParam, lParam);
 		}

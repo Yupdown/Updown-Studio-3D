@@ -5,6 +5,7 @@ namespace udsdx
 {
 	Input::Input()
 	{
+		m_keyboard = std::make_unique<Keyboard>();
 		m_mouse = std::make_unique<Mouse>();
 	}
 
@@ -22,56 +23,28 @@ namespace udsdx
 			return false;
 		case WM_ACTIVATE:
 		case WM_ACTIVATEAPP:
+			m_mouse->ProcessMessage(message, wParam, lParam);
+			m_keyboard->ProcessMessage(message, wParam, lParam);
+			break;
 		case WM_INPUT:
 		case WM_MOUSEMOVE:
+		case WM_LBUTTONDOWN:
+		case WM_LBUTTONUP:
+		case WM_RBUTTONDOWN:
+		case WM_RBUTTONUP:
+		case WM_MBUTTONDOWN:
+		case WM_MBUTTONUP:
+		case WM_MOUSEWHEEL:
+		case WM_XBUTTONDOWN:
+		case WM_XBUTTONUP:
 		case WM_MOUSEHOVER:
 			m_mouse->ProcessMessage(message, wParam, lParam);
-			return true;
+			break;
 		case WM_KEYDOWN:
-			m_keyMap.SetKey(static_cast<int>(wParam), true, m_tick);
-			break;
 		case WM_KEYUP:
-			m_keyMap.SetKey(static_cast<int>(wParam), false, m_tick);
-			break;
-		case WM_LBUTTONDOWN:
-			m_mouseMap.SetKey(MK_LBUTTON, true, m_tick);
-			break;
-		case WM_LBUTTONUP:
-			m_mouseMap.SetKey(MK_LBUTTON, false, m_tick);
-			break;
-		case WM_RBUTTONDOWN:
-			m_mouseMap.SetKey(MK_RBUTTON, true, m_tick);
-			break;
-		case WM_RBUTTONUP:
-			m_mouseMap.SetKey(MK_RBUTTON, false, m_tick);
-			break;
-		case WM_MBUTTONDOWN:
-			m_mouseMap.SetKey(MK_MBUTTON, true, m_tick);
-			break;
-		case WM_MBUTTONUP:
-			m_mouseMap.SetKey(MK_MBUTTON, false, m_tick);
-			break;
-		case WM_XBUTTONDOWN:
-			switch (HIWORD(wParam))
-			{
-			case XBUTTON1:
-				m_mouseMap.SetKey(XBUTTON1, true, m_tick);
-				break;
-			case XBUTTON2:
-				m_mouseMap.SetKey(XBUTTON2, true, m_tick);
-				break;
-			}
-			break;
-		case WM_XBUTTONUP:
-			switch (HIWORD(wParam))
-			{
-			case XBUTTON1:
-				m_mouseMap.SetKey(XBUTTON1, false, m_tick);
-				break;
-			case XBUTTON2:
-				m_mouseMap.SetKey(XBUTTON2, false, m_tick);
-				break;
-			}
+		case WM_SYSKEYDOWN:
+		case WM_SYSKEYUP:
+			m_keyboard->ProcessMessage(message, wParam, lParam);
 			break;
 		default:
 			return false;
@@ -86,18 +59,23 @@ namespace udsdx
 
 	void Input::Reset()
 	{
-		m_keyMap.Clear();
-		m_mouseMap.Clear();
-		m_tick = 1ull;
+		m_mouse->ResetScrollWheelValue();
+		m_keyboard->Reset();
+
+		m_mouseTracker.Reset();
+		m_keyboardTracker.Reset();
 	}
 
 	void Input::Update()
 	{
-		m_tick += 1ull;
+		auto& mState = m_mouse->GetState();
+		auto& kState = m_keyboard->GetState();
 
-		auto& state = m_mouse->GetState();
-		m_mouseX = state.x;
-		m_mouseY = state.y;
+		m_mouseX = mState.x;
+		m_mouseY = mState.y;
+
+		m_mouseTracker.Update(mState);
+		m_keyboardTracker.Update(kState);
 	}
 
 	void Input::SetRelativeMouse(bool value)
@@ -105,34 +83,94 @@ namespace udsdx
 		m_mouse->SetMode(value ? Mouse::MODE_RELATIVE : Mouse::MODE_ABSOLUTE);
 	}
 
-	bool Input::GetKey(int key) const
+	bool Input::GetKey(Keyboard::Keys key) const
 	{
-		return m_keyMap.GetKey(key, m_tick - 1);
+		return m_keyboard->GetState().IsKeyDown(key);
 	}
 
-	bool Input::GetKeyDown(int key) const
+	bool Input::GetKeyDown(Keyboard::Keys key) const
 	{
-		return m_keyMap.GetKeyDown(key, m_tick - 1);
+		return m_keyboardTracker.IsKeyPressed(key);
 	}
 
-	bool Input::GetKeyUp(int key) const
+	bool Input::GetKeyUp(Keyboard::Keys key) const
 	{
-		return m_keyMap.GetKeyUp(key, m_tick - 1);
+		return m_keyboardTracker.IsKeyReleased(key);
 	}
 
-	bool Input::GetMouseButton(int button) const
+	bool Input::GetMouseLeftButton() const
 	{
-		return m_mouseMap.GetKey(button, m_tick - 1);
+		return m_mouse->GetState().leftButton;
 	}
 
-	bool Input::GetMouseButtonDown(int button) const
+	bool Input::GetMouseLeftButtonDown() const
 	{
-		return m_mouseMap.GetKeyDown(button, m_tick - 1);
+		return m_mouseTracker.leftButton == Mouse::ButtonStateTracker::PRESSED;
 	}
 
-	bool Input::GetMouseButtonUp(int button) const
+	bool Input::GetMouseLeftButtonUp() const
 	{
-		return m_mouseMap.GetKeyUp(button, m_tick - 1);
+		return m_mouseTracker.leftButton == Mouse::ButtonStateTracker::RELEASED;
+	}
+
+	bool Input::GetMouseRightButton() const
+	{
+		return m_mouse->GetState().rightButton;
+	}
+
+	bool Input::GetMouseRightButtonDown() const
+	{
+		return m_mouseTracker.rightButton == Mouse::ButtonStateTracker::PRESSED;
+	}
+
+	bool Input::GetMouseRightButtonUp() const
+	{
+		return m_mouseTracker.rightButton == Mouse::ButtonStateTracker::RELEASED;
+	}
+
+	bool Input::GetMouseMiddleButton() const
+	{
+		return m_mouse->GetState().middleButton;
+	}
+
+	bool Input::GetMouseMiddleButtonDown() const
+	{
+		return m_mouseTracker.middleButton == Mouse::ButtonStateTracker::PRESSED;
+	}
+
+	bool Input::GetMouseMiddleButtonUp() const
+	{
+		return m_mouseTracker.middleButton == Mouse::ButtonStateTracker::RELEASED;
+	}
+
+	bool Input::GetMouseXButton1() const
+	{
+		return m_mouse->GetState().xButton1;
+	}
+
+	bool Input::GetMouseXButton1Down() const
+	{
+		return m_mouseTracker.xButton1 == Mouse::ButtonStateTracker::PRESSED;
+	}
+
+	bool Input::GetMouseXButton1Up() const
+	{
+		return m_mouseTracker.xButton1 == Mouse::ButtonStateTracker::RELEASED;
+	}
+
+	bool Input::GetMouseXButton2() const
+	{
+		return m_mouse->GetState().xButton2;
+	}
+
+	bool Input::GetMouseXButton2Down() const
+	{
+		return m_mouseTracker.xButton2 == Mouse::ButtonStateTracker::PRESSED;
+	}
+
+	bool Input::GetMouseXButton2Up() const
+	{
+		return m_mouseTracker.xButton2 == Mouse::ButtonStateTracker::RELEASED;
 	}
 
 	int Input::GetMouseX() const
@@ -143,5 +181,10 @@ namespace udsdx
 	int Input::GetMouseY() const
 	{
 		return m_mouseY;
+	}
+
+	int Input::GetMouseScroll() const
+	{
+		return m_mouse->GetState().scrollWheelValue;
 	}
 }

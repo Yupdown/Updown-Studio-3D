@@ -66,6 +66,7 @@ using namespace DirectX;
 // DirectXTK Library
 #include <directxtk12/Audio.h>
 #include <directxtk12/Mouse.h>
+#include <directxtk12/Keyboard.h>
 #include <directxtk12/SimpleMath.h>
 #include <directxtk12/ResourceUploadBatch.h>
 #include <directxtk12/DDSTextureLoader.h>
