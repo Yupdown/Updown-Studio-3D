@@ -65,7 +65,7 @@ namespace udsdx
 		// Mouse y position in screen space (up-left origin)
 		int GetMouseY() const;
 		// Mouse scroll wheel value
-		int GetMouseScrollValue() const;
+		int GetMouseScroll() const;
 
 	private:
 		std::unique_ptr<Keyboard> m_keyboard;
