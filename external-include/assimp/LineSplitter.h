@@ -2,7 +2,7 @@
 Open Asset Import Library (assimp)
 ----------------------------------------------------------------------
 
-Copyright (c) 2006-2024, assimp team
+Copyright (c) 2006-2022, assimp team
 
 All rights reserved.
 
@@ -110,8 +110,6 @@ public:
 
     std::string operator* () const;
 
-    const char *getEnd() const;
-
     // -----------------------------------------
     /** boolean context */
     operator bool() const;
@@ -141,21 +139,17 @@ public:
 private:
     line_idx mIdx;
     std::string mCur;
-    const char *mEnd;
     StreamReaderLE& mStream;
     bool mSwallow, mSkip_empty_lines, mTrim;
 };
 
 AI_FORCE_INLINE LineSplitter::LineSplitter(StreamReaderLE& stream, bool skip_empty_lines, bool trim ) :
         mIdx(0),
-        mCur(),
-        mEnd(nullptr),
         mStream(stream),
         mSwallow(),
         mSkip_empty_lines(skip_empty_lines),
         mTrim(trim) {
     mCur.reserve(1024);
-    mEnd = mCur.c_str() + 1024;
     operator++();
     mIdx = 0;
 }
@@ -209,14 +203,14 @@ AI_FORCE_INLINE LineSplitter &LineSplitter::operator++(int) {
 AI_FORCE_INLINE const char *LineSplitter::operator[] (size_t idx) const {
     const char* s = operator->()->c_str();
 
-    SkipSpaces(&s, mEnd);
+    SkipSpaces(&s);
     for (size_t i = 0; i < idx; ++i) {
         for (; !IsSpace(*s); ++s) {
             if (IsLineEnd(*s)) {
                 throw std::range_error("Token index out of range, EOL reached");
             }
         }
-        SkipSpaces(&s, mEnd);
+        SkipSpaces(&s);
     }
     return s;
 }
@@ -225,7 +219,7 @@ template <size_t N>
 AI_FORCE_INLINE void LineSplitter::get_tokens(const char* (&tokens)[N]) const {
     const char* s = operator->()->c_str();
 
-    SkipSpaces(&s, mEnd);
+    SkipSpaces(&s);
     for (size_t i = 0; i < N; ++i) {
         if (IsLineEnd(*s)) {
             throw std::range_error("Token count out of range, EOL reached");
@@ -233,7 +227,7 @@ AI_FORCE_INLINE void LineSplitter::get_tokens(const char* (&tokens)[N]) const {
         tokens[i] = s;
 
         for (; *s && !IsSpace(*s); ++s);
-        SkipSpaces(&s, mEnd);
+        SkipSpaces(&s);
     }
 }
 
@@ -243,10 +237,6 @@ AI_FORCE_INLINE const std::string* LineSplitter::operator -> () const {
 
 AI_FORCE_INLINE std::string LineSplitter::operator* () const {
     return mCur;
-}
-
-AI_FORCE_INLINE const char* LineSplitter::getEnd() const {
-    return mEnd;
 }
 
 AI_FORCE_INLINE LineSplitter::operator bool() const {

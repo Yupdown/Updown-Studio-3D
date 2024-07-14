@@ -44,6 +44,7 @@ namespace udsdx
 		HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 		assert(SUCCEEDED(hr));
 #endif
+
 		// Get title of window
 		wchar_t buffer[256];
 		GetWindowText(m_hMainWnd, buffer, 256);

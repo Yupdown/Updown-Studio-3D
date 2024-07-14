@@ -5,6 +5,7 @@
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
+#include <assimp/DefaultLogger.hpp>
 
 namespace udsdx
 {
@@ -80,6 +81,10 @@ namespace udsdx
 		ComPtr<ID3DBlob> modelData;
 		ThrowIfFailed(D3DReadFileToBlob(resourcePath.data(), &modelData));
 
+#if defined(DEBUG) || defined(_DEBUG)
+		Assimp::DefaultLogger::create("", Assimp::Logger::VERBOSE);
+#endif
+
 		// Load the model using Assimp
 		Assimp::Importer importer;
 		auto model = importer.ReadFileFromMemory(
@@ -87,6 +92,7 @@ namespace udsdx
 			static_cast<size_t>(modelData->GetBufferSize()),
 			aiProcess_Triangulate | aiProcess_ConvertToLeftHanded
 		);
+
 		assert(model != nullptr);
 
 		for (UINT k = 0; k < model->mNumMeshes; ++k)
@@ -128,8 +134,11 @@ namespace udsdx
 					indices.push_back(face.mIndices[j]);
 				}
 			}
-
 		}
+
+#if defined(DEBUG) || defined(_DEBUG)
+		Assimp::DefaultLogger::kill();
+#endif
 
 		const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
 		const UINT ibByteSize = (UINT)indices.size() * sizeof(UINT);

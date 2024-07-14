@@ -2,7 +2,7 @@
 Open Asset Import Library (assimp)
 ----------------------------------------------------------------------
 
-Copyright (c) 2006-2024, assimp team
+Copyright (c) 2006-2022, assimp team
 
 All rights reserved.
 
@@ -287,7 +287,7 @@ static AI_FORCE_INLINE bool isEndOfCache(size_t pos, size_t cacheSize) {
 template <class T>
 AI_FORCE_INLINE bool IOStreamBuffer<T>::getNextLine(std::vector<T> &buffer) {
     buffer.resize(m_cacheSize);
-    if (m_cachePos >= m_cacheSize || 0 == m_filePos) {
+    if (isEndOfCache(m_cachePos, m_cacheSize) || 0 == m_filePos) {
         if (!readNextBlock()) {
             return false;
         }
