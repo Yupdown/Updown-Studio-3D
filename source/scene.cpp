@@ -17,7 +17,7 @@ namespace udsdx
 {
 	Scene::Scene()
 	{
-
+		m_rootObject = std::make_unique<SceneObject>();
 	}
 
 	Scene::~Scene()
@@ -32,10 +32,7 @@ namespace udsdx
 		m_renderObjectQueue.clear();
 		m_renderShadowObjectQueue.clear();
 
-		for (auto& object : m_objects)
-		{
-			object->Update(time, *this, false);
-		}
+		m_rootObject->Update(time, *this, false);
 	}
 
 	void Scene::Render(RenderParam& param)
@@ -62,16 +59,7 @@ namespace udsdx
 
 	void Scene::AddObject(std::shared_ptr<SceneObject> object)
 	{
-		m_objects.emplace_back(object);
-	}
-
-	void Scene::RemoveObject(std::shared_ptr<SceneObject> object)
-	{
-		auto iter = std::find(m_objects.begin(), m_objects.end(), object);
-		if (iter != m_objects.end())
-		{
-			m_objects.erase(iter);
-		}
+		m_rootObject->AddChild(object);
 	}
 
 	void Scene::EnqueueRenderCamera(Camera* camera)

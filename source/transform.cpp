@@ -27,6 +27,11 @@ namespace udsdx
 		m_parent = parent;
 	}
 
+	Transform* Transform::GetParent() const
+	{
+		return m_parent;
+	}
+
 	void Transform::SetLocalPosition(const Vector3& position)
 	{
 		m_position = position;

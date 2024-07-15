@@ -12,6 +12,7 @@ namespace udsdx
 
 	public:
 		void SetParent(Transform* parent);
+		Transform* GetParent() const;
 
 		void SetLocalPosition(const Vector3& position);
 		void SetLocalRotation(const Quaternion& rotation);

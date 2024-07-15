@@ -38,7 +38,7 @@ namespace udsdx
 		void PassRenderMain(RenderParam& param, Camera* camera);
 
 	protected:
-		std::vector<std::shared_ptr<SceneObject>> m_objects;
+		std::unique_ptr<SceneObject> m_rootObject;
 
 		std::vector<Camera*> m_renderCameraQueue;
 		std::vector<LightDirectional*> m_renderLightQueue;

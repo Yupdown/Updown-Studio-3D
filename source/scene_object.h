@@ -22,7 +22,7 @@ namespace udsdx
 
 	public:
 		void AddChild(std::shared_ptr<SceneObject> child);
-		void RemoveChild(std::shared_ptr<SceneObject> child);
+		void RemoveFromParent();
 		std::shared_ptr<SceneObject> GetParent() const;
 
 	public:
@@ -55,7 +55,8 @@ namespace udsdx
 		std::vector<std::unique_ptr<Component>> m_components;
 
 	protected:
-		std::vector<std::shared_ptr<SceneObject>> m_children;
-		std::weak_ptr<SceneObject> m_parent;
+		SceneObject* m_parent = nullptr;
+		std::shared_ptr<SceneObject> m_sibling = nullptr;
+		std::shared_ptr<SceneObject> m_child = nullptr;
 	};
 }
