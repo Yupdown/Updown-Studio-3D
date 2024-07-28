@@ -5,7 +5,6 @@
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
-#include <assimp/DefaultLogger.hpp>
 
 namespace udsdx
 {
@@ -81,10 +80,6 @@ namespace udsdx
 		ComPtr<ID3DBlob> modelData;
 		ThrowIfFailed(D3DReadFileToBlob(resourcePath.data(), &modelData));
 
-#if defined(DEBUG) || defined(_DEBUG)
-		Assimp::DefaultLogger::create("", Assimp::Logger::VERBOSE);
-#endif
-
 		// Load the model using Assimp
 		Assimp::Importer importer;
 		auto model = importer.ReadFileFromMemory(
@@ -123,6 +118,12 @@ namespace udsdx
 					vertex.uv.x = mesh->mTextureCoords[0][i].x;
 					vertex.uv.y = mesh->mTextureCoords[0][i].y;
 				}
+				if (mesh->HasTangentsAndBitangents())
+				{
+					vertex.tangent.x = mesh->mTangents[i].x;
+					vertex.tangent.y = mesh->mTangents[i].y;
+					vertex.tangent.z = mesh->mTangents[i].z;
+				}
 				vertices.push_back(vertex);
 			}
 
@@ -135,10 +136,6 @@ namespace udsdx
 				}
 			}
 		}
-
-#if defined(DEBUG) || defined(_DEBUG)
-		Assimp::DefaultLogger::kill();
-#endif
 
 		const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
 		const UINT ibByteSize = (UINT)indices.size() * sizeof(UINT);

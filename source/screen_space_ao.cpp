@@ -26,18 +26,16 @@ namespace udsdx
 
 		struct VertexIn
 		{
-			float3 PosL  : POSITION;
-			float4 Color : COLOR;
-			float2 Tex : TEXCOORD;
-			float3 Normal : NORMAL;
+			float3 PosL		: POSITION;
+			float2 Tex		: TEXCOORD;
+			float3 Normal	: NORMAL;
 		};
 
 		struct VertexOut
 		{
-			float4 PosH : SV_POSITION;
-			float2 TexC : TEXCOORD;
-			float3 Normal : NORMAL;
-			float3 WorldPos : POSITION;
+			float4 PosH		: SV_POSITION;
+			float2 TexC		: TEXCOORD;
+			float3 Normal	: NORMAL;
 		};
 
 		VertexOut VS(VertexIn vin)
@@ -48,7 +46,6 @@ namespace udsdx
 			vout.PosH = mul(mul(posW, gView), gProj);
 			vout.TexC = vin.Tex;
 			vout.Normal = mul(vin.Normal, (float3x3)gWorld);
-			vout.WorldPos = posW.xyz;
 
 			return vout;
 		}
@@ -106,7 +103,7 @@ namespace udsdx
 		{
 			float4 PosH : SV_POSITION;
 			float3 PosV : POSITION;
-			float2 TexC : TEXCOORD0;
+			float2 TexC : TEXCOORD;
 		};
 
 		VertexOut VS(uint vid : SV_VertexID)

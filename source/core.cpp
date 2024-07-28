@@ -16,6 +16,8 @@
 #include "shadow_map.h"
 #include "screen_space_ao.h"
 
+#include <assimp/DefaultLogger.hpp>
+
 namespace udsdx
 {
 	Core::Core()
@@ -61,8 +63,15 @@ namespace udsdx
 		auto resource = Singleton<Resource>::CreateInstance();
 		m_timeMeasure = Singleton<TimeMeasure>::CreateInstance();
 
+#if defined(DEBUG) || defined(_DEBUG)
+		Assimp::DefaultLogger::create("", Assimp::Logger::VERBOSE);
+#endif
 		INSTANCE(Input)->Initialize(m_hMainWnd);
 		resource->Initialize(m_d3dDevice.Get(), m_commandQueue.Get(), m_commandList.Get(), m_rootSignature.Get());
+
+#if defined(DEBUG) || defined(_DEBUG)
+		Assimp::DefaultLogger::kill();
+#endif
 
 		BuildDescriptorHeaps();
 		BuildConstantBuffers();
