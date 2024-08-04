@@ -85,7 +85,7 @@ namespace udsdx
 		auto model = importer.ReadFileFromMemory(
 			modelData->GetBufferPointer(),
 			static_cast<size_t>(modelData->GetBufferSize()),
-			aiProcess_Triangulate | aiProcess_ConvertToLeftHanded
+			aiProcess_Triangulate | aiProcess_ConvertToLeftHanded | aiProcess_CalcTangentSpace
 		);
 
 		assert(model != nullptr);

@@ -34,7 +34,7 @@ namespace udsdx
         }
 
         // Create console window for debug
-#ifdef _DEBUG
+#ifdef CONSOLE
         if (AllocConsole())
         {
             FILE* fp;

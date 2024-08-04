@@ -149,7 +149,7 @@ namespace udsdx
 		m_shadowMap->BuildPipelineState(m_d3dDevice.Get(), m_rootSignature.Get());
 
 		// Create Screen Space Ambient Occlusion
-		m_screenSpaceAO = std::make_unique<ScreenSpaceAO>(m_d3dDevice.Get(), m_commandList.Get(), 100, 100);
+		m_screenSpaceAO = std::make_unique<ScreenSpaceAO>(m_d3dDevice.Get(), m_commandList.Get(), 0.5f);
 		m_screenSpaceAO->BuildPipelineState(m_d3dDevice.Get(), m_rootSignature.Get());
 
 		const char tracyQueueName[] = "D3D12 Graphics Queue";
@@ -245,7 +245,7 @@ namespace udsdx
 	void Core::CreateRtvAndDsvDescriptorHeaps()
 	{ ZoneScoped;
 		D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc;
-		rtvHeapDesc.NumDescriptors = SwapChainBufferCount + 3;
+		rtvHeapDesc.NumDescriptors = SwapChainBufferCount + 4;
 		rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
 		rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 		rtvHeapDesc.NodeMask = 0;
@@ -287,7 +287,7 @@ namespace udsdx
 
 		// Create SRV heap
 		D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc;
-		srvHeapDesc.NumDescriptors = static_cast<UINT>(textures.size() + 5);
+		srvHeapDesc.NumDescriptors = static_cast<UINT>(textures.size() + 6);
 		srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 		srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 		srvHeapDesc.NodeMask = 0;

@@ -86,6 +86,9 @@
     <ClCompile Include="source\scene.cpp">
       <Filter>Engine\Runtime</Filter>
     </ClCompile>
+    <ClCompile Include="source\rigged_mesh_renderer.cpp">
+      <Filter>Engine\Runtime</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Precompiled Headers">
@@ -200,6 +203,12 @@
       <Filter>Precompiled Headers</Filter>
     </ClInclude>
     <ClInclude Include="source\scene.h">
+      <Filter>Engine\Runtime</Filter>
+    </ClInclude>
+    <ClInclude Include="source\screen_space_ao.h">
+      <Filter>Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="source\rigged_mesh_renderer.h">
       <Filter>Engine\Runtime</Filter>
     </ClInclude>
   </ItemGroup>

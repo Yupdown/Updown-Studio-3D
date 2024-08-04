@@ -161,7 +161,7 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>false</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <PrecompiledHeader>Use</PrecompiledHeader>
@@ -179,7 +179,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>TRACY_ENABLE;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>TRACY_ENABLE;NDEBUG;_CONSOLE;CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>false</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <PrecompiledHeader>Use</PrecompiledHeader>
@@ -198,7 +198,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>false</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <PrecompiledHeader>Use</PrecompiledHeader>
@@ -238,6 +238,7 @@
     </ClCompile>
     <ClCompile Include="source\resource.cpp" />
     <ClCompile Include="source\resource_object.cpp" />
+    <ClCompile Include="source\rigged_mesh_renderer.cpp" />
     <ClCompile Include="source\scene.cpp" />
     <ClCompile Include="source\scene_object.cpp" />
     <ClCompile Include="source\screen_space_ao.cpp" />
@@ -277,8 +278,10 @@
     <ClInclude Include="source\pch.h" />
     <ClInclude Include="source\resource.h" />
     <ClInclude Include="source\resource_object.h" />
+    <ClInclude Include="source\rigged_mesh_renderer.h" />
     <ClInclude Include="source\scene.h" />
     <ClInclude Include="source\scene_object.h" />
+    <ClInclude Include="source\screen_space_ao.h" />
     <ClInclude Include="source\shader.h" />
     <ClInclude Include="source\shadow_map.h" />
     <ClInclude Include="source\singleton.h" />
