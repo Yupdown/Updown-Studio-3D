@@ -5,6 +5,7 @@
 namespace udsdx
 {
 	class SceneObject;
+	class Transform;
 	class Scene;
 
 	class Component
@@ -19,6 +20,11 @@ namespace udsdx
 
 	public:
 		std::shared_ptr<SceneObject> GetSceneObject() const;
+		Transform* GetTransform();
+		template <typename Component_T>
+		Component_T* AddComponent() { return GetSceneObject()->AddComponent<Component_T>(); }
+		template <typename Component_T>
+		Component* GetComponent() const { return GetSceneObject()->GetComponent<Component_T>(); }
 
 	protected:
 		std::weak_ptr<SceneObject> m_object;

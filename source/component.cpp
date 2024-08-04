@@ -18,4 +18,9 @@ namespace udsdx
 	{
 		return m_object.lock();
 	}
+
+	Transform* Component::GetTransform()
+	{
+		return GetSceneObject()->GetTransform();
+	}
 }
