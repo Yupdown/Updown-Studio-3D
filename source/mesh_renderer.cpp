@@ -48,12 +48,12 @@ namespace udsdx
 		ObjectConstants objectConstants;
 		objectConstants.World = worldMat.Transpose();
 
-		param.CommandList->SetGraphicsRoot32BitConstants(0, sizeof(ObjectConstants) / 4, &objectConstants, 0);
+		param.CommandList->SetGraphicsRoot32BitConstants(RootParam::PerObjectCBV, sizeof(ObjectConstants) / 4, &objectConstants, 0);
 
 		if (m_material != nullptr && m_material->GetMainTexture() != nullptr)
 		{
 			Texture* mainTex = m_material->GetMainTexture();
-			param.CommandList->SetGraphicsRootDescriptorTable(4, mainTex->GetSrvGpu());
+			param.CommandList->SetGraphicsRootDescriptorTable(RootParam::MainTexSRV, mainTex->GetSrvGpu());
 		}
 
 		param.CommandList->IASetVertexBuffers(0, 1, &m_mesh->VertexBufferView());
@@ -114,5 +114,10 @@ namespace udsdx
 	bool MeshRenderer::GetReceiveShadow() const
 	{
 		return m_receiveShadow;
+	}
+
+	ID3D12PipelineState* MeshRenderer::GetPipelineState() const
+	{
+		return m_shader->DefaultPipelineState();
 	}
 }

@@ -6,6 +6,7 @@
 #include "resource_object.h"
 #include "material.h"
 #include "mesh.h"
+#include "rigged_mesh.h"
 #include "texture.h"
 #include "shader.h"
 #include "texture.h"
@@ -23,6 +24,7 @@
 #include "transform.h"
 #include "component.h"
 #include "mesh_renderer.h"
+#include "rigged_mesh_renderer.h"
 #include "camera.h"
 #include "light_directional.h"
 

@@ -15,7 +15,7 @@ namespace udsdx
 			float4x4 gWorld; 
 		};
 
-		cbuffer cbPerShadow : register(b2)
+		cbuffer cbPerShadow : register(b3)
 		{
 			float4x4 gLightViewProj[4];
 			float4x4 gLightViewProjClip[4];
@@ -192,8 +192,8 @@ namespace udsdx
 		pCommandList->SetPipelineState(m_shadowPso.Get());
 
 		// Bind the current frame's constant buffer to the pipeline.
-		pCommandList->SetGraphicsRootConstantBufferView(3, param.ConstantBufferView);
-		pCommandList->SetGraphicsRootDescriptorTable(5, m_srvGpu);
+		pCommandList->SetGraphicsRootConstantBufferView(RootParam::PerFrameCBV, param.ConstantBufferView);
+		pCommandList->SetGraphicsRootDescriptorTable(RootParam::ShadowMapSRV, m_srvGpu);
 
 		ShadowConstants shadowConstants;
 		Vector3 lightDirection = light->GetLightDirection();
@@ -213,7 +213,7 @@ namespace udsdx
 
 		m_constantBuffers[param.FrameResourceIndex]->CopyData(0, shadowConstants);
 
-		param.CommandList->SetGraphicsRootConstantBufferView(2, m_constantBuffers[param.FrameResourceIndex]->Resource()->GetGPUVirtualAddress());
+		param.CommandList->SetGraphicsRootConstantBufferView(3, m_constantBuffers[param.FrameResourceIndex]->Resource()->GetGPUVirtualAddress());
 		param.CommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 		param.UseFrustumCulling = false;

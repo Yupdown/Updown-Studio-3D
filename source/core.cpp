@@ -339,7 +339,7 @@ namespace udsdx
 
 	void Core::BuildRootSignature()
 	{ ZoneScoped;
-		CD3DX12_ROOT_PARAMETER slotRootParameter[6];
+		CD3DX12_ROOT_PARAMETER slotRootParameter[7];
 
 		CD3DX12_DESCRIPTOR_RANGE texTable;
 		texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
@@ -350,8 +350,9 @@ namespace udsdx
 		slotRootParameter[1].InitAsConstants(sizeof(CameraConstants) / 4, 1);
 		slotRootParameter[2].InitAsConstantBufferView(2);
 		slotRootParameter[3].InitAsConstantBufferView(3);
-		slotRootParameter[4].InitAsDescriptorTable(1, &texTable);
-		slotRootParameter[5].InitAsDescriptorTable(1, &shadowMapTable);
+		slotRootParameter[4].InitAsConstantBufferView(4);
+		slotRootParameter[5].InitAsDescriptorTable(1, &texTable);
+		slotRootParameter[6].InitAsDescriptorTable(1, &shadowMapTable);
 
 		CD3DX12_STATIC_SAMPLER_DESC samplerDesc[] = {
 			CD3DX12_STATIC_SAMPLER_DESC(

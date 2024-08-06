@@ -2,24 +2,47 @@
 
 #include "pch.h"
 #include "resource_object.h"
+#include "mesh.h"
 
 namespace udsdx
 {
-	struct Submesh
+	struct Animation
 	{
-		std::string Name;
-		UINT IndexCount = 0;
-		UINT StartIndexLocation = 0;
-		UINT BaseVertexLocation = 0;
+		struct Channel
+		{
+			std::string Name{};
+
+			std::vector<float> PositionTimestamps{};
+			std::vector<float> RotationTimestamps{};
+			std::vector<float> ScaleTimestamps{};
+
+			std::vector<Vector3> Positions{};
+			std::vector<Quaternion> Rotations{};
+			std::vector<Vector3> Scales{};
+		};
+
+		std::string Name{};
+
+		float Duration = 0.0f;
+		float TicksPerSecond = 1.0f;
+
+		std::vector<Channel> Channels{};
 	};
 
-	class Mesh : public ResourceObject
+	struct Bone
+	{
+		std::string Name{};
+		Matrix4x4 Offset{};
+		Matrix4x4 Transform{};
+	};
+
+	class RiggedMesh : public ResourceObject
 	{
 	public:
-		Mesh(const std::vector<Vertex>& vertices, const std::vector<UINT> indices);
-		Mesh(std::wstring_view resourcePath);
+		RiggedMesh(std::wstring_view resourcePath);
 
-	public:
+		void PopulateTransforms(std::string_view animationKey, float time, std::vector<Matrix4x4>& out) const;
+
 		void CreateBuffers(ID3D12Device* device, ID3D12GraphicsCommandList* commandList);
 		D3D12_VERTEX_BUFFER_VIEW VertexBufferView() const;
 		D3D12_INDEX_BUFFER_VIEW IndexBufferView() const;
@@ -51,5 +74,10 @@ namespace udsdx
 		UINT m_indexBufferByteSize = 0;
 
 		BoundingBox m_bounds;
+
+		std::vector<Bone> m_bones;
+		std::vector<int> m_boneParents;
+
+		std::unordered_map<std::string, Animation> m_animations;
 	};
 }

@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "mesh.h"
+#include "debug_console.h"
 
 // Assimp Library
 #include <assimp/Importer.hpp>
@@ -28,7 +29,7 @@ namespace udsdx
 		return ibv;
 	}
 
-	const std::vector<Mesh::Submesh>& Mesh::GetSubmeshes() const
+	const std::vector<Submesh>& Mesh::GetSubmeshes() const
 	{
 		return m_submeshes;
 	}
@@ -85,7 +86,7 @@ namespace udsdx
 		auto model = importer.ReadFileFromMemory(
 			modelData->GetBufferPointer(),
 			static_cast<size_t>(modelData->GetBufferSize()),
-			aiProcess_Triangulate | aiProcess_ConvertToLeftHanded | aiProcess_CalcTangentSpace
+			aiProcess_Triangulate | aiProcess_CalcTangentSpace | aiProcess_ConvertToLeftHanded
 		);
 
 		assert(model != nullptr);
@@ -124,7 +125,7 @@ namespace udsdx
 					vertex.tangent.y = mesh->mTangents[i].y;
 					vertex.tangent.z = mesh->mTangents[i].z;
 				}
-				vertices.push_back(vertex);
+				vertices.emplace_back(vertex);
 			}
 
 			for (UINT i = 0; i < mesh->mNumFaces; ++i)

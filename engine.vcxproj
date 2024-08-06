@@ -238,6 +238,7 @@
     </ClCompile>
     <ClCompile Include="source\resource.cpp" />
     <ClCompile Include="source\resource_object.cpp" />
+    <ClCompile Include="source\rigged_mesh.cpp" />
     <ClCompile Include="source\rigged_mesh_renderer.cpp" />
     <ClCompile Include="source\scene.cpp" />
     <ClCompile Include="source\scene_object.cpp" />
@@ -278,6 +279,7 @@
     <ClInclude Include="source\pch.h" />
     <ClInclude Include="source\resource.h" />
     <ClInclude Include="source\resource_object.h" />
+    <ClInclude Include="source\rigged_mesh.h" />
     <ClInclude Include="source\rigged_mesh_renderer.h" />
     <ClInclude Include="source\scene.h" />
     <ClInclude Include="source\scene_object.h" />

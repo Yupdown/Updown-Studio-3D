@@ -65,6 +65,18 @@ namespace udsdx
 		UINT DsvDescriptorSize;
 	};
 
+	enum RootParam : UINT
+	{
+		PerObjectCBV = 0,
+		PerCameraCBV = 1,
+		BonesCBV = 2,
+		PerShadowCBV = 3,
+		PerFrameCBV = 4,
+		MainTexSRV = 5,
+		ShadowMapSRV = 6,
+		SSAOMapSRV = 7
+	};
+
 	static constexpr int FrameResourceCount = 2;
 	static constexpr int SwapChainBufferCount = 2;
 }

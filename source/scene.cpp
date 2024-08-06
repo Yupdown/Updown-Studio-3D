@@ -146,10 +146,10 @@ namespace udsdx
 		Matrix4x4 worldMat = camera->GetSceneObject()->GetTransform()->GetWorldSRTMatrix();
 		cameraConstants.CameraPosition = Vector4::Transform(Vector4::UnitW, worldMat);
 
-		param.CommandList->SetGraphicsRoot32BitConstants(1, sizeof(CameraConstants) / 4, &cameraConstants, 0);
+		param.CommandList->SetGraphicsRoot32BitConstants(RootParam::PerCameraCBV, sizeof(CameraConstants) / 4, &cameraConstants, 0);
 		param.CommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-		RenderSceneObjects(param, 1, [](RenderParam& p, MeshRenderer* o) { p.CommandList->SetPipelineState(o->GetShader()->PipelineState()); });
+		RenderSceneObjects(param, 1, [](RenderParam& p, MeshRenderer* o) { p.CommandList->SetPipelineState(o->GetPipelineState()); });
 	}
 
 	void Scene::RenderShadowSceneObjects(RenderParam& param, int instances)

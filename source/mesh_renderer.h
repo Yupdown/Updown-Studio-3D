@@ -34,6 +34,8 @@ namespace udsdx
 		bool GetCastShadow() const;
 		bool GetReceiveShadow() const;
 
+		virtual ID3D12PipelineState* GetPipelineState() const;
+
 	protected:
 		Mesh* m_mesh = nullptr;
 		Shader* m_shader = nullptr;
