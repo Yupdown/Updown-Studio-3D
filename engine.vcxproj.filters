@@ -95,6 +95,9 @@
     <ClCompile Include="source\mesh_base.cpp">
       <Filter>Engine\Resource</Filter>
     </ClCompile>
+    <ClCompile Include="source\renderer_base.cpp">
+      <Filter>Engine\Runtime</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Precompiled Headers">
@@ -222,6 +225,9 @@
     </ClInclude>
     <ClInclude Include="source\mesh_base.h">
       <Filter>Engine\Resource</Filter>
+    </ClInclude>
+    <ClInclude Include="source\renderer_base.h">
+      <Filter>Engine\Runtime</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

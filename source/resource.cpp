@@ -157,12 +157,12 @@ namespace udsdx
 		if (hasBones)
 		{
 			mesh = std::make_unique<RiggedMesh>(*assimpScene);
-			DebugConsole::Log("Registered the resource as RiggedMesh");
+			DebugConsole::Log("\tRegistered the resource as RiggedMesh");
 		}
 		else
 		{
 			mesh = std::make_unique<Mesh>(*assimpScene);
-			DebugConsole::Log("Registered the resource as Mesh");
+			DebugConsole::Log("\tRegistered the resource as Mesh");
 		}
 		mesh->UploadBuffers(m_device, m_commandList);
 		return mesh;

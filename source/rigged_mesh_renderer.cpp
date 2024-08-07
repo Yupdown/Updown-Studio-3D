@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "rigged_mesh_renderer.h"
+#include "renderer_base.h"
 #include "frame_resource.h"
 #include "scene_object.h"
 #include "transform.h"
@@ -12,7 +13,7 @@
 
 namespace udsdx
 {
-	RiggedMeshRenderer::RiggedMeshRenderer(const std::shared_ptr<SceneObject>& object) : MeshRenderer(object)
+	RiggedMeshRenderer::RiggedMeshRenderer(const std::shared_ptr<SceneObject>& object) : RendererBase(object)
 	{
 		for (auto& buffer : m_constantBuffers)
 		{
@@ -23,16 +24,7 @@ namespace udsdx
 	void RiggedMeshRenderer::Update(const Time& time, Scene& scene)
 	{
 		m_animationTime += time.deltaTime;
-
-		if (m_riggedMesh == nullptr)
-		{
-			return;
-		}
-		scene.EnqueueRenderObject(this);
-		if (m_castShadow)
-		{
-			scene.EnqueueRenderShadowObject(this);
-		}
+		RendererBase::Update(time, scene);
 	}
 
 	void RiggedMeshRenderer::Render(RenderParam& param, int instances)

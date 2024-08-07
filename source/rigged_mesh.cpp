@@ -8,32 +8,32 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 
+static std::tuple<size_t, size_t, float> ToTimeFraction(const std::vector<float>& timeStamps, float time)
+{
+	auto size = timeStamps.size();
+	auto seg = std::distance(timeStamps.begin(), std::lower_bound(timeStamps.begin(), timeStamps.end(), time));
+	if (seg == 0)
+		return { 0, size - 1, 0.0f };
+	if (seg == size)
+		return { 0, size - 1, 1.0f };
+	float begin = timeStamps[seg - 1];
+	float end = timeStamps[seg];
+	float fraction = (time - begin) / (end - begin);
+	return { seg - 1, seg, fraction };
+}
+
+static udsdx::Matrix4x4 ToMatrix4x4(const aiMatrix4x4& m)
+{
+	return udsdx::Matrix4x4(
+		m.a1, m.b1, m.c1, m.d1,
+		m.a2, m.b2, m.c2, m.d2,
+		m.a3, m.b3, m.c3, m.d3,
+		m.a4, m.b4, m.c4, m.d4
+	);
+}
+
 namespace udsdx
 {
-	static std::tuple<size_t, size_t, float> ToTimeFraction(const std::vector<float>& timeStamps, float time)
-	{
-		auto size = timeStamps.size();
-		auto seg = std::distance(timeStamps.begin(), std::lower_bound(timeStamps.begin(), timeStamps.end(), time));
-		if (seg == 0)
-			return { 0, size - 1, 0.0f };
-		if (seg == size)
-			return { 0, size - 1, 1.0f };
-		float begin = timeStamps[seg - 1];
-		float end = timeStamps[seg];
-		float fraction = (time - begin) / (end - begin);
-		return { seg - 1, seg, fraction };
-	}
-
-	static Matrix4x4 ToMatrix4x4(const aiMatrix4x4& m)
-	{
-		return Matrix4x4(
-			m.a1, m.b1, m.c1, m.d1,
-			m.a2, m.b2, m.c2, m.d2,
-			m.a3, m.b3, m.c3, m.d3,
-			m.a4, m.b4, m.c4, m.d4
-		);
-	}
-
 	RiggedMesh::RiggedMesh(const aiScene& assimpScene) : MeshBase()
 	{
 		std::vector<RiggedVertex> vertices;

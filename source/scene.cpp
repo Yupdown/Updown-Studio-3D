@@ -3,7 +3,7 @@
 #include "light_directional.h"
 #include "shadow_map.h"
 #include "screen_space_ao.h"
-#include "mesh_renderer.h"
+#include "renderer_base.h"
 #include "frame_resource.h"
 #include "scene_object.h"
 #include "transform.h"
@@ -72,12 +72,12 @@ namespace udsdx
 		m_renderLightQueue.emplace_back(light);
 	}
 
-	void Scene::EnqueueRenderObject(MeshRenderer* object)
+	void Scene::EnqueueRenderObject(RendererBase* object)
 	{
 		m_renderObjectQueue.emplace_back(object);
 	}
 
-	void Scene::EnqueueRenderShadowObject(MeshRenderer* object)
+	void Scene::EnqueueRenderShadowObject(RendererBase* object)
 	{
 		m_renderShadowObjectQueue.emplace_back(object);
 	}
@@ -149,7 +149,7 @@ namespace udsdx
 		param.CommandList->SetGraphicsRoot32BitConstants(RootParam::PerCameraCBV, sizeof(CameraConstants) / 4, &cameraConstants, 0);
 		param.CommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-		RenderSceneObjects(param, 1, [](RenderParam& p, MeshRenderer* o) { p.CommandList->SetPipelineState(o->GetPipelineState()); });
+		RenderSceneObjects(param, 1, [](RenderParam& p, RendererBase* o) { p.CommandList->SetPipelineState(o->GetPipelineState()); });
 	}
 
 	void Scene::RenderShadowSceneObjects(RenderParam& param, int instances)
@@ -160,7 +160,7 @@ namespace udsdx
 		}
 	}
 
-	void Scene::RenderSceneObjects(RenderParam& param, int instances, std::function<void(RenderParam&, MeshRenderer*)> preProcessor)
+	void Scene::RenderSceneObjects(RenderParam& param, int instances, std::function<void(RenderParam&, RendererBase*)> preProcessor)
 	{
 		for (const auto& object : m_renderObjectQueue)
 		{

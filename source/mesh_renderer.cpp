@@ -11,22 +11,8 @@
 
 namespace udsdx
 {
-	MeshRenderer::MeshRenderer(const std::shared_ptr<SceneObject>& object)
-		: Component(object)
+	MeshRenderer::MeshRenderer(const std::shared_ptr<SceneObject>& object) : RendererBase(object)
 	{
-	}
-
-	void MeshRenderer::Update(const Time& time, Scene& scene)
-	{
-		if (m_mesh == nullptr)
-		{
-			return;
-		}
-		scene.EnqueueRenderObject(this);
-		if (m_castShadow)
-		{
-			scene.EnqueueRenderShadowObject(this);
-		}
 	}
 
 	void MeshRenderer::Render(RenderParam& param, int instances)
@@ -71,49 +57,9 @@ namespace udsdx
 		m_mesh = mesh;
 	}
 
-	void MeshRenderer::SetShader(Shader* shader)
-	{
-		m_shader = shader;
-	}
-
-	void MeshRenderer::SetMaterial(Material* material)
-	{
-		m_material = material;
-	}
-
 	Mesh* MeshRenderer::GetMesh() const
 	{
 		return m_mesh;
-	}
-
-	Shader* MeshRenderer::GetShader() const
-	{
-		return m_shader;
-	}
-
-	Material* MeshRenderer::GetMaterial() const
-	{
-		return m_material;
-	}
-
-	void MeshRenderer::SetCastShadow(bool value)
-	{
-		m_castShadow = value;
-	}
-
-	void MeshRenderer::SetReceiveShadow(bool value)
-	{
-		m_receiveShadow = value;
-	}
-
-	bool MeshRenderer::GetCastShadow() const
-	{
-		return m_castShadow;
-	}
-
-	bool MeshRenderer::GetReceiveShadow() const
-	{
-		return m_receiveShadow;
 	}
 
 	ID3D12PipelineState* MeshRenderer::GetPipelineState() const
