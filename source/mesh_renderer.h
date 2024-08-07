@@ -21,7 +21,9 @@ namespace udsdx
 	public:
 		void SetMesh(Mesh* mesh);
 		Mesh* GetMesh() const;
+
 		virtual ID3D12PipelineState* GetPipelineState() const override;
+		virtual ID3D12PipelineState* GetShadowPipelineState() const override;
 
 	protected:
 		Mesh* m_mesh = nullptr;

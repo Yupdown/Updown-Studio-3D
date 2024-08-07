@@ -156,6 +156,7 @@ namespace udsdx
 	{
 		for (const auto& object : m_renderObjectQueue)
 		{
+			param.CommandList->SetPipelineState(object->GetShadowPipelineState());
 			object->Render(param, instances);
 		}
 	}

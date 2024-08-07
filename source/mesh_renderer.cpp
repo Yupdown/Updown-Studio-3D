@@ -66,4 +66,9 @@ namespace udsdx
 	{
 		return m_shader->DefaultPipelineState();
 	}
+
+	ID3D12PipelineState* MeshRenderer::GetShadowPipelineState() const
+	{
+		return m_shader->ShadowPipelineState();
+	}
 }

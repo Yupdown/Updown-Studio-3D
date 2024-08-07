@@ -12,6 +12,8 @@ namespace udsdx
 		// used to define the pipeline state (works like a program in OpenGL)
 		ComPtr<ID3D12PipelineState> m_defaultPipelineState;
 		ComPtr<ID3D12PipelineState> m_riggedPipelineState;
+		ComPtr<ID3D12PipelineState> m_shadowPipelineState;
+		ComPtr<ID3D12PipelineState> m_riggedShadowPipelineState;
 
 		std::wstring m_path;
 
@@ -24,5 +26,7 @@ namespace udsdx
 	public:
 		ID3D12PipelineState* DefaultPipelineState() const;
 		ID3D12PipelineState* RiggedPipelineState() const;
+		ID3D12PipelineState* ShadowPipelineState() const;
+		ID3D12PipelineState* RiggedShadowPipelineState() const;
 	};
 }

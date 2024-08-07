@@ -32,6 +32,7 @@ namespace udsdx
 		bool GetReceiveShadow() const;
 
 		virtual ID3D12PipelineState* GetPipelineState() const = 0;
+		virtual ID3D12PipelineState* GetShadowPipelineState() const = 0;
 
 	protected:
 		Shader* m_shader = nullptr;

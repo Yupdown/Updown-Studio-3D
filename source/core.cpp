@@ -146,7 +146,6 @@ namespace udsdx
 		
 		// Create Shadow Map
 		m_shadowMap = std::make_unique<ShadowMap>(8192u, 8192u, m_d3dDevice.Get());
-		m_shadowMap->BuildPipelineState(m_d3dDevice.Get(), m_rootSignature.Get());
 
 		// Create Screen Space Ambient Occlusion
 		m_screenSpaceAO = std::make_unique<ScreenSpaceAO>(m_d3dDevice.Get(), m_commandList.Get(), 0.5f);

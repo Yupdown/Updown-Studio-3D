@@ -104,4 +104,9 @@ namespace udsdx
 	{
 		return m_shader->RiggedPipelineState();
 	}
+
+	ID3D12PipelineState* RiggedMeshRenderer::GetShadowPipelineState() const
+	{
+		return m_shader->RiggedShadowPipelineState();
+	}
 }

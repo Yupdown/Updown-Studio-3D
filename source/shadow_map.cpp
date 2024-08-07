@@ -9,56 +9,6 @@
 
 namespace udsdx
 {
-	constexpr char g_psoResource[] = R"(
-		cbuffer cbPerObject : register(b0)
-		{
-			float4x4 gWorld; 
-		};
-
-		cbuffer cbPerShadow : register(b3)
-		{
-			float4x4 gLightViewProj[4];
-			float4x4 gLightViewProjClip[4];
-			float4 gShadowDistance;
-			float3 gDirLight;
-		};
-
-		Texture2D gMainTex : register(t0);
-		SamplerState gSampler : register(s0);
-
-		struct VertexIn
-		{
-			float3 PosL    : POSITION;
-			float2 TexC    : TEXCOORD;
-		};
-
-		struct VertexOut
-		{
-			float4 PosH    : SV_POSITION;
-			float4 PosC    : POSITION;
-			float2 TexC    : TEXCOORD0;
-		};
-
-		VertexOut VS(VertexIn vin, uint iid : SV_InstanceID)
-		{
-			VertexOut vout = (VertexOut)0.0f;
-	
-			float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);
-			vout.PosH = mul(posW, gLightViewProjClip[iid]);
-			vout.PosC = mul(posW, gLightViewProj[iid]);
-			vout.TexC = vin.TexC;
-
-			return vout;
-		}
-
-		void PS(VertexOut pin)
-		{
-            float alpha = gMainTex.Sample(gSampler, pin.TexC).a;
-			clip(alpha - 0.1f);
-			clip(1.0f - max(abs(pin.PosC.x), abs(pin.PosC.y)));
-		}
-	)";
-
 	ShadowMap::ShadowMap(UINT mapWidth, UINT mapHeight, ID3D12Device* device)
 	{
 		m_mapWidth = mapWidth;
@@ -139,43 +89,6 @@ namespace udsdx
 		device->CreateDepthStencilView(m_shadowMap.Get(), &dsvDesc, m_dsvCpu);
 	}
 
-	void ShadowMap::BuildPipelineState(ID3D12Device* pDevice, ID3D12RootSignature* pRootSignature)
-	{
-		auto vsByteCode = d3dUtil::CompileShaderFromMemory(g_psoResource, nullptr, "VS", "vs_5_0");
-		auto psByteCode = d3dUtil::CompileShaderFromMemory(g_psoResource, nullptr, "PS", "ps_5_0");
-
-		D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc;
-		ZeroMemory(&psoDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
-
-		psoDesc.InputLayout.pInputElementDescs = Vertex::DescriptionTable;
-		psoDesc.InputLayout.NumElements = Vertex::DescriptionTableSize;
-		psoDesc.pRootSignature = pRootSignature;
-		psoDesc.VS =
-		{
-			reinterpret_cast<BYTE*>(vsByteCode->GetBufferPointer()),
-			vsByteCode->GetBufferSize()
-		};
-		psoDesc.PS =
-		{
-			reinterpret_cast<BYTE*>(psByteCode->GetBufferPointer()),
-			psByteCode->GetBufferSize()
-		};
-		psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-		psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-		psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-		psoDesc.SampleMask = UINT_MAX;
-		psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-		psoDesc.NumRenderTargets = 0;
-		psoDesc.SampleDesc.Count = 1;
-		psoDesc.SampleDesc.Quality = 0;
-		psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
-
-		ThrowIfFailed(pDevice->CreateGraphicsPipelineState(
-			&psoDesc,
-			IID_PPV_ARGS(m_shadowPso.GetAddressOf())
-		));
-	}
-
 	void ShadowMap::Pass(RenderParam& param, Scene* target, Camera* camera, LightDirectional* light)
 	{
 		auto pCommandList = param.CommandList;
@@ -186,10 +99,8 @@ namespace udsdx
 		pCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_shadowMap.Get(),
 			D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_DEPTH_WRITE));
 
-		pCommandList->ClearDepthStencilView(m_dsvCpu, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+		pCommandList->ClearDepthStencilView(m_dsvCpu, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr); 
 		pCommandList->OMSetRenderTargets(0, nullptr, false, &m_dsvCpu);
-
-		pCommandList->SetPipelineState(m_shadowPso.Get());
 
 		// Bind the current frame's constant buffer to the pipeline.
 		pCommandList->SetGraphicsRootConstantBufferView(RootParam::PerFrameCBV, param.ConstantBufferView);

@@ -26,7 +26,9 @@ namespace udsdx
 	public:
 		void SetMesh(RiggedMesh* mesh);
 		void SetAnimation(std::string_view animationName);
+
 		virtual ID3D12PipelineState* GetPipelineState() const override;
+		virtual ID3D12PipelineState* GetShadowPipelineState() const override;
 
 	protected:
 		RiggedMesh* m_riggedMesh = nullptr;
