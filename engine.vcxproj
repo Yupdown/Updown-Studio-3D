@@ -230,6 +230,7 @@
     <ClCompile Include="source\light_directional.cpp" />
     <ClCompile Include="source\material.cpp" />
     <ClCompile Include="source\mesh.cpp" />
+    <ClCompile Include="source\mesh_base.cpp" />
     <ClCompile Include="source\mesh_renderer.cpp" />
     <ClCompile Include="source\pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
@@ -275,6 +276,7 @@
     <ClInclude Include="source\light_directional.h" />
     <ClInclude Include="source\material.h" />
     <ClInclude Include="source\mesh.h" />
+    <ClInclude Include="source\mesh_base.h" />
     <ClInclude Include="source\mesh_renderer.h" />
     <ClInclude Include="source\pch.h" />
     <ClInclude Include="source\resource.h" />

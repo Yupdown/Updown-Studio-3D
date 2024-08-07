@@ -9,46 +9,7 @@
 
 namespace udsdx
 {
-	D3D12_VERTEX_BUFFER_VIEW Mesh::VertexBufferView() const
-	{
-		D3D12_VERTEX_BUFFER_VIEW vbv;
-		vbv.BufferLocation = m_vertexBufferGPU->GetGPUVirtualAddress();
-		vbv.StrideInBytes = m_vertexByteStride;
-		vbv.SizeInBytes = m_vertexBufferByteSize;
-
-		return vbv;
-	}
-
-	D3D12_INDEX_BUFFER_VIEW Mesh::IndexBufferView() const
-	{
-		D3D12_INDEX_BUFFER_VIEW ibv;
-		ibv.BufferLocation = m_indexBufferGPU->GetGPUVirtualAddress();
-		ibv.Format = m_indexFormat;
-		ibv.SizeInBytes = m_indexBufferByteSize;
-
-		return ibv;
-	}
-
-	const std::vector<Submesh>& Mesh::GetSubmeshes() const
-	{
-		return m_submeshes;
-	}
-
-	void Mesh::DisposeUploaders()
-	{
-		m_vertexBufferUploader = nullptr;
-		m_indexBufferUploader = nullptr;
-
-		m_vertexBufferCPU = nullptr;
-		m_indexBufferCPU = nullptr;
-	}
-
-	const BoundingBox& Mesh::GetBounds() const
-	{
-		return m_bounds;
-	}
-
-	Mesh::Mesh(const std::vector<Vertex>& vertices, const std::vector<UINT> indices) : ResourceObject()
+	Mesh::Mesh(const std::vector<Vertex>& vertices, const std::vector<UINT> indices) : MeshBase()
 	{
 		Submesh submesh{};
 		submesh.IndexCount = static_cast<UINT>(indices.size());
@@ -56,40 +17,16 @@ namespace udsdx
 		submesh.BaseVertexLocation = 0;
 		m_submeshes.emplace_back(submesh);
 
-		const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
-		const UINT ibByteSize = (UINT)indices.size() * sizeof(UINT);
-
-		ThrowIfFailed(D3DCreateBlob(vbByteSize, &m_vertexBufferCPU));
-		CopyMemory(m_vertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
-
-		ThrowIfFailed(D3DCreateBlob(ibByteSize, &m_indexBufferCPU));
-		CopyMemory(m_indexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
-
-		m_vertexByteStride = sizeof(Vertex);
-		m_vertexBufferByteSize = vbByteSize;
-		m_indexBufferByteSize = ibByteSize;
-
+		MeshBase::CreateBuffers<Vertex>(vertices, indices);
 		BoundingBox::CreateFromPoints(m_bounds, vertices.size(), &vertices[0].position, sizeof(Vertex));
 	}
 
-	Mesh::Mesh(std::wstring_view resourcePath) : ResourceObject()
+	Mesh::Mesh(const aiScene& assimpScene) : MeshBase()
 	{
 		std::vector<Vertex> vertices;
 		std::vector<UINT> indices;
 
-		// Read the model from file
-		ComPtr<ID3DBlob> modelData;
-		ThrowIfFailed(D3DReadFileToBlob(resourcePath.data(), &modelData));
-
-		// Load the model using Assimp
-		Assimp::Importer importer;
-		auto model = importer.ReadFileFromMemory(
-			modelData->GetBufferPointer(),
-			static_cast<size_t>(modelData->GetBufferSize()),
-			aiProcess_Triangulate | aiProcess_CalcTangentSpace | aiProcess_ConvertToLeftHanded
-		);
-
-		assert(model != nullptr);
+		auto model = &assimpScene;
 
 		for (UINT k = 0; k < model->mNumMeshes; ++k)
 		{
@@ -138,38 +75,7 @@ namespace udsdx
 			}
 		}
 
-		const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
-		const UINT ibByteSize = (UINT)indices.size() * sizeof(UINT);
-
-		ThrowIfFailed(D3DCreateBlob(vbByteSize, &m_vertexBufferCPU));
-		CopyMemory(m_vertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
-
-		ThrowIfFailed(D3DCreateBlob(ibByteSize, &m_indexBufferCPU));
-		CopyMemory(m_indexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
-
-		m_vertexByteStride = sizeof(Vertex);
-		m_vertexBufferByteSize = vbByteSize;
-		m_indexBufferByteSize = ibByteSize;
-
+		CreateBuffers<Vertex>(vertices, indices);
 		BoundingBox::CreateFromPoints(m_bounds, vertices.size(), &vertices[0].position, sizeof(Vertex));
-	}
-
-	void Mesh::CreateBuffers(ID3D12Device* device, ID3D12GraphicsCommandList* commandList)
-	{
-		m_vertexBufferGPU = d3dUtil::CreateDefaultBuffer(
-			device,
-			commandList,
-			m_vertexBufferCPU->GetBufferPointer(),
-			m_vertexBufferByteSize,
-			m_vertexBufferUploader
-		);
-
-		m_indexBufferGPU = d3dUtil::CreateDefaultBuffer(
-			device,
-			commandList,
-			m_indexBufferCPU->GetBufferPointer(),
-			m_indexBufferByteSize,
-			m_indexBufferUploader
-		);
 	}
 }

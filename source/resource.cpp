@@ -2,10 +2,16 @@
 #include "resource.h"
 #include "texture.h"
 #include "mesh.h"
+#include "rigged_mesh.h"
 #include "shader.h"
 #include "debug_console.h"
 #include "audio.h"
 #include "audio_clip.h"
+
+// Assimp Library
+#include <assimp/Importer.hpp>
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
 
 namespace udsdx
 {
@@ -127,10 +133,39 @@ namespace udsdx
 
 	std::unique_ptr<ResourceObject> ModelLoader::Load(std::wstring_view path)
 	{ ZoneScoped;
-		auto modelResource = std::make_unique<Mesh>(path);
-		modelResource->CreateBuffers(m_device, m_commandList);
+		// Read the model from file
+		ComPtr<ID3DBlob> modelData;
+		ThrowIfFailed(D3DReadFileToBlob(path.data(), &modelData));
 
-		return modelResource;
+		// Load the model using Assimp
+		Assimp::Importer importer;
+		auto assimpScene = importer.ReadFileFromMemory(
+			modelData->GetBufferPointer(),
+			static_cast<size_t>(modelData->GetBufferSize()),
+			aiProcess_Triangulate | aiProcess_CalcTangentSpace | aiProcess_ConvertToLeftHanded
+		);
+
+		assert(assimpScene != nullptr);
+
+		bool hasBones = false;
+		for (UINT i = 0; i < assimpScene->mNumMeshes && !hasBones; ++i)
+		{
+			hasBones |= assimpScene->mMeshes[i]->HasBones();
+		}
+
+		std::unique_ptr<MeshBase> mesh = nullptr;
+		if (hasBones)
+		{
+			mesh = std::make_unique<RiggedMesh>(*assimpScene);
+			DebugConsole::Log("Registered the resource as RiggedMesh");
+		}
+		else
+		{
+			mesh = std::make_unique<Mesh>(*assimpScene);
+			DebugConsole::Log("Registered the resource as Mesh");
+		}
+		mesh->UploadBuffers(m_device, m_commandList);
+		return mesh;
 	}
 
 	ShaderLoader::ShaderLoader(ID3D12Device* device, ID3D12GraphicsCommandList* commandList, ID3D12RootSignature* rootSignature) : ResourceLoader(device, commandList), m_rootSignature(rootSignature)

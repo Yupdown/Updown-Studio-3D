@@ -79,7 +79,7 @@ namespace udsdx
 		ExecuteCommandList();
 		OnResizeWindow(m_clientWidth, m_clientHeight);
 
-		for (auto& resource_mesh : resource->LoadAll<Mesh>())
+		for (auto& resource_mesh : resource->LoadAll<MeshBase>())
 		{
 			resource_mesh->DisposeUploaders();
 		}

@@ -18,7 +18,6 @@ namespace udsdx
 			return { 0, size - 1, 0.0f };
 		if (seg == size)
 			return { 0, size - 1, 1.0f };
-
 		float begin = timeStamps[seg - 1];
 		float end = timeStamps[seg];
 		float fraction = (time - begin) / (end - begin);
@@ -35,27 +34,14 @@ namespace udsdx
 		);
 	}
 
-	RiggedMesh::RiggedMesh(std::wstring_view resourcePath) : ResourceObject()
+	RiggedMesh::RiggedMesh(const aiScene& assimpScene) : MeshBase()
 	{
 		std::vector<RiggedVertex> vertices;
 		std::vector<UINT> indices;
 
-		// Read the model from file
-		ComPtr<ID3DBlob> modelData;
-		ThrowIfFailed(D3DReadFileToBlob(resourcePath.data(), &modelData));
-
-		// Load the model using Assimp
-		Assimp::Importer importer;
-		auto model = importer.ReadFileFromMemory(
-			modelData->GetBufferPointer(),
-			static_cast<size_t>(modelData->GetBufferSize()),
-			aiProcess_Triangulate | aiProcess_CalcTangentSpace | aiProcess_ConvertToLeftHanded
-		);
-
-		assert(model != nullptr);
+		auto model = &assimpScene;
 
 		// Depth-first traversal of the scene graph to collect the bones
-		std::unordered_map<std::string, UINT> nodeMap;
 		std::vector<std::pair<aiNode*, int>> nodeStack;
 		nodeStack.emplace_back(model->mRootNode, -1);
 		while (!nodeStack.empty())
@@ -67,7 +53,7 @@ namespace udsdx
 			boneData.Name = node.first->mName.C_Str();
 			boneData.Transform = ToMatrix4x4(node.first->mTransformation);
 
-			nodeMap[boneData.Name] = static_cast<UINT>(m_bones.size());
+			m_boneIndexMap[boneData.Name] = static_cast<int>(m_bones.size());
 
 			m_bones.emplace_back(boneData);
 			m_boneParents.push_back(node.second);
@@ -77,19 +63,17 @@ namespace udsdx
 				nodeStack.emplace_back(node.first->mChildren[i], static_cast<int>(m_bones.size()) - 1);
 			}
 		}
-
 		UINT numNodes = static_cast<UINT>(m_bones.size());
 
+		// Append the vertices and indices
 		for (UINT k = 0; k < model->mNumMeshes; ++k)
 		{
 			auto mesh = model->mMeshes[k];
 
 			Submesh submesh{};
 			submesh.Name = mesh->mName.C_Str();
-			submesh.IndexCount = mesh->mNumFaces * 3;
 			submesh.StartIndexLocation = static_cast<UINT>(indices.size());
 			submesh.BaseVertexLocation = static_cast<UINT>(vertices.size());
-			m_submeshes.emplace_back(submesh);
 
 			for (UINT i = 0; i < mesh->mNumVertices; ++i)
 			{
@@ -131,13 +115,16 @@ namespace udsdx
 				}
 			}
 
+			submesh.IndexCount = static_cast<UINT>(indices.size()) - submesh.StartIndexLocation;
+			m_submeshes.emplace_back(submesh);
+
 			std::vector<UINT> countTable(vertices.size(), 0);
 
 			// Load the bones
 			for (UINT i = 0; i < mesh->mNumBones; ++i)
 			{
 				auto boneSrc = mesh->mBones[i];
-				UINT boneIndex = nodeMap[boneSrc->mName.C_Str()];
+				auto boneIndex = m_boneIndexMap[boneSrc->mName.C_Str()];
 				m_bones[boneIndex].Offset = ToMatrix4x4(boneSrc->mOffsetMatrix);
 
 				for (UINT j = 0; j < boneSrc->mNumWeights; ++j)
@@ -222,26 +209,14 @@ namespace udsdx
 					channel.Scales.emplace_back(key.mValue.x, key.mValue.y, key.mValue.z);
 				}
 
-				UINT channelIndex = nodeMap[channel.Name];
+				int channelIndex = m_boneIndexMap[channel.Name];
 				animation.Channels[channelIndex] = channel;
 			}
 
 			m_animations[animation.Name] = animation;
 		}
 
-		const UINT vbByteSize = (UINT)vertices.size() * sizeof(RiggedVertex);
-		const UINT ibByteSize = (UINT)indices.size() * sizeof(UINT);
-
-		ThrowIfFailed(D3DCreateBlob(vbByteSize, &m_vertexBufferCPU));
-		CopyMemory(m_vertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
-
-		ThrowIfFailed(D3DCreateBlob(ibByteSize, &m_indexBufferCPU));
-		CopyMemory(m_indexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
-
-		m_vertexByteStride = sizeof(RiggedVertex);
-		m_vertexBufferByteSize = vbByteSize;
-		m_indexBufferByteSize = ibByteSize;
-
+		MeshBase::CreateBuffers<RiggedVertex>(vertices, indices);
 		BoundingBox::CreateFromPoints(m_bounds, vertices.size(), &vertices[0].position, sizeof(RiggedVertex));
 	}
 
@@ -249,7 +224,6 @@ namespace udsdx
 	{
 		const Animation& anim = m_animations.at(animationKey.data());
 		time = fmod(time * anim.TicksPerSecond, anim.Duration);
-
 		out.resize(m_bones.size());
 
 		for (UINT i = 0; i < out.size(); ++i)
@@ -299,61 +273,11 @@ namespace udsdx
 		}
 	}
 
-	void RiggedMesh::CreateBuffers(ID3D12Device* device, ID3D12GraphicsCommandList* commandList)
+	int RiggedMesh::GetBoneIndex(std::string_view boneName) const
 	{
-		m_vertexBufferGPU = d3dUtil::CreateDefaultBuffer(
-			device,
-			commandList,
-			m_vertexBufferCPU->GetBufferPointer(),
-			m_vertexBufferByteSize,
-			m_vertexBufferUploader
-		);
-
-		m_indexBufferGPU = d3dUtil::CreateDefaultBuffer(
-			device,
-			commandList,
-			m_indexBufferCPU->GetBufferPointer(),
-			m_indexBufferByteSize,
-			m_indexBufferUploader
-		);
-	}
-
-	D3D12_VERTEX_BUFFER_VIEW RiggedMesh::VertexBufferView() const
-	{
-		D3D12_VERTEX_BUFFER_VIEW vbv;
-		vbv.BufferLocation = m_vertexBufferGPU->GetGPUVirtualAddress();
-		vbv.StrideInBytes = m_vertexByteStride;
-		vbv.SizeInBytes = m_vertexBufferByteSize;
-
-		return vbv;
-	}
-
-	D3D12_INDEX_BUFFER_VIEW RiggedMesh::IndexBufferView() const
-	{
-		D3D12_INDEX_BUFFER_VIEW ibv;
-		ibv.BufferLocation = m_indexBufferGPU->GetGPUVirtualAddress();
-		ibv.Format = m_indexFormat;
-		ibv.SizeInBytes = m_indexBufferByteSize;
-
-		return ibv;
-	}
-
-	const std::vector<Submesh>& RiggedMesh::GetSubmeshes() const
-	{
-		return m_submeshes;
-	}
-
-	void RiggedMesh::DisposeUploaders()
-	{
-		m_vertexBufferUploader = nullptr;
-		m_indexBufferUploader = nullptr;
-
-		m_vertexBufferCPU = nullptr;
-		m_indexBufferCPU = nullptr;
-	}
-
-	const BoundingBox& RiggedMesh::GetBounds() const
-	{
-		return m_bounds;
+		auto iter = m_boneIndexMap.find(boneName.data());
+		if (iter == m_boneIndexMap.end())
+			return -1;
+		return iter->second;
 	}
 }
