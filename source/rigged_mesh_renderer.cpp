@@ -24,6 +24,8 @@ namespace udsdx
 	void RiggedMeshRenderer::Update(const Time& time, Scene& scene)
 	{
 		m_animationTime += time.deltaTime;
+		m_isMatrixDirty = true;
+
 		RendererBase::Update(time, scene);
 	}
 
@@ -43,29 +45,32 @@ namespace udsdx
 			}
 		}
 
-		BoneConstants boneConstants{};
-		if (!m_animationName.empty())
-		{
-			std::vector<Matrix4x4> boneTransforms;
-			m_riggedMesh->PopulateTransforms(m_animationName, m_animationTime, boneTransforms);
-
-			for (size_t i = 0; i < boneTransforms.size(); ++i)
-			{
-				boneConstants.BoneTransforms[i] = boneTransforms[i].Transpose();
-			}
-
-		}
-		else
-		{
-			for (size_t i = 0; i < MAX_BONES; ++i)
-			{
-				XMStoreFloat4x4(&boneConstants.BoneTransforms[i], XMMatrixIdentity());
-			}
-		}
-
 		// Update bone constants
 		auto& uploader = m_constantBuffers[param.FrameResourceIndex];
-		uploader->CopyData(0, boneConstants);
+		if (m_isMatrixDirty)
+		{
+			BoneConstants boneConstants{};
+			if (!m_animationName.empty())
+			{
+				std::vector<Matrix4x4> boneTransforms;
+				m_riggedMesh->PopulateTransforms(m_animationName, m_animationTime, boneTransforms);
+
+				for (size_t i = 0; i < boneTransforms.size(); ++i)
+				{
+					boneConstants.BoneTransforms[i] = boneTransforms[i].Transpose();
+				}
+
+			}
+			else
+			{
+				for (size_t i = 0; i < MAX_BONES; ++i)
+				{
+					XMStoreFloat4x4(&boneConstants.BoneTransforms[i], XMMatrixIdentity());
+				}
+			}
+			uploader->CopyData(0, boneConstants);
+			m_isMatrixDirty = false;
+		}
 
 		ObjectConstants objectConstants;
 		objectConstants.World = worldMat.Transpose();
@@ -82,8 +87,7 @@ namespace udsdx
 		param.CommandList->IASetVertexBuffers(0, 1, &m_riggedMesh->VertexBufferView());
 		param.CommandList->IASetIndexBuffer(&m_riggedMesh->IndexBufferView());
 
-		const auto& submeshes = m_riggedMesh->GetSubmeshes();
-		for (const auto& submesh : submeshes)
+		for (const auto& submesh : m_riggedMesh->GetSubmeshes())
 		{
 			param.CommandList->DrawIndexedInstanced(submesh.IndexCount, instances, submesh.StartIndexLocation, submesh.BaseVertexLocation, 0);
 		}
@@ -92,12 +96,14 @@ namespace udsdx
 	void RiggedMeshRenderer::SetMesh(RiggedMesh* mesh)
 	{
 		m_riggedMesh = mesh;
+		m_isMatrixDirty = true;
 	}
 
 	void RiggedMeshRenderer::SetAnimation(std::string_view animationName)
 	{
 		m_animationTime = 0.0f;
 		m_animationName = animationName;
+		m_isMatrixDirty = true;
 	}
 
 	ID3D12PipelineState* RiggedMeshRenderer::GetPipelineState() const

@@ -64,7 +64,8 @@ namespace udsdx
 		m_timeMeasure = Singleton<TimeMeasure>::CreateInstance();
 
 #if defined(DEBUG) || defined(_DEBUG)
-		Assimp::DefaultLogger::create("", Assimp::Logger::VERBOSE);
+		Assimp::DefaultLogger::create();
+		Assimp::DefaultLogger::get()->attachStream(new AssimpLogStream(), Assimp::Logger::VERBOSE);
 #endif
 		INSTANCE(Input)->Initialize(m_hMainWnd);
 		resource->Initialize(m_d3dDevice.Get(), m_commandQueue.Get(), m_commandList.Get(), m_rootSignature.Get());
@@ -345,13 +346,13 @@ namespace udsdx
 		CD3DX12_DESCRIPTOR_RANGE shadowMapTable;
 		shadowMapTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 1);
 
-		slotRootParameter[0].InitAsConstants(sizeof(ObjectConstants) / 4, 0);
-		slotRootParameter[1].InitAsConstants(sizeof(CameraConstants) / 4, 1);
-		slotRootParameter[2].InitAsConstantBufferView(2);
-		slotRootParameter[3].InitAsConstantBufferView(3);
-		slotRootParameter[4].InitAsConstantBufferView(4);
-		slotRootParameter[5].InitAsDescriptorTable(1, &texTable);
-		slotRootParameter[6].InitAsDescriptorTable(1, &shadowMapTable);
+		slotRootParameter[RootParam::PerObjectCBV].InitAsConstants(sizeof(ObjectConstants) / 4, 0);
+		slotRootParameter[RootParam::PerCameraCBV].InitAsConstants(sizeof(CameraConstants) / 4, 1);
+		slotRootParameter[RootParam::BonesCBV].InitAsConstantBufferView(2);
+		slotRootParameter[RootParam::PerShadowCBV].InitAsConstantBufferView(3);
+		slotRootParameter[RootParam::PerFrameCBV].InitAsConstantBufferView(4);
+		slotRootParameter[RootParam::MainTexSRV].InitAsDescriptorTable(1, &texTable);
+		slotRootParameter[RootParam::ShadowMapSRV].InitAsDescriptorTable(1, &shadowMapTable);
 
 		CD3DX12_STATIC_SAMPLER_DESC samplerDesc[] = {
 			CD3DX12_STATIC_SAMPLER_DESC(

@@ -1,32 +1,6 @@
 #include "pch.h"
 #include "shader.h"
 
-static constexpr char g_psoResource[] = R"(
-		Texture2D gMainTex : register(t0);
-		SamplerState gSampler : register(s0);
-
-		void PS(float4 PosH: SV_POSITION, float2 Tex: TEXCOORD, uint InstanceID: SV_InstanceID)
-		{
-			float4 color = gMainTex.Sample(gSampler, Tex);
-			clip(color.a - 0.1f);
-			switch (InstanceID)
-			{
-				case 0:
-					clip(min(PosH.x, PosH.y));
-					break;
-				case 1:
-					clip(min(-PosH.x, PosH.y));
-					break;
-				case 2:
-					clip(-1.0f);
-					break;
-				case 3:
-					clip(-1.0f);
-					break;
-			}
-		}
-	)";
-
 namespace udsdx
 {
 	Shader::Shader(std::wstring_view path) : ResourceObject()
@@ -106,7 +80,7 @@ namespace udsdx
 				NULL, NULL
 			};
 
-			auto m_vsByteCode = d3dUtil::CompileShader(m_path, defines, "ShadowVS", "vs_5_0");
+			auto m_vsByteCode = d3dUtil::CompileShader(m_path, defines, "VS", "vs_5_0");
 			auto m_psByteCode = d3dUtil::CompileShader(m_path, defines, "ShadowPS", "ps_5_0");
 
 			psoDesc.InputLayout = { Vertex::DescriptionTable, Vertex::DescriptionTableSize };
@@ -136,7 +110,7 @@ namespace udsdx
 				NULL, NULL
 			};
 
-			auto m_vsByteCode = d3dUtil::CompileShader(m_path, defines, "ShadowVS", "vs_5_0");
+			auto m_vsByteCode = d3dUtil::CompileShader(m_path, defines, "VS", "vs_5_0");
 			auto m_psByteCode = d3dUtil::CompileShader(m_path, defines, "ShadowPS", "ps_5_0");
 
 			psoDesc.InputLayout = { RiggedVertex::DescriptionTable, RiggedVertex::DescriptionTableSize };

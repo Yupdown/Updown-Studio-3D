@@ -45,8 +45,7 @@ namespace udsdx
 		param.CommandList->IASetVertexBuffers(0, 1, &m_mesh->VertexBufferView());
 		param.CommandList->IASetIndexBuffer(&m_mesh->IndexBufferView());
 
-		const auto& submeshes = m_mesh->GetSubmeshes();
-		for (const auto& submesh : submeshes)
+		for (const auto& submesh : m_mesh->GetSubmeshes())
 		{
 			param.CommandList->DrawIndexedInstanced(submesh.IndexCount, instances, submesh.StartIndexLocation, submesh.BaseVertexLocation, 0);
 		}

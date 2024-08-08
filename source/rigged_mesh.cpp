@@ -13,9 +13,13 @@ static std::tuple<size_t, size_t, float> ToTimeFraction(const std::vector<float>
 	auto size = timeStamps.size();
 	auto seg = std::distance(timeStamps.begin(), std::lower_bound(timeStamps.begin(), timeStamps.end(), time));
 	if (seg == 0)
+	{
 		return { 0, size - 1, 0.0f };
+	}
 	if (seg == size)
+	{
 		return { 0, size - 1, 1.0f };
+	}
 	float begin = timeStamps[seg - 1];
 	float end = timeStamps[seg];
 	float fraction = (time - begin) / (end - begin);
@@ -129,7 +133,7 @@ namespace udsdx
 
 				for (UINT j = 0; j < boneSrc->mNumWeights; ++j)
 				{
-					UINT vertexID = boneSrc->mWeights[j].mVertexId;
+					UINT vertexID = submesh.BaseVertexLocation + boneSrc->mWeights[j].mVertexId;
 					float weight = boneSrc->mWeights[j].mWeight;
 
 					switch (++countTable[vertexID])
@@ -158,16 +162,16 @@ namespace udsdx
 			}
 
 			// Post-process the bone weights to ensure they sum to 1
-			for (auto& vertex : vertices)
-			{
-				XMVECTOR weights = XMLoadFloat4(&vertex.boneWeights);
-				float weightSum = XMVectorGetX(XMVector3Dot(weights, XMVectorReplicate(1.0f)));
-				if (weightSum > 0.0f)
-				{
-					weights = XMVectorDivide(weights, XMVectorReplicate(weightSum));
-					XMStoreFloat4(&vertex.boneWeights, weights);
-				}
-			}
+			//for (auto& vertex : vertices)
+			//{
+			//	XMVECTOR weights = XMLoadFloat4(&vertex.boneWeights);
+			//	float weightSum = XMVectorGetX(XMVector3Dot(weights, XMVectorReplicate(1.0f)));
+			//	if (weightSum > 0.0f)
+			//	{
+			//		weights = XMVectorDivide(weights, XMVectorReplicate(weightSum));
+			//		XMStoreFloat4(&vertex.boneWeights, weights);
+			//	}
+			//}
 		}
 
 		// Load the animations
