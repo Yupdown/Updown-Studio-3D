@@ -83,6 +83,7 @@ using namespace DirectX;
 #include "singleton.h"
 #include "vertex.h"
 #include "UploadBuffer.h"
+#include "../resource/resource.h"
 
 // Link Static Library
 #pragma comment(lib, "d3d12.lib")

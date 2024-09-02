@@ -50,23 +50,18 @@ namespace udsdx
 		if (m_isMatrixDirty)
 		{
 			BoneConstants boneConstants{};
+			std::vector<Matrix4x4> boneTransforms;
 			if (!m_animationName.empty())
 			{
-				std::vector<Matrix4x4> boneTransforms;
 				m_riggedMesh->PopulateTransforms(m_animationName, m_animationTime, boneTransforms);
-
-				for (size_t i = 0; i < boneTransforms.size(); ++i)
-				{
-					boneConstants.BoneTransforms[i] = boneTransforms[i].Transpose();
-				}
-
 			}
 			else
 			{
-				for (size_t i = 0; i < MAX_BONES; ++i)
-				{
-					XMStoreFloat4x4(&boneConstants.BoneTransforms[i], XMMatrixIdentity());
-				}
+				m_riggedMesh->PopulateTransforms(boneTransforms);
+			}
+			for (size_t i = 0; i < boneTransforms.size(); ++i)
+			{
+				boneConstants.BoneTransforms[i] = boneTransforms[i].Transpose();
 			}
 			uploader->CopyData(0, boneConstants);
 			m_isMatrixDirty = false;
@@ -78,17 +73,26 @@ namespace udsdx
 		param.CommandList->SetGraphicsRoot32BitConstants(RootParam::PerObjectCBV, sizeof(ObjectConstants) / 4, &objectConstants, 0);
 		param.CommandList->SetGraphicsRootConstantBufferView(RootParam::BonesCBV, uploader->Resource()->GetGPUVirtualAddress());
 
-		if (m_material != nullptr && m_material->GetMainTexture() != nullptr)
-		{
-			Texture* mainTex = m_material->GetMainTexture();
-			param.CommandList->SetGraphicsRootDescriptorTable(RootParam::MainTexSRV, mainTex->GetSrvGpu());
-		}
-
 		param.CommandList->IASetVertexBuffers(0, 1, &m_riggedMesh->VertexBufferView());
 		param.CommandList->IASetIndexBuffer(&m_riggedMesh->IndexBufferView());
 
-		for (const auto& submesh : m_riggedMesh->GetSubmeshes())
+		const auto& submeshes = m_riggedMesh->GetSubmeshes();
+		for (size_t index = 0; index < submeshes.size(); ++index)
 		{
+			if (index < m_materials.size() && m_materials[index] != nullptr)
+			{
+				Texture* mainTex = m_materials[index]->GetMainTexture();
+				if (mainTex != nullptr)
+				{
+					param.CommandList->SetGraphicsRootDescriptorTable(RootParam::MainTexSRV, mainTex->GetSrvGpu());
+				}
+				Texture* normalTex = m_materials[index]->GetNormalTexture();
+				if (normalTex != nullptr)
+				{
+					param.CommandList->SetGraphicsRootDescriptorTable(RootParam::NormalSRV, normalTex->GetSrvGpu());
+				}
+			}
+			const auto& submesh = submeshes[index];
 			param.CommandList->DrawIndexedInstanced(submesh.IndexCount, instances, submesh.StartIndexLocation, submesh.BaseVertexLocation, 0);
 		}
 	}

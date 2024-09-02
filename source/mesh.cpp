@@ -73,6 +73,8 @@ namespace udsdx
 					indices.push_back(face.mIndices[j]);
 				}
 			}
+
+			DebugConsole::Log(std::string("\tSubmesh \'") + submesh.Name.c_str() + "\' generated");
 		}
 
 		CreateBuffers<Vertex>(vertices, indices);

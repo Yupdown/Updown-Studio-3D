@@ -56,9 +56,9 @@ namespace udsdx
 			Bone boneData{};
 			boneData.Name = node.first->mName.C_Str();
 			boneData.Transform = ToMatrix4x4(node.first->mTransformation);
+			XMStoreFloat4x4(&boneData.Offset, XMMatrixIdentity());
 
 			m_boneIndexMap[boneData.Name] = static_cast<int>(m_bones.size());
-
 			m_bones.emplace_back(boneData);
 			m_boneParents.push_back(node.second);
 
@@ -122,41 +122,54 @@ namespace udsdx
 			submesh.IndexCount = static_cast<UINT>(indices.size()) - submesh.StartIndexLocation;
 			m_submeshes.emplace_back(submesh);
 
-			std::vector<UINT> countTable(vertices.size(), 0);
-
-			// Load the bones
-			for (UINT i = 0; i < mesh->mNumBones; ++i)
+			// If the mesh has no bones, fallback to the hierarchy
+			if (!mesh->HasBones())
 			{
-				auto boneSrc = mesh->mBones[i];
-				auto boneIndex = m_boneIndexMap[boneSrc->mName.C_Str()];
-				m_bones[boneIndex].Offset = ToMatrix4x4(boneSrc->mOffsetMatrix);
-
-				for (UINT j = 0; j < boneSrc->mNumWeights; ++j)
+				UINT boneIndex = m_boneIndexMap[mesh->mName.C_Str()];
+				for (UINT i = submesh.BaseVertexLocation; i < vertices.size(); ++i)
 				{
-					UINT vertexID = submesh.BaseVertexLocation + boneSrc->mWeights[j].mVertexId;
-					float weight = boneSrc->mWeights[j].mWeight;
+					vertices[i].boneIndices = boneIndex;
+					vertices[i].boneWeights.x = 1.0f;
+				}
+			}
+			else
+			{
+				std::vector<UINT> countTable(vertices.size(), 0);
 
-					switch (++countTable[vertexID])
+				// Load the bones
+				for (UINT i = 0; i < mesh->mNumBones; ++i)
+				{
+					auto boneSrc = mesh->mBones[i];
+					auto boneIndex = m_boneIndexMap[boneSrc->mName.C_Str()];
+					m_bones[boneIndex].Offset = ToMatrix4x4(boneSrc->mOffsetMatrix);
+
+					for (UINT j = 0; j < boneSrc->mNumWeights; ++j)
 					{
-					case 1:
-						vertices[vertexID].boneIndices |= boneIndex;
-						vertices[vertexID].boneWeights.x = weight;
-						break;
-					case 2:
-						vertices[vertexID].boneIndices |= boneIndex << 8;
-						vertices[vertexID].boneWeights.y = weight;
-						break;
-					case 3:
-						vertices[vertexID].boneIndices |= boneIndex << 16;
-						vertices[vertexID].boneWeights.z = weight;
-						break;
-					case 4:
-						vertices[vertexID].boneIndices |= boneIndex << 24;
-						vertices[vertexID].boneWeights.w = weight;
-						break;
-					default:
-						DebugConsole::LogError("Vertex has more than 4 bones affecting it.");
-						break;
+						UINT vertexID = submesh.BaseVertexLocation + boneSrc->mWeights[j].mVertexId;
+						float weight = boneSrc->mWeights[j].mWeight;
+
+						switch (++countTable[vertexID])
+						{
+						case 1:
+							vertices[vertexID].boneIndices |= boneIndex;
+							vertices[vertexID].boneWeights.x = weight;
+							break;
+						case 2:
+							vertices[vertexID].boneIndices |= boneIndex << 8;
+							vertices[vertexID].boneWeights.y = weight;
+							break;
+						case 3:
+							vertices[vertexID].boneIndices |= boneIndex << 16;
+							vertices[vertexID].boneWeights.z = weight;
+							break;
+						case 4:
+							vertices[vertexID].boneIndices |= boneIndex << 24;
+							vertices[vertexID].boneWeights.w = weight;
+							break;
+						default:
+							DebugConsole::LogError("Vertex has more than 4 bones affecting it.");
+							break;
+						}
 					}
 				}
 			}
@@ -172,6 +185,8 @@ namespace udsdx
 			//		XMStoreFloat4(&vertex.boneWeights, weights);
 			//	}
 			//}
+
+			DebugConsole::Log(std::string("\tSubmesh \'") + submesh.Name.c_str() + "\' generated");
 		}
 
 		// Load the animations
@@ -218,10 +233,31 @@ namespace udsdx
 			}
 
 			m_animations[animation.Name] = animation;
+			DebugConsole::Log(std::string("\tAnimation \'") + animation.Name.c_str() + "\' generated");
 		}
 
 		MeshBase::CreateBuffers<RiggedVertex>(vertices, indices);
 		BoundingBox::CreateFromPoints(m_bounds, vertices.size(), &vertices[0].position, sizeof(RiggedVertex));
+	}
+
+	void RiggedMesh::PopulateTransforms(std::vector<Matrix4x4>& out) const
+	{
+		out.resize(m_bones.size());
+		for (UINT i = 0; i < out.size(); ++i)
+		{
+			const Bone& bone = m_bones[i];
+			XMMATRIX tParent = m_boneParents[i] < 0 ? XMMatrixIdentity() : XMLoadFloat4x4(&out[m_boneParents[i]]);
+			XMMATRIX tLocal = XMLoadFloat4x4(&bone.Transform);
+			XMStoreFloat4x4(&out[i], XMMatrixMultiply(tLocal, tParent));
+		}
+
+		for (UINT i = 0; i < out.size(); ++i)
+		{
+			XMMATRIX offset = XMLoadFloat4x4(&m_bones[i].Offset);
+			XMMATRIX transform = XMLoadFloat4x4(&out[i]);
+			transform = XMMatrixMultiply(offset, transform);
+			XMStoreFloat4x4(&out[i], transform);
+		}
 	}
 
 	void RiggedMesh::PopulateTransforms(std::string_view animationKey, float time, std::vector<Matrix4x4>& out) const

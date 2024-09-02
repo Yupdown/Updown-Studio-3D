@@ -28,9 +28,13 @@ namespace udsdx
 		m_shader = shader;
 	}
 
-	void RendererBase::SetMaterial(Material* material)
+	void RendererBase::SetMaterial(Material* material, int index)
 	{
-		m_material = material;
+		if (m_materials.size() <= index)
+		{
+			m_materials.resize(index + 1);
+		}
+		m_materials[index] = material;
 	}
 
 	Shader* RendererBase::GetShader() const
@@ -38,9 +42,9 @@ namespace udsdx
 		return m_shader;
 	}
 
-	Material* RendererBase::GetMaterial() const
+	Material* RendererBase::GetMaterial(int index) const
 	{
-		return m_material;
+		return m_materials[index];
 	}
 
 	void RendererBase::SetCastShadow(bool value)

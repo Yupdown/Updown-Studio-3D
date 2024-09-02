@@ -224,6 +224,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="source\debug_console.cpp" />
+    <ClCompile Include="source\deferred_renderer.cpp" />
     <ClCompile Include="source\frame_debug.cpp" />
     <ClCompile Include="source\frame_resource.cpp" />
     <ClCompile Include="source\input.cpp" />
@@ -238,7 +239,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="source\renderer_base.cpp" />
-    <ClCompile Include="source\resource.cpp" />
+    <ClCompile Include="source\resource_load.cpp" />
     <ClCompile Include="source\resource_object.cpp" />
     <ClCompile Include="source\rigged_mesh.cpp" />
     <ClCompile Include="source\rigged_mesh_renderer.cpp" />
@@ -262,6 +263,7 @@
     <ClInclude Include="external-include\d3dx12.h" />
     <ClInclude Include="external-include\stb_image.h" />
     <ClInclude Include="external-include\UploadBuffer.h" />
+    <ClInclude Include="resource\resource.h" />
     <ClInclude Include="source\audio.h" />
     <ClInclude Include="source\audio_clip.h" />
     <ClInclude Include="source\camera.h" />
@@ -270,6 +272,7 @@
     <ClInclude Include="source\custom_math.h" />
     <ClInclude Include="source\d3dUtil.h" />
     <ClInclude Include="source\debug_console.h" />
+    <ClInclude Include="source\deferred_renderer.h" />
     <ClInclude Include="source\define.h" />
     <ClInclude Include="source\frame_debug.h" />
     <ClInclude Include="source\frame_resource.h" />
@@ -281,7 +284,7 @@
     <ClInclude Include="source\mesh_renderer.h" />
     <ClInclude Include="source\pch.h" />
     <ClInclude Include="source\renderer_base.h" />
-    <ClInclude Include="source\resource.h" />
+    <ClInclude Include="source\resource_load.h" />
     <ClInclude Include="source\resource_object.h" />
     <ClInclude Include="source\rigged_mesh.h" />
     <ClInclude Include="source\rigged_mesh_renderer.h" />
@@ -296,6 +299,9 @@
     <ClInclude Include="source\transform.h" />
     <ClInclude Include="source\updown_studio.h" />
     <ClInclude Include="source\vertex.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="resource\engine.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

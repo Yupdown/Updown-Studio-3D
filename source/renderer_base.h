@@ -20,13 +20,13 @@ namespace udsdx
 
 	public:
 		void SetShader(Shader* shader);
-		void SetMaterial(Material* material);
+		void SetMaterial(Material* material, int index = 0);
 
 		void SetCastShadow(bool value);
 		void SetReceiveShadow(bool value);
 
 		Shader* GetShader() const;
-		Material* GetMaterial() const;
+		Material* GetMaterial(int index = 0) const;
 
 		bool GetCastShadow() const;
 		bool GetReceiveShadow() const;
@@ -36,7 +36,7 @@ namespace udsdx
 
 	protected:
 		Shader* m_shader = nullptr;
-		Material* m_material = nullptr;
+		std::vector<Material*> m_materials;
 
 		bool m_castShadow = true;
 		bool m_receiveShadow = true;

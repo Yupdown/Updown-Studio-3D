@@ -2,7 +2,7 @@
 #include "core.h"
 
 #include "singleton.h"
-#include "resource.h"
+#include "resource_load.h"
 #include "input.h"
 #include "frame_resource.h"
 #include "time_measure.h"
@@ -15,6 +15,7 @@
 #include "texture.h"
 #include "shadow_map.h"
 #include "screen_space_ao.h"
+#include "deferred_renderer.h"
 
 #include <assimp/DefaultLogger.hpp>
 
@@ -74,7 +75,8 @@ namespace udsdx
 		Assimp::DefaultLogger::kill();
 #endif
 
-		BuildDescriptorHeaps();
+		CreateDescriptorHeaps();
+		RegisterDescriptorsToHeaps();
 		BuildConstantBuffers();
 
 		ExecuteCommandList();
@@ -142,9 +144,11 @@ namespace udsdx
 #endif
 		CreateCommandObjects();
 		CreateSwapChain();
-		CreateRtvAndDsvDescriptorHeaps();
 		BuildRootSignature();
 		
+		// Create Deferred Renderer
+		m_deferredRenderer = std::make_unique<DeferredRenderer>(m_d3dDevice.Get());
+
 		// Create Shadow Map
 		m_shadowMap = std::make_unique<ShadowMap>(8192u, 8192u, m_d3dDevice.Get());
 
@@ -152,14 +156,14 @@ namespace udsdx
 		m_screenSpaceAO = std::make_unique<ScreenSpaceAO>(m_d3dDevice.Get(), m_commandList.Get(), 0.5f);
 		m_screenSpaceAO->BuildPipelineState(m_d3dDevice.Get(), m_rootSignature.Get());
 
-		const char tracyQueueName[] = "D3D12 Graphics Queue";
-		m_tracyQueueCtx = TracyD3D12Context(m_d3dDevice.Get(), m_commandQueue.Get());
-		TracyD3D12ContextName(m_tracyQueueCtx, tracyQueueName, sizeof(tracyQueueName));
-
 		if (m_tearingSupport)
 		{
 			m_dxgiFactory->MakeWindowAssociation(m_hMainWnd, DXGI_MWA_NO_ALT_ENTER);
 		}
+
+		const char tracyQueueName[] = "D3D12 Graphics Queue";
+		m_tracyQueueCtx = TracyD3D12Context(m_d3dDevice.Get(), m_commandQueue.Get());
+		TracyD3D12ContextName(m_tracyQueueCtx, tracyQueueName, sizeof(tracyQueueName));
 	}
 
 	void Core::EnableDebugLayer()
@@ -242,17 +246,33 @@ namespace udsdx
 		ThrowIfFailed(m_dxgiFactory->CreateSwapChain(m_commandQueue.Get(), &sd, m_swapChain.GetAddressOf()));
 	}
 
-	void Core::CreateRtvAndDsvDescriptorHeaps()
+	void Core::CreateDescriptorHeaps()
 	{ ZoneScoped;
+		std::vector<Texture*> textures = INSTANCE(Resource)->LoadAll<Texture>();
+
+		D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc;
+		cbvHeapDesc.NumDescriptors = FrameResourceCount;
+		cbvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+		cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+		cbvHeapDesc.NodeMask = 0;
+		ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&cbvHeapDesc, IID_PPV_ARGS(m_cbvHeap.GetAddressOf())));
+
+		D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc;
+		srvHeapDesc.NumDescriptors = static_cast<UINT>(textures.size() + 16);
+		srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+		srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+		srvHeapDesc.NodeMask = 0;
+		ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(m_srvHeap.GetAddressOf())));
+
 		D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc;
-		rtvHeapDesc.NumDescriptors = SwapChainBufferCount + 4;
+		rtvHeapDesc.NumDescriptors = 16;
 		rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
 		rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 		rtvHeapDesc.NodeMask = 0;
 		ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(m_rtvHeap.GetAddressOf())));
 
 		D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc;
-		dsvHeapDesc.NumDescriptors = 2;
+		dsvHeapDesc.NumDescriptors = 16;
 		dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
 		dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 		dsvHeapDesc.NodeMask = 0;
@@ -272,41 +292,23 @@ namespace udsdx
 		}
 	}
 
-	void Core::BuildDescriptorHeaps()
+	void Core::RegisterDescriptorsToHeaps()
 	{ ZoneScoped;
-
 		std::vector<Texture*> textures = INSTANCE(Resource)->LoadAll<Texture>();
-
-		// Need a CBV descriptor for each frame resource,
-		D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc;
-		cbvHeapDesc.NumDescriptors = FrameResourceCount;
-		cbvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-		cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-		cbvHeapDesc.NodeMask = 0;
-		ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&cbvHeapDesc, IID_PPV_ARGS(m_cbvHeap.GetAddressOf())));
-
-		// Create SRV heap
-		D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc;
-		srvHeapDesc.NumDescriptors = static_cast<UINT>(textures.size() + 6);
-		srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-		srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-		srvHeapDesc.NodeMask = 0;
-		ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(m_srvHeap.GetAddressOf())));
 
 		DescriptorParam descriptorParam{
 			.CbvCpuHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_cbvHeap->GetCPUDescriptorHandleForHeapStart()),
 			.SrvCpuHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_srvHeap->GetCPUDescriptorHandleForHeapStart()),
 			.RtvCpuHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_rtvHeap->GetCPUDescriptorHandleForHeapStart(), SwapChainBufferCount, m_rtvDescriptorSize),
 			.DsvCpuHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_dsvHeap->GetCPUDescriptorHandleForHeapStart(), 1, m_dsvDescriptorSize),
-
 			.CbvGpuHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_cbvHeap->GetGPUDescriptorHandleForHeapStart()),
 			.SrvGpuHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_srvHeap->GetGPUDescriptorHandleForHeapStart()),
-
 			.CbvSrvUavDescriptorSize = m_cbvSrvUavDescriptorSize,
 			.RtvDescriptorSize = m_rtvDescriptorSize,
 			.DsvDescriptorSize = m_dsvDescriptorSize
 		};
 
+		m_deferredRenderer->BuildDescriptors(descriptorParam);
 		m_shadowMap->BuildDescriptors(descriptorParam, m_d3dDevice.Get());
 		m_screenSpaceAO->BuildDescriptors(descriptorParam, m_depthStencilBuffer.Get());
 
@@ -339,12 +341,14 @@ namespace udsdx
 
 	void Core::BuildRootSignature()
 	{ ZoneScoped;
-		CD3DX12_ROOT_PARAMETER slotRootParameter[7];
+		CD3DX12_ROOT_PARAMETER slotRootParameter[8];
 
 		CD3DX12_DESCRIPTOR_RANGE texTable;
 		texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+		CD3DX12_DESCRIPTOR_RANGE normalTable;
+		normalTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
 		CD3DX12_DESCRIPTOR_RANGE shadowMapTable;
-		shadowMapTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 1);
+		shadowMapTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 2);
 
 		slotRootParameter[RootParam::PerObjectCBV].InitAsConstants(sizeof(ObjectConstants) / 4, 0);
 		slotRootParameter[RootParam::PerCameraCBV].InitAsConstants(sizeof(CameraConstants) / 4, 1);
@@ -352,6 +356,7 @@ namespace udsdx
 		slotRootParameter[RootParam::PerShadowCBV].InitAsConstantBufferView(3);
 		slotRootParameter[RootParam::PerFrameCBV].InitAsConstantBufferView(4);
 		slotRootParameter[RootParam::MainTexSRV].InitAsDescriptorTable(1, &texTable);
+		slotRootParameter[RootParam::NormalSRV].InitAsDescriptorTable(1, &normalTable);
 		slotRootParameter[RootParam::ShadowMapSRV].InitAsDescriptorTable(1, &shadowMapTable);
 
 		CD3DX12_STATIC_SAMPLER_DESC samplerDesc[] = {
@@ -398,6 +403,11 @@ namespace udsdx
 			serializedRootSig->GetBufferSize(),
 			IID_PPV_ARGS(m_rootSignature.GetAddressOf())
 		));
+	}
+
+	void Core::CreateMRTRenderTargetViews()
+	{
+
 	}
 
 	bool Core::CheckTearingSupport() const
@@ -867,6 +877,7 @@ namespace udsdx
 			D3D12_RESOURCE_STATE_DEPTH_WRITE
 		));
 
+		m_deferredRenderer->OnResize(width, height);
 		m_screenSpaceAO->OnResize(width, height, m_d3dDevice.Get());
 		m_screenSpaceAO->RebuildDescriptors(m_depthStencilBuffer.Get());
 

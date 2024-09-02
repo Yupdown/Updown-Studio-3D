@@ -13,7 +13,7 @@
     <ClCompile Include="source\mesh.cpp">
       <Filter>Engine\Resource</Filter>
     </ClCompile>
-    <ClCompile Include="source\resource.cpp">
+    <ClCompile Include="source\resource_load.cpp">
       <Filter>Engine\Resource</Filter>
     </ClCompile>
     <ClCompile Include="source\resource_object.cpp">
@@ -98,6 +98,9 @@
     <ClCompile Include="source\renderer_base.cpp">
       <Filter>Engine\Runtime</Filter>
     </ClCompile>
+    <ClCompile Include="source\deferred_renderer.cpp">
+      <Filter>Engine</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Precompiled Headers">
@@ -117,6 +120,9 @@
     </Filter>
     <Filter Include="Engine\Runtime">
       <UniqueIdentifier>{ad6e46dd-10b9-42f9-9140-69f76530286a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{999016cd-aabb-44ef-a37f-7d3d53d75760}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -162,7 +168,7 @@
     <ClInclude Include="source\mesh.h">
       <Filter>Engine\Resource</Filter>
     </ClInclude>
-    <ClInclude Include="source\resource.h">
+    <ClInclude Include="source\resource_load.h">
       <Filter>Engine\Resource</Filter>
     </ClInclude>
     <ClInclude Include="source\resource_object.h">
@@ -229,5 +235,16 @@
     <ClInclude Include="source\renderer_base.h">
       <Filter>Engine\Runtime</Filter>
     </ClInclude>
+    <ClInclude Include="source\deferred_renderer.h">
+      <Filter>Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="resource\resource.h">
+      <Filter>Resource Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="resource\engine.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
   </ItemGroup>
 </Project>

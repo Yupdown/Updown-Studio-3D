@@ -73,8 +73,9 @@ namespace udsdx
 		PerShadowCBV = 3,
 		PerFrameCBV = 4,
 		MainTexSRV = 5,
-		ShadowMapSRV = 6,
-		SSAOMapSRV = 7
+		NormalSRV = 6,
+		ShadowMapSRV = 7,
+		SSAOMapSRV = 8
 	};
 
 	static constexpr int FrameResourceCount = 2;

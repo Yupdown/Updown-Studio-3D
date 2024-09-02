@@ -47,10 +47,10 @@ namespace udsdx
 		for (const auto& camera : m_renderCameraQueue)
 		{
 			// Normal map rendering pass
-			PassRenderNormal(param, camera);
+			// PassRenderNormal(param, camera);
 
 			// SSAO map rendering pass
-			PassRenderSSAO(param, camera);
+			// PassRenderSSAO(param, camera);
 
 			// Main pass
 			PassRenderMain(param, camera);
@@ -149,7 +149,7 @@ namespace udsdx
 		param.CommandList->SetGraphicsRoot32BitConstants(RootParam::PerCameraCBV, sizeof(CameraConstants) / 4, &cameraConstants, 0);
 		param.CommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-		RenderSceneObjects(param, 1, [](RenderParam& p, RendererBase* o) { p.CommandList->SetPipelineState(o->GetPipelineState()); });
+		RenderSceneObjects(param, 1);
 	}
 
 	void Scene::RenderShadowSceneObjects(RenderParam& param, int instances)
@@ -161,14 +161,11 @@ namespace udsdx
 		}
 	}
 
-	void Scene::RenderSceneObjects(RenderParam& param, int instances, std::function<void(RenderParam&, RendererBase*)> preProcessor)
+	void Scene::RenderSceneObjects(RenderParam& param, int instances)
 	{
 		for (const auto& object : m_renderObjectQueue)
 		{
-			if (preProcessor != nullptr)
-			{
-				preProcessor(param, object);
-			}
+			param.CommandList->SetPipelineState(object->GetPipelineState());
 			object->Render(param, instances);
 		}
 	}

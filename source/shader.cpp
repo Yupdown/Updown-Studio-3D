@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "shader.h"
+#include "debug_console.h"
 
 namespace udsdx
 {
@@ -46,6 +47,8 @@ namespace udsdx
 				&psoDesc,
 				IID_PPV_ARGS(m_defaultPipelineState.GetAddressOf())
 			));
+
+			DebugConsole::Log("\tDefault shader compiled");
 		}
 
 		{
@@ -68,6 +71,8 @@ namespace udsdx
 				&psoDesc,
 				IID_PPV_ARGS(m_riggedPipelineState.GetAddressOf())
 			));
+
+			DebugConsole::Log("\tRigged shader compiled");
 		}
 
 		psoDesc.NumRenderTargets = 0;
@@ -100,6 +105,8 @@ namespace udsdx
 				&psoDesc,
 				IID_PPV_ARGS(m_shadowPipelineState.GetAddressOf())
 			));
+
+			DebugConsole::Log("\tShadow shader compiled");
 		}
 
 		{
@@ -130,6 +137,8 @@ namespace udsdx
 				&psoDesc,
 				IID_PPV_ARGS(m_riggedShadowPipelineState.GetAddressOf())
 			));
+
+			DebugConsole::Log("\tRigged shadow shader compiled");
 		}
 	}
 

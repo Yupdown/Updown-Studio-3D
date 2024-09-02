@@ -113,11 +113,13 @@ namespace udsdx
 		for (int i = 0; i < 4; ++i)
 		{
 			float f = m_shadowRanges[i];
-			XMMATRIX lightProj = XMMatrixOrthographicLH(f, f, -f * 2.0f, f * 2.0f);
+			XMMATRIX lightProj = XMMatrixOrthographicLH(f, f, -f * 10.0f, f * 10.0f);
 			XMMATRIX lightClip = XMMatrixScaling(0.5f, 0.5f, 1.0f) * XMMatrixTranslation(static_cast<float>(i % 2) - 0.5f, static_cast<float>(i / 2) - 0.5f, 0.0f);
 			XMMATRIX lightViewProj = lightView * lightProj;
 			XMStoreFloat4x4(&shadowConstants.LightViewProj[i], XMMatrixTranspose(lightViewProj));
 			XMStoreFloat4x4(&shadowConstants.LightViewProjClip[i], XMMatrixTranspose(lightViewProj * lightClip));
+
+			shadowConstants.ShadowBias[i] = f;
 			shadowConstants.ShadowDistance[i] = f * 0.5f;
 		}
 		shadowConstants.LightDirection = lightDirection;

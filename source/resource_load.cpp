@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "resource.h"
+#include "resource_load.h"
 #include "texture.h"
 #include "mesh.h"
 #include "rigged_mesh.h"
@@ -76,31 +76,31 @@ namespace udsdx
 			}
 
 			DebugConsole::Log(L"> " + iter->second + L": " + path);
-			m_resources.insert(std::make_pair(path, loader_iter->second->Load(path)));
+			m_resources.emplace(path, loader_iter->second->Load(path));
 		}
 		std::cout << std::endl;
 	}
 
 	void Resource::InitializeLoaders(ID3D12Device* device, ID3D12CommandQueue* commandQueue, ID3D12GraphicsCommandList* commandList, ID3D12RootSignature* rootSignature)
 	{
-		m_loaders.insert(std::make_pair(L"texture", std::make_unique<TextureLoader>(device, commandQueue, commandList)));
-		m_loaders.insert(std::make_pair(L"model", std::make_unique<ModelLoader>(device, commandList)));
-		m_loaders.insert(std::make_pair(L"shader", std::make_unique<ShaderLoader>(device, commandList, rootSignature)));
-		m_loaders.insert(std::make_pair(L"audio", std::make_unique<AudioClipLoader>(device, commandList)));
+		m_loaders.emplace(L"texture", std::make_unique<TextureLoader>(device, commandQueue, commandList));
+		m_loaders.emplace(L"model", std::make_unique<ModelLoader>(device, commandList));
+		m_loaders.emplace(L"shader", std::make_unique<ShaderLoader>(device, commandList, rootSignature));
+		m_loaders.emplace(L"audio", std::make_unique<AudioClipLoader>(device, commandList));
 	}
 
 	void Resource::InitializeExtensionDictionary()
 	{
-		m_extensionDictionary.insert(std::make_pair(L".png", L"texture"));
-		m_extensionDictionary.insert(std::make_pair(L".jpg", L"texture"));
-		m_extensionDictionary.insert(std::make_pair(L".jpeg", L"texture"));
-		m_extensionDictionary.insert(std::make_pair(L".bmp", L"texture"));
-		m_extensionDictionary.insert(std::make_pair(L".tga", L"texture"));
-		m_extensionDictionary.insert(std::make_pair(L".tif", L"texture"));
-		m_extensionDictionary.insert(std::make_pair(L".obj", L"model"));
-		m_extensionDictionary.insert(std::make_pair(L".fbx", L"model"));
-		m_extensionDictionary.insert(std::make_pair(L".hlsl", L"shader"));
-		m_extensionDictionary.insert(std::make_pair(L".wav", L"audio"));
+		m_extensionDictionary.emplace(L".png", L"texture");
+		m_extensionDictionary.emplace(L".jpg", L"texture");
+		m_extensionDictionary.emplace(L".jpeg", L"texture");
+		m_extensionDictionary.emplace(L".bmp", L"texture");
+		m_extensionDictionary.emplace(L".tif", L"texture");
+		m_extensionDictionary.emplace(L".obj", L"model");
+		m_extensionDictionary.emplace(L".fbx", L"model");
+		m_extensionDictionary.emplace(L".dae", L"model");
+		m_extensionDictionary.emplace(L".hlsl", L"shader");
+		m_extensionDictionary.emplace(L".wav", L"audio");
 	}
 
 	void Resource::InitializeIgnoreFiles()
@@ -142,7 +142,7 @@ namespace udsdx
 		auto assimpScene = importer.ReadFileFromMemory(
 			modelData->GetBufferPointer(),
 			static_cast<size_t>(modelData->GetBufferSize()),
-			aiProcess_Triangulate | aiProcess_CalcTangentSpace | aiProcess_ConvertToLeftHanded
+			aiProcess_ConvertToLeftHanded | aiProcess_Triangulate | aiProcess_CalcTangentSpace
 		);
 
 		assert(assimpScene != nullptr);

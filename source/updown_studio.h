@@ -2,7 +2,7 @@
 
 #include "pch.h"
 
-#include "resource.h"
+#include "resource_load.h"
 #include "resource_object.h"
 #include "material.h"
 #include "mesh.h"
@@ -12,6 +12,7 @@
 #include "texture.h"
 #include "audio_clip.h"
 #include "shadow_map.h"
+#include "deferred_renderer.h"
 
 #include "debug_console.h"
 #include "time_measure.h"
