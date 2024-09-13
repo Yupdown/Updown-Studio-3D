@@ -99,19 +99,22 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>$(ProjectDir)include\;$(IncludePath)</IncludePath>
-    <LibraryPath>$(ProjectDir)library\;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64)</LibraryPath>
-    <ExternalIncludePath>$(ProjectDir)external-include\;$(ExternalIncludePath)</ExternalIncludePath>
+    <IncludePath>$(IncludePath)</IncludePath>
+    <LibraryPath>$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64)</LibraryPath>
+    <ExternalIncludePath>$(ExternalIncludePath)</ExternalIncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">
-    <IncludePath>$(ProjectDir)include\;$(IncludePath)</IncludePath>
-    <LibraryPath>$(ProjectDir)library\;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64)</LibraryPath>
-    <ExternalIncludePath>$(ProjectDir)external-include\;$(ExternalIncludePath)</ExternalIncludePath>
+    <IncludePath>$(IncludePath)</IncludePath>
+    <LibraryPath>$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64)</LibraryPath>
+    <ExternalIncludePath>$(ExternalIncludePath)</ExternalIncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>$(ProjectDir)include\;$(IncludePath)</IncludePath>
-    <LibraryPath>$(ProjectDir)library\;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64)</LibraryPath>
-    <ExternalIncludePath>$(ProjectDir)external-include\;$(ExternalIncludePath)</ExternalIncludePath>
+    <IncludePath>$(IncludePath)</IncludePath>
+    <LibraryPath>$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64)</LibraryPath>
+    <ExternalIncludePath>$(ExternalIncludePath)</ExternalIncludePath>
+  </PropertyGroup>
+  <PropertyGroup Label="Vcpkg">
+    <VcpkgEnableManifest>true</VcpkgEnableManifest>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -260,9 +263,6 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="external-include\d3dx12.h" />
-    <ClInclude Include="external-include\stb_image.h" />
-    <ClInclude Include="external-include\UploadBuffer.h" />
     <ClInclude Include="resource\resource.h" />
     <ClInclude Include="source\audio.h" />
     <ClInclude Include="source\audio_clip.h" />
@@ -298,6 +298,7 @@
     <ClInclude Include="source\time_measure.h" />
     <ClInclude Include="source\transform.h" />
     <ClInclude Include="source\updown_studio.h" />
+    <ClInclude Include="source\UploadBuffer.h" />
     <ClInclude Include="source\vertex.h" />
   </ItemGroup>
   <ItemGroup>

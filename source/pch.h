@@ -52,8 +52,7 @@
 using namespace Microsoft::WRL;
 
 // DirectX12 Library
-#include <d3d12.h>
-#include <dxgi1_6.h>
+#include <directx/d3dx12.h>
 #include <d3dcompiler.h>
 
 #include <DirectXMath.h>
@@ -83,7 +82,6 @@ using namespace DirectX;
 #include "singleton.h"
 #include "vertex.h"
 #include "UploadBuffer.h"
-#include "../resource/resource.h"
 
 // Link Static Library
 #pragma comment(lib, "d3d12.lib")
@@ -91,17 +89,3 @@ using namespace DirectX;
 #pragma comment(lib, "d3dcompiler.lib")
 #pragma comment(lib, "dxguid.lib")
 #pragma comment(lib, "runtimeobject.lib")
-
-#if defined(DEBUG) || defined(_DEBUG)
-#pragma comment(lib, "debug/zlibstaticd.lib")
-#pragma comment(lib, "debug/assimp-vc143-mtd.lib")
-#pragma comment(lib, "debug/DirectXTex.lib")
-#pragma comment(lib, "debug/DirectXTK12.lib")
-
-#else
-#pragma comment(lib, "release/zlibstatic.lib")
-#pragma comment(lib, "release/assimp-vc143-mt.lib")
-#pragma comment(lib, "release/DirectXTex.lib")
-#pragma comment(lib, "release/DirectXTK12.lib")
-
-#endif
