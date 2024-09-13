@@ -99,6 +99,8 @@ namespace udsdx
 		m_extensionDictionary.emplace(L".obj", L"model");
 		m_extensionDictionary.emplace(L".fbx", L"model");
 		m_extensionDictionary.emplace(L".dae", L"model");
+		m_extensionDictionary.emplace(L".glb", L"model");
+		m_extensionDictionary.emplace(L".gltf", L"model");
 		m_extensionDictionary.emplace(L".hlsl", L"shader");
 		m_extensionDictionary.emplace(L".wav", L"audio");
 	}
@@ -137,13 +139,21 @@ namespace udsdx
 		ComPtr<ID3DBlob> modelData;
 		ThrowIfFailed(D3DReadFileToBlob(path.data(), &modelData));
 
+		// Change the working directory to the resource path (for additional resources)
+		std::filesystem::path workingDirectory = std::filesystem::absolute(path).parent_path();
+		std::filesystem::path lastWorkingDirectory = std::filesystem::current_path();
+		std::filesystem::current_path(workingDirectory);
+
 		// Load the model using Assimp
 		Assimp::Importer importer;
 		auto assimpScene = importer.ReadFileFromMemory(
 			modelData->GetBufferPointer(),
 			static_cast<size_t>(modelData->GetBufferSize()),
-			aiProcess_ConvertToLeftHanded | aiProcess_Triangulate | aiProcess_CalcTangentSpace
+			aiProcess_ConvertToLeftHanded | aiProcess_Triangulate | aiProcess_CalcTangentSpace | aiProcess_LimitBoneWeights
 		);
+
+		// Restore the working directory
+		std::filesystem::current_path(lastWorkingDirectory);
 
 		assert(assimpScene != nullptr);
 
