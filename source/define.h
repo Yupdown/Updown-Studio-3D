@@ -23,12 +23,16 @@ namespace udsdx
 
 	class ShadowMap;
 	class ScreenSpaceAO;
+	class DeferredRenderer;
+
 	struct RenderParam
 	{
 		ID3D12Device* Device;
 		ID3D12GraphicsCommandList* CommandList;
 		ID3D12RootSignature* RootSignature;
 		ID3D12DescriptorHeap* SRVDescriptorHeap;
+
+		DeferredRenderer* Renderer;
 
 		float AspectRatio;
 		int FrameResourceIndex;

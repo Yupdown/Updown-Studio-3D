@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "shader.h"
 #include "debug_console.h"
+#include "deferred_renderer.h"
 
 namespace udsdx
 {
@@ -20,11 +21,14 @@ namespace udsdx
 		psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
 		psoDesc.SampleMask = UINT_MAX;
 		psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-		psoDesc.NumRenderTargets = 1;
-		psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+		psoDesc.NumRenderTargets = DeferredRenderer::NUM_GBUFFERS;
+		for (UINT i = 0; i < DeferredRenderer::NUM_GBUFFERS; ++i)
+		{
+			psoDesc.RTVFormats[i] = DeferredRenderer::GBUFFER_FORMATS[i];
+		}
 		psoDesc.SampleDesc.Count = 1; // m_4xMsaaState ? 4 : 1;
 		psoDesc.SampleDesc.Quality = 0; // m_4xMsaaState ? (m_4xMsaaQuality - 1) : 0;
-		psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+		psoDesc.DSVFormat = DeferredRenderer::DEPTH_FORMAT;
 
 		auto m_psByteCode = d3dUtil::CompileShader(m_path, nullptr, "PS", "ps_5_0");
 		psoDesc.PS =
@@ -76,7 +80,10 @@ namespace udsdx
 		}
 
 		psoDesc.NumRenderTargets = 0;
-		psoDesc.RTVFormats[0] = DXGI_FORMAT_UNKNOWN;
+		for (UINT i = 0; i < DeferredRenderer::NUM_GBUFFERS; ++i)
+		{
+			psoDesc.RTVFormats[i] = DXGI_FORMAT_UNKNOWN;
+		}
 
 		{	
 			D3D_SHADER_MACRO defines[] =

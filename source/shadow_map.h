@@ -22,6 +22,7 @@ namespace udsdx
 		void Pass(RenderParam& param, Scene* target, Camera* camera, LightDirectional* light);
 
 	public:
+		D3D12_GPU_VIRTUAL_ADDRESS GetConstantBuffer(int frameResourceIndex) const;
 		D3D12_GPU_DESCRIPTOR_HANDLE GetSrvGpu() const;
 
 		void SetShadowRange(UINT index, float value);

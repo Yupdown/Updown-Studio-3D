@@ -21,8 +21,10 @@ namespace udsdx
 		BoundingBox::CreateFromPoints(m_bounds, vertices.size(), &vertices[0].position, sizeof(Vertex));
 	}
 
-	Mesh::Mesh(const aiScene& assimpScene) : MeshBase()
+	Mesh::Mesh(const aiScene& assimpScene, const Matrix4x4& preMultiplication) : MeshBase()
 	{
+		XMMATRIX vertexTransform = XMLoadFloat4x4(&preMultiplication);
+
 		std::vector<Vertex> vertices;
 		std::vector<UINT> indices;
 
@@ -62,6 +64,17 @@ namespace udsdx
 					vertex.tangent.y = mesh->mTangents[i].y;
 					vertex.tangent.z = mesh->mTangents[i].z;
 				}
+
+				XMVECTOR pos = XMLoadFloat3(&vertex.position);
+				XMVECTOR nor = XMLoadFloat3(&vertex.normal);
+				XMVECTOR tan = XMLoadFloat3(&vertex.tangent);
+				pos = XMVector3Transform(pos, vertexTransform);
+				nor = XMVector3TransformNormal(nor, vertexTransform);
+				tan = XMVector3TransformNormal(tan, vertexTransform);
+				XMStoreFloat3(&vertex.position, pos);
+				XMStoreFloat3(&vertex.normal, nor);
+				XMStoreFloat3(&vertex.tangent, tan);
+
 				vertices.emplace_back(vertex);
 			}
 

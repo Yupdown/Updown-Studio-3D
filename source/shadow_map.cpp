@@ -93,6 +93,8 @@ namespace udsdx
 	{
 		auto pCommandList = param.CommandList;
 
+		pCommandList->SetGraphicsRootSignature(param.RootSignature);
+
 		pCommandList->RSSetViewports(1, &m_viewport);
 		pCommandList->RSSetScissorRects(1, &m_scissorRect);
 
@@ -135,6 +137,11 @@ namespace udsdx
 
 		pCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_shadowMap.Get(),
 			D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_GENERIC_READ));
+	}
+
+	D3D12_GPU_VIRTUAL_ADDRESS ShadowMap::GetConstantBuffer(int frameResourceIndex) const
+	{
+		return m_constantBuffers[frameResourceIndex]->Resource()->GetGPUVirtualAddress();
 	}
 
 	D3D12_GPU_DESCRIPTOR_HANDLE ShadowMap::GetSrvGpu() const

@@ -135,25 +135,14 @@ namespace udsdx
 
 	std::unique_ptr<ResourceObject> ModelLoader::Load(std::wstring_view path)
 	{ ZoneScoped;
-		// Read the model from file
-		ComPtr<ID3DBlob> modelData;
-		ThrowIfFailed(D3DReadFileToBlob(path.data(), &modelData));
-
-		// Change the working directory to the resource path (for additional resources)
-		std::filesystem::path workingDirectory = std::filesystem::absolute(path).parent_path();
-		std::filesystem::path lastWorkingDirectory = std::filesystem::current_path();
-		std::filesystem::current_path(workingDirectory);
+		std::filesystem::path pathString(path);
 
 		// Load the model using Assimp
 		Assimp::Importer importer;
-		auto assimpScene = importer.ReadFileFromMemory(
-			modelData->GetBufferPointer(),
-			static_cast<size_t>(modelData->GetBufferSize()),
+		auto assimpScene = importer.ReadFile(
+			pathString.string(),
 			aiProcess_ConvertToLeftHanded | aiProcess_Triangulate | aiProcess_CalcTangentSpace | aiProcess_LimitBoneWeights
 		);
-
-		// Restore the working directory
-		std::filesystem::current_path(lastWorkingDirectory);
 
 		assert(assimpScene != nullptr);
 
@@ -163,15 +152,27 @@ namespace udsdx
 			hasBones |= assimpScene->mMeshes[i]->HasBones();
 		}
 
+		XMFLOAT4X4 preMultiplication;
+		std::string extension = pathString.extension().string();
+		transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
+		if (extension == ".fbx")
+		{
+			XMStoreFloat4x4(&preMultiplication, XMMatrixRotationX(XM_PIDIV2));
+		}
+		else
+		{
+			XMStoreFloat4x4(&preMultiplication, XMMatrixIdentity());
+		}
+
 		std::unique_ptr<MeshBase> mesh = nullptr;
 		if (hasBones)
 		{
-			mesh = std::make_unique<RiggedMesh>(*assimpScene);
+			mesh = std::make_unique<RiggedMesh>(*assimpScene, preMultiplication);
 			DebugConsole::Log("\tRegistered the resource as RiggedMesh");
 		}
 		else
 		{
-			mesh = std::make_unique<Mesh>(*assimpScene);
+			mesh = std::make_unique<Mesh>(*assimpScene, preMultiplication);
 			DebugConsole::Log("\tRegistered the resource as Mesh");
 		}
 		mesh->UploadBuffers(m_device, m_commandList);

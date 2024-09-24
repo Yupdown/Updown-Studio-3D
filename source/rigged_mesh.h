@@ -40,7 +40,7 @@ namespace udsdx
 	class RiggedMesh : public MeshBase
 	{
 	public:
-		RiggedMesh(const aiScene& assimpScene);
+		RiggedMesh(const aiScene& assimpScene, const Matrix4x4& preMultiplication);
 
 		// Matrices for default pose (no animation)
 		void PopulateTransforms(std::vector<Matrix4x4>& out) const;

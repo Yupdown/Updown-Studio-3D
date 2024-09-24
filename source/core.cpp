@@ -148,6 +148,7 @@ namespace udsdx
 		
 		// Create Deferred Renderer
 		m_deferredRenderer = std::make_unique<DeferredRenderer>(m_d3dDevice.Get());
+		m_deferredRenderer->BuildPipelineStateObjects();
 
 		// Create Shadow Map
 		m_shadowMap = std::make_unique<ShadowMap>(8192u, 8192u, m_d3dDevice.Get());
@@ -366,16 +367,6 @@ namespace udsdx
 			D3D12_TEXTURE_ADDRESS_MODE_WRAP,
 			D3D12_TEXTURE_ADDRESS_MODE_WRAP,
 			D3D12_TEXTURE_ADDRESS_MODE_WRAP),
-			CD3DX12_STATIC_SAMPLER_DESC(
-			1,
-			D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT,
-			D3D12_TEXTURE_ADDRESS_MODE_BORDER,
-			D3D12_TEXTURE_ADDRESS_MODE_BORDER,
-			D3D12_TEXTURE_ADDRESS_MODE_BORDER,
-			0.0f,
-			16,
-			D3D12_COMPARISON_FUNC_LESS_EQUAL,
-			D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK)
 		};
 
 		CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(_countof(slotRootParameter), slotRootParameter, _countof(samplerDesc), samplerDesc,
@@ -580,6 +571,8 @@ namespace udsdx
 			.RootSignature = m_rootSignature.Get(),
 			.SRVDescriptorHeap = m_srvHeap.Get(),
 
+			.Renderer = m_deferredRenderer.get(),
+
 			.AspectRatio = static_cast<float>(m_clientWidth) / m_clientHeight,
 			.FrameResourceIndex = m_currFrameResourceIndex,
 
@@ -606,7 +599,6 @@ namespace udsdx
 
 		ID3D12DescriptorHeap* descriptorHeaps[] = { m_srvHeap.Get() };
 		m_commandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
-		m_commandList->SetGraphicsRootSignature(m_rootSignature.Get());
 
 		// Indicate a state transition on the resource usage.
 		// Transition the back buffer to make it ready for writing.
@@ -878,6 +870,7 @@ namespace udsdx
 		));
 
 		m_deferredRenderer->OnResize(width, height);
+		m_deferredRenderer->RebuildDescriptors();
 		m_screenSpaceAO->OnResize(width, height, m_d3dDevice.Get());
 		m_screenSpaceAO->RebuildDescriptors(m_depthStencilBuffer.Get());
 

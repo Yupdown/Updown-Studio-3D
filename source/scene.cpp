@@ -12,6 +12,7 @@
 #include "shader.h"
 #include "core.h"
 #include "input.h"
+#include "deferred_renderer.h"
 
 namespace udsdx
 {
@@ -46,13 +47,6 @@ namespace udsdx
 
 		for (const auto& camera : m_renderCameraQueue)
 		{
-			// Normal map rendering pass
-			// PassRenderNormal(param, camera);
-
-			// SSAO map rendering pass
-			// PassRenderSSAO(param, camera);
-
-			// Main pass
 			PassRenderMain(param, camera);
 		}
 	}
@@ -109,31 +103,8 @@ namespace udsdx
 	{
 		ZoneScopedN("Main Pass");
 		TracyD3D12Zone(*param.TracyQueueContext, param.CommandList, "Main Pass");
-		Color clearColor = camera->GetClearColor();
 
-		// Clear the back buffer and depth buffer.
-		param.CommandList->ClearRenderTargetView(
-			param.RenderTargetView,
-			(float*)&clearColor,
-			0,
-			nullptr
-		);
-		param.CommandList->ClearDepthStencilView(
-			param.DepthStencilView,
-			D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,
-			1.0f,
-			0,
-			0,
-			nullptr
-		);
-
-		param.CommandList->SetGraphicsRootSignature(param.RootSignature);
-
-		param.CommandList->RSSetViewports(1, &param.Viewport);
-		param.CommandList->RSSetScissorRects(1, &param.ScissorRect);
-
-		// Specify the buffers we are going to render to.
-		param.CommandList->OMSetRenderTargets(1, &param.RenderTargetView, true, &param.DepthStencilView);
+		param.Renderer->PassBufferPreparation(param);
 
 		Matrix4x4 viewMat = camera->GetViewMatrix();
 		Matrix4x4 projMat = camera->GetProjMatrix(param.AspectRatio);
@@ -147,9 +118,15 @@ namespace udsdx
 		cameraConstants.CameraPosition = Vector4::Transform(Vector4::UnitW, worldMat);
 
 		param.CommandList->SetGraphicsRoot32BitConstants(RootParam::PerCameraCBV, sizeof(CameraConstants) / 4, &cameraConstants, 0);
-		param.CommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 		RenderSceneObjects(param, 1);
+
+		param.Renderer->PassBufferPostProcess(param);
+
+		PassRenderSSAO(param, camera);
+
+		param.CommandList->SetGraphicsRoot32BitConstants(0, sizeof(CameraConstants) / 4, &cameraConstants, 0);
+		param.Renderer->PassRender(param);
 	}
 
 	void Scene::RenderShadowSceneObjects(RenderParam& param, int instances)
