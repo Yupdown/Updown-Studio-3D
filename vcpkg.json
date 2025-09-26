@@ -1,0 +1,21 @@
+{
+  "name": "updown-studio",
+  "version-string": "1.1.0",
+  "dependencies": [
+    {
+      "name": "directxtex",
+      "features": [
+        "dx12"
+      ]
+    },
+    "directxtk12",
+    "directx-dxc",
+    {
+      "name": "imgui",
+      "features": [
+        "dx12-binding",
+        "win32-binding"
+      ]
+    }
+  ]
+}
