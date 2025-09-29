@@ -66,17 +66,31 @@ using namespace Microsoft::WRL;
 using namespace DirectX;
 
 // DirectXTK Library
+#define DIRECTX_TOOLKIT_IMPORT
 #include <directxtk12/Audio.h>
-#include <directxtk12/Mouse.h>
+#include <directxtk12/BufferHelpers.h>
+#include <directxtk12/CommonStates.h>
+#include <directxtk12/DDSTextureLoader.h>
+#include <directxtk12/DescriptorHeap.h>
+#include <directxtk12/DirectXHelpers.h>
+#include <directxtk12/EffectPipelineStateDescription.h>
+#include <directxtk12/Effects.h>
+#include <directxtk12/GamePad.h>
+#include <directxtk12/GeometricPrimitive.h>
+#include <directxtk12/GraphicsMemory.h>
 #include <directxtk12/Keyboard.h>
-#include <directxtk12/SimpleMath.h>
+#include <directxtk12/Model.h>
+#include <directxtk12/Mouse.h>
+#include <directxtk12/PostProcess.h>
+#include <directxtk12/PrimitiveBatch.h>
+#include <directxtk12/RenderTargetState.h>
 #include <directxtk12/ResourceUploadBatch.h>
+#include <directxtk12/ScreenGrab.h>
+#include <directxtk12/SimpleMath.h>
 #include <directxtk12/SpriteBatch.h>
 #include <directxtk12/SpriteFont.h>
-#include <directxtk12/GraphicsMemory.h>
-#include <directxtk12/DDSTextureLoader.h>
+#include <directxtk12/VertexTypes.h>
 #include <directxtk12/WICTextureLoader.h>
-#include <directxtk12/CommonStates.h>
 
 // Tracy Profiler
 #include "../tracy/public/tracy/Tracy.hpp"
