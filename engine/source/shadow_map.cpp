@@ -17,13 +17,6 @@ namespace udsdx
 		{
 			buffer = std::make_unique<UploadBuffer<ShadowConstants>>(device, 1, true);
 		}
-		for (auto& bufferSet : m_lightCameraBuffers)
-		{
-			for (auto& buffer : bufferSet)
-			{
-				buffer = std::make_unique<UploadBuffer<CameraConstants>>(device, 1, true);
-			}
-		}
 	}
 
 	ShadowMap::~ShadowMap()
@@ -45,7 +38,7 @@ namespace udsdx
 		texDesc.Alignment = 0;
 		texDesc.Width = newWidth;
 		texDesc.Height = newHeight;
-		texDesc.DepthOrArraySize = 1;
+		texDesc.DepthOrArraySize = ShadowMapCount;
 		texDesc.MipLevels = 1;
 		texDesc.Format = m_shadowMapFormat;
 		texDesc.SampleDesc.Count = 1;
@@ -86,19 +79,23 @@ namespace udsdx
 		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 		srvDesc.Format = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
-		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-		srvDesc.Texture2D.MostDetailedMip = 0;
-		srvDesc.Texture2D.MipLevels = 1;
-		srvDesc.Texture2D.ResourceMinLODClamp = 0.0f;
-		srvDesc.Texture2D.PlaneSlice = 0;
+		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
+		srvDesc.Texture2DArray.MostDetailedMip = 0;
+		srvDesc.Texture2DArray.MipLevels = 1;
+		srvDesc.Texture2DArray.ResourceMinLODClamp = 0.0f;
+		srvDesc.Texture2DArray.PlaneSlice = 0;
+		srvDesc.Texture2DArray.FirstArraySlice = 0;
+		srvDesc.Texture2DArray.ArraySize = ShadowMapCount;
 		device->CreateShaderResourceView(m_shadowMap.Get(), &srvDesc, m_srvCpu);
 
 		// Create DSV to resource so we can render to the shadow map.
 		D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc;
 		dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
-		dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+		dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DARRAY;
 		dsvDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
-		dsvDesc.Texture2D.MipSlice = 0;
+		dsvDesc.Texture2DArray.MipSlice = 0;
+		dsvDesc.Texture2DArray.FirstArraySlice = 0;
+		dsvDesc.Texture2DArray.ArraySize = ShadowMapCount;
 		device->CreateDepthStencilView(m_shadowMap.Get(), &dsvDesc, m_dsvCpu);
 	}
 
@@ -120,11 +117,10 @@ namespace udsdx
 
 		ShadowConstants shadowConstants;
 		Vector3 lightDirection = light->GetLightDirection();
-		std::array<std::unique_ptr<BoundingCamera>, 4> cameraBounds;
 		Vector3 cameraPos = camera->GetTransform()->GetWorldPosition();
 		Vector3 cameraLook = Vector3::TransformNormal(Vector3::Backward, Matrix4x4::CreateFromQuaternion(camera->GetTransform()->GetWorldRotation()));
 
-		for (int i = 0; i < 4; ++i)
+		for (int i = 0; i < ShadowMapCount; ++i)
 		{
 			float f = m_shadowRanges[i];
 			Vector3 lightPos = cameraPos + cameraLook * f * 0.5f;
@@ -132,22 +128,10 @@ namespace udsdx
 			XMVECTOR texelUnit = XMVectorSet(f * 2.0f / static_cast<float>(m_mapWidth), f * 2.0f / static_cast<float>(m_mapHeight), 1.0f, 1.0f);
 			lightView.r[3] = XMVectorSelect(lightView.r[3], XMVectorFloor(lightView.r[3] / texelUnit) * texelUnit, XMVectorSelectControl(true, true, false, false));
 			XMMATRIX lightProj = XMMatrixOrthographicLH(f, f, -f * 10.0f, f * 10.0f);
-			XMMATRIX lightClip = XMMatrixScaling(0.5f, 0.5f, 1.0f) * XMMatrixTranslation(static_cast<float>(i % 2) - 0.5f, static_cast<float>(i / 2) - 0.5f, 0.0f);
 			XMMATRIX lightViewProj = lightView * lightProj;
 			XMStoreFloat4x4(&shadowConstants.LightViewProj[i], XMMatrixTranspose(lightViewProj));
-			XMStoreFloat4x4(&shadowConstants.LightViewProjClip[i], XMMatrixTranspose(lightViewProj * lightClip));
 			XMStoreFloat4(&shadowConstants.LightPosition[i], XMVectorSet(lightPos.x, lightPos.y, lightPos.z, 0.0f));
 			shadowConstants.ShadowDistance[i] = f * 0.5f;
-
-			CameraConstants cameraConstants{};
-			XMStoreFloat4x4(&cameraConstants.View, XMMatrixTranspose(lightView));
-			XMStoreFloat4x4(&cameraConstants.Proj, XMMatrixTranspose(lightProj));
-			XMStoreFloat4x4(&cameraConstants.ViewProj, XMMatrixTranspose(lightViewProj));
-			m_lightCameraBuffers[param.FrameResourceIndex][i]->CopyData(0, cameraConstants);
-
-			Matrix4x4 mView;
-			XMStoreFloat4x4(&mView, lightView);	
-			cameraBounds[i] = std::make_unique<BoundingCameraOrthographic>(mView, f, f, -f * 10.0f, f * 10.0f);
 		}
 		shadowConstants.LightDirection = lightDirection;
 
@@ -157,51 +141,12 @@ namespace udsdx
 
 		if (param.RenderOptions->DrawShadowMap)
 		{
+			bool lastUseFrustumCulling = param.UseFrustumCulling;
 			param.UseFrustumCulling = false;
 
-			D3D12_VIEWPORT tempViewport{};
-			D3D12_RECT tempScissorRect{};
-
-			int halfWidth = m_mapWidth / 2;
-			int halfHeight = m_mapHeight / 2;
-
-			tempViewport = { 0.0f, (float)halfHeight, (float)halfWidth, (float)halfHeight, 0.0f, 1.0f };
-			tempScissorRect = { 0, halfHeight, halfWidth, halfHeight * 2 };
-
-			param.ViewFrustumWorld = cameraBounds[0].get();
-			param.CommandList->RSSetViewports(1, &tempViewport);
-			param.CommandList->RSSetScissorRects(1, &tempScissorRect);
-			param.CommandList->SetGraphicsRootConstantBufferView(RootParam::PerCameraCBV, m_lightCameraBuffers[param.FrameResourceIndex][0]->Resource()->GetGPUVirtualAddress());
 			target->RenderShadowSceneObjects(param, 1);
 
-			tempViewport = { (float)halfWidth, (float)halfHeight, (float)halfWidth, (float)halfHeight, 0.0f, 1.0f };
-			tempScissorRect = { halfWidth, halfHeight, halfWidth * 2, halfHeight * 2 };
-
-			param.ViewFrustumWorld = cameraBounds[1].get();
-			param.CommandList->RSSetViewports(1, &tempViewport);
-			param.CommandList->RSSetScissorRects(1, &tempScissorRect);
-			param.CommandList->SetGraphicsRootConstantBufferView(RootParam::PerCameraCBV, m_lightCameraBuffers[param.FrameResourceIndex][1]->Resource()->GetGPUVirtualAddress());
-			target->RenderShadowSceneObjects(param, 1);
-
-			tempViewport = { 0.0f, 0.0f, (float)halfWidth, (float)halfHeight, 0.0f, 1.0f };
-			tempScissorRect = { 0, 0, halfWidth, halfHeight };
-
-			param.ViewFrustumWorld = cameraBounds[2].get();
-			param.CommandList->RSSetViewports(1, &tempViewport);
-			param.CommandList->RSSetScissorRects(1, &tempScissorRect);
-			param.CommandList->SetGraphicsRootConstantBufferView(RootParam::PerCameraCBV, m_lightCameraBuffers[param.FrameResourceIndex][2]->Resource()->GetGPUVirtualAddress());
-			target->RenderShadowSceneObjects(param, 1);
-
-			tempViewport = { (float)halfWidth, 0.0f, (float)halfWidth, (float)halfHeight, 0.0f, 1.0f };
-			tempScissorRect = { halfWidth, 0, halfWidth * 2, halfHeight };
-
-			param.ViewFrustumWorld = cameraBounds[3].get();
-			param.CommandList->RSSetViewports(1, &tempViewport);
-			param.CommandList->RSSetScissorRects(1, &tempScissorRect);
-			param.CommandList->SetGraphicsRootConstantBufferView(RootParam::PerCameraCBV, m_lightCameraBuffers[param.FrameResourceIndex][3]->Resource()->GetGPUVirtualAddress());
-			target->RenderShadowSceneObjects(param, 1);
-
-			param.UseFrustumCulling = true;
+			param.UseFrustumCulling = lastUseFrustumCulling;
 		}
 
 		pCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_shadowMap.Get(),
