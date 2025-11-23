@@ -1,4 +1,5 @@
 #define MAX_BONES 256
+#define NUM_CASCADES 4
 
 static const float4x4 gTex =
 {
@@ -35,9 +36,8 @@ ConstantBuffer<BoneData> gPrevBoneTransforms : register(b2, space1);
 
 cbuffer cbPerShadow : register(b3)
 {
-    float4x4 gLightViewProj[4];
-    float4x4 gLightViewProjClip[4];
-	float4 gLightPosW[4];
+    float4x4 gLightViewProj[NUM_CASCADES];
+	float4 gLightPosW[NUM_CASCADES];
     float4 gShadowDistance;
     float3 gDirLight;
 };
@@ -230,7 +230,6 @@ cbuffer cbPerCamera : register(b0)
 cbuffer cbPerShadow : register(b1)
 {
 	float4x4 gLightViewProj[4];
-	float4x4 gLightViewProjClip[4];
 	float4 gLightPosW[4];
 	float4 gShadowDistance;
 	float3 gDirLight;
@@ -250,12 +249,12 @@ cbuffer cbPerFrame : register(b2)
 };
 
 // Nonnumeric values cannot be added to a cbuffer.
-Texture2D gBuffer1    : register(t0);
-Texture2D gBuffer2    : register(t1);
-Texture2D gBuffer3    : register(t2);
-Texture2D gShadowMap  : register(t3);
-Texture2D gSSAOMap	  : register(t4);
-Texture2D gBufferDSV  : register(t5);
+Texture2D		gBuffer1    : register(t0);
+Texture2D		gBuffer2    : register(t1);
+Texture2D		gBuffer3    : register(t2);
+Texture2DArray	gShadowMap   : register(t3);
+Texture2D		gSSAOMap	: register(t4);
+Texture2D		gBufferDSV  : register(t5);
 
 SamplerState gsamPointClamp : register(s0);
 SamplerState gsamLinearClamp : register(s1);
@@ -273,7 +272,7 @@ struct VertexOut
 
 float ShadowValue(float4 posW, float3 normalW, int level, float bias = 0.0f)
 {
-	float4 shadowPosH = mul(mul(posW, gLightViewProjClip[level]), gTex);
+	float4 shadowPosH = mul(mul(posW, gLightViewProj[level]), gTex);
 
 	// Complete projection by doing division by w.
 	shadowPosH.xy /= shadowPosH.w;
@@ -284,8 +283,8 @@ float ShadowValue(float4 posW, float3 normalW, int level, float bias = 0.0f)
 		// Depth in NDC space.
 		float depth = shadowPosH.z - bias;
 
-		uint width, height, numMips;
-		gShadowMap.GetDimensions(0, width, height, numMips);
+		uint width, height, elements;
+		gShadowMap.GetDimensions(width, height, elements);
 
 		// Texel size.
 		float dx = 1.0f / (float)width;
@@ -297,7 +296,7 @@ float ShadowValue(float4 posW, float3 normalW, int level, float bias = 0.0f)
 
 		[unroll]
 		for (int i = 0; i < 9; ++i)
-			percentLit += gShadowMap.SampleCmpLevelZero(gSamplerShadow, shadowPosH.xy + offsets[i], depth).r;
+			percentLit += gShadowMap.SampleCmpLevelZero(gSamplerShadow, float3(shadowPosH.xy + offsets[i], level), depth).r;
 	}
 	else
 	{
