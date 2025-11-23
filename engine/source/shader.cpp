@@ -4,6 +4,7 @@
 #include "deferred_renderer.h"
 #include "shader_compile.h"
 #include "core.h"
+#include "compiled_shaders/vs_drawscreen.h"
 
 namespace udsdx
 {
@@ -292,13 +293,12 @@ namespace udsdx
 			L"DEFERRED"
 		};
 
-		auto vsByteCode = DX::ReadData(L"compiled_shaders\\vs_drawscreen.cso");
 		auto psByteCode = udsdx::CompileShader(m_path, defines, L"PSDeferred", L"ps_6_0");
 
 		psoDesc.VS =
 		{
-			reinterpret_cast<BYTE*>(vsByteCode.data()),
-			vsByteCode.size()
+			g_cso_vs_drawscreen,
+			sizeof(g_cso_vs_drawscreen)
 		};
 		psoDesc.PS =
 		{

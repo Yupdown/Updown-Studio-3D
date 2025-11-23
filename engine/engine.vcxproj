@@ -188,8 +188,13 @@
     </PostBuildEvent>
     <FxCompile>
       <ShaderModel>6.0</ShaderModel>
-      <ObjectFileOutput>$(OutDir)compiled_shaders\%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput>
+      </ObjectFileOutput>
       <PreprocessorDefinitions>KERNEL_SIZE=32;BLUR_SAMPLE=16;MAX_BLUR_RADIUS=20</PreprocessorDefinitions>
+      <SuppressStartupBanner>false</SuppressStartupBanner>
+      <VariableName>g_cso_%(Filename)</VariableName>
+      <HeaderFileOutput>$(ProjectDir)source\compiled_shaders\%(Filename).h</HeaderFileOutput>
+      <AdditionalOptions>/Qembed_debug %(AdditionalOptions)</AdditionalOptions>
     </FxCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">
@@ -217,10 +222,15 @@
     </PostBuildEvent>
     <FxCompile>
       <ShaderModel>6.0</ShaderModel>
-      <ObjectFileOutput>$(OutDir)compiled_shaders\%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput>
+      </ObjectFileOutput>
       <PreprocessorDefinitions>KERNEL_SIZE=32;BLUR_SAMPLE=16;MAX_BLUR_RADIUS=20</PreprocessorDefinitions>
       <DisableOptimizations>true</DisableOptimizations>
       <EnableDebuggingInformation>true</EnableDebuggingInformation>
+      <SuppressStartupBanner>false</SuppressStartupBanner>
+      <VariableName>g_cso_%(Filename)</VariableName>
+      <HeaderFileOutput>$(ProjectDir)source\compiled_shaders\%(Filename).h</HeaderFileOutput>
+      <AdditionalOptions>/Qembed_debug %(AdditionalOptions)</AdditionalOptions>
     </FxCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -248,8 +258,12 @@
     </PostBuildEvent>
     <FxCompile>
       <ShaderModel>6.0</ShaderModel>
-      <ObjectFileOutput>$(OutDir)compiled_shaders\%(Filename).cso</ObjectFileOutput>
+      <ObjectFileOutput>
+      </ObjectFileOutput>
       <PreprocessorDefinitions>KERNEL_SIZE=32;BLUR_SAMPLE=16;MAX_BLUR_RADIUS=20</PreprocessorDefinitions>
+      <SuppressStartupBanner>false</SuppressStartupBanner>
+      <VariableName>g_cso_%(Filename)</VariableName>
+      <HeaderFileOutput>$(ProjectDir)source\compiled_shaders\%(Filename).h</HeaderFileOutput>
     </FxCompile>
   </ItemDefinitionGroup>
   <ItemGroup>

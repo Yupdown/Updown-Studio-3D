@@ -2,6 +2,9 @@
 #include "screen_space_ao.h"
 #include "deferred_renderer.h"
 #include "shader_compile.h"
+#include "compiled_shaders/vs_drawscreen.h"
+#include "compiled_shaders/ps_screenspace_ao.h"
+#include "compiled_shaders/cs_screenspace_ao_blur.h"
 #include "frame_resource.h"
 #include "scene_object.h"
 #include "transform.h"
@@ -430,9 +433,6 @@ namespace udsdx
 	{
 		{
 			// Build the SSAO PSO
-			auto vsByteCode = DX::ReadData(L"compiled_shaders\\vs_drawscreen.cso");
-			auto psByteCode = DX::ReadData(L"compiled_shaders\\ps_screenspace_ao.cso");
-
 			D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc;
 			ZeroMemory(&psoDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
 
@@ -442,13 +442,13 @@ namespace udsdx
 			psoDesc.pRootSignature = m_ssaoRootSignature.Get();
 			psoDesc.VS =
 			{
-				reinterpret_cast<BYTE*>(vsByteCode.data()),
-				vsByteCode.size()
+				g_cso_vs_drawscreen,
+				sizeof(g_cso_vs_drawscreen)
 			};
 			psoDesc.PS =
 			{
-				reinterpret_cast<BYTE*>(psByteCode.data()),
-				psByteCode.size()
+				g_cso_ps_screenspace_ao,
+				sizeof(g_cso_ps_screenspace_ao)
 			};
 			psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 			psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
@@ -471,8 +471,6 @@ namespace udsdx
 
 		{
 			// Build the blur PSO
-			auto csByteCode = DX::ReadData(L"compiled_shaders\\cs_screenspace_ao_blur.cso");
-
 			D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc;
 			ZeroMemory(&psoDesc, sizeof(D3D12_COMPUTE_PIPELINE_STATE_DESC));
 
@@ -480,8 +478,8 @@ namespace udsdx
 			psoDesc.pRootSignature = m_blurRootSignature.Get();
 			psoDesc.CS =
 			{
-				reinterpret_cast<BYTE*>(csByteCode.data()),
-				csByteCode.size()
+				g_cso_cs_screenspace_ao_blur,
+				sizeof(g_cso_cs_screenspace_ao_blur)
 			};
 
 			ThrowIfFailed(pDevice->CreateComputePipelineState(

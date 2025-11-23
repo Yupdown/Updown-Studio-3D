@@ -1,6 +1,11 @@
 #include "pch.h"
 #include "post_process_bloom.h"
 #include "deferred_renderer.h"
+#include "compiled_shaders/vs_drawscreen.h"
+#include "compiled_shaders/ps_bloom_synthesize.h"
+#include "compiled_shaders/ps_bloom_prepass.h"
+#include "compiled_shaders/ps_bloom_downsample.h"
+#include "compiled_shaders/ps_bloom_upsample.h"
 
 namespace udsdx
 {
@@ -271,11 +276,8 @@ namespace udsdx
 		psoDesc.DSVFormat = DXGI_FORMAT_UNKNOWN;
 
 		{
-			auto vsByteCode = DX::ReadData(L"compiled_shaders\\vs_drawscreen.cso");
-			auto psByteCode = DX::ReadData(L"compiled_shaders\\ps_bloom_synthesize.cso");
-
-			psoDesc.VS = { vsByteCode.data(), vsByteCode.size() };
-			psoDesc.PS = { psByteCode.data(), psByteCode.size() };
+			psoDesc.VS = { g_cso_vs_drawscreen, sizeof(g_cso_vs_drawscreen) };
+			psoDesc.PS = { g_cso_ps_bloom_synthesize, sizeof(g_cso_ps_bloom_synthesize) };
 
 			ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(m_psoSynthesize.GetAddressOf())));
 			m_psoSynthesize->SetName(L"PostProcessBloom::PassSynthesize");
@@ -284,22 +286,16 @@ namespace udsdx
 		psoDesc.RTVFormats[0] = BloomFormat;
 
 		{
-			auto vsByteCode = DX::ReadData(L"compiled_shaders\\vs_drawscreen.cso");
-			auto psByteCode = DX::ReadData(L"compiled_shaders\\ps_bloom_prepass.cso");
-
-			psoDesc.VS = { vsByteCode.data(), vsByteCode.size() };
-			psoDesc.PS = { psByteCode.data(), psByteCode.size() };
+			psoDesc.VS = { g_cso_vs_drawscreen, sizeof(g_cso_vs_drawscreen) };
+			psoDesc.PS = { g_cso_ps_bloom_prepass, sizeof(g_cso_ps_bloom_prepass) };
 
 			ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(m_psoPrepass.GetAddressOf())));
 			m_psoPrepass->SetName(L"PostProcessBloom::PassDownSample");
 		}
 
 		{
-			auto vsByteCode = DX::ReadData(L"compiled_shaders\\vs_drawscreen.cso");
-			auto psByteCode = DX::ReadData(L"compiled_shaders\\ps_bloom_downsample.cso");
-
-			psoDesc.VS = { vsByteCode.data(), vsByteCode.size() };
-			psoDesc.PS = { psByteCode.data(), psByteCode.size() };
+			psoDesc.VS = { g_cso_vs_drawscreen, sizeof(g_cso_vs_drawscreen) };
+			psoDesc.PS = { g_cso_ps_bloom_downsample, sizeof(g_cso_ps_bloom_downsample) };
 
 			ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(m_psoDownsample.GetAddressOf())));
 			m_psoDownsample->SetName(L"PostProcessBloom::PassDownSample");
@@ -312,11 +308,8 @@ namespace udsdx
 		psoDesc.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
 
 		{
-			auto vsByteCode = DX::ReadData(L"compiled_shaders\\vs_drawscreen.cso");
-			auto psByteCode = DX::ReadData(L"compiled_shaders\\ps_bloom_upsample.cso");
-
-			psoDesc.VS = { vsByteCode.data(), vsByteCode.size() };
-			psoDesc.PS = { psByteCode.data(), psByteCode.size() };
+			psoDesc.VS = { g_cso_vs_drawscreen, sizeof(g_cso_vs_drawscreen) };
+			psoDesc.PS = { g_cso_ps_bloom_upsample, sizeof(g_cso_ps_bloom_upsample) };
 
 			ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(m_psoUpsample.GetAddressOf())));
 			m_psoUpsample->SetName(L"PostProcessBloom::PassUpSample");

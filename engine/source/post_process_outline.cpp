@@ -1,6 +1,8 @@
 #include "pch.h"
 #include "post_process_outline.h"
 #include "deferred_renderer.h"
+#include "compiled_shaders/vs_drawscreen.h"
+#include "compiled_shaders/ps_outline.h"
 
 namespace udsdx
 {
@@ -160,11 +162,8 @@ namespace udsdx
 		psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
 		psoDesc.DSVFormat = DXGI_FORMAT_UNKNOWN;
 
-		auto vsByteCode = DX::ReadData(L"compiled_shaders\\vs_drawscreen.cso");
-		auto psByteCode = DX::ReadData(L"compiled_shaders\\ps_outline.cso");
-
-		psoDesc.VS = { vsByteCode.data(), vsByteCode.size() };
-		psoDesc.PS = { psByteCode.data(), psByteCode.size() };
+		psoDesc.VS = { g_cso_vs_drawscreen, sizeof(g_cso_vs_drawscreen) };
+		psoDesc.PS = { g_cso_ps_outline, sizeof(g_cso_ps_outline) };
 
 		ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(m_pso.GetAddressOf())));
 		m_pso->SetName(L"PostProcessOutline::Pass");

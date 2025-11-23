@@ -3,6 +3,10 @@
 #include "deferred_renderer.h"
 #include "camera.h"
 #include "shader_compile.h"
+#include "compiled_shaders/cs_motion_blur_tilemax.h"
+#include "compiled_shaders/cs_motion_blur_neighbormax.h"
+#include "compiled_shaders/vs_drawscreen.h"
+#include "compiled_shaders/ps_motion_blur_pass.h"
 
 namespace udsdx
 {
@@ -272,16 +276,13 @@ namespace udsdx
 	void MotionBlur::BuildPipelineState()
 	{
 		{
-			auto csByteCode = DX::ReadData(L"compiled_shaders\\cs_motion_blur_tilemax.cso");
-
 			D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc;
 			ZeroMemory(&psoDesc, sizeof(D3D12_COMPUTE_PIPELINE_STATE_DESC));
 
 			psoDesc.pRootSignature = m_computeRootSignature.Get();
 			psoDesc.CS =
 			{
-				reinterpret_cast<BYTE*>(csByteCode.data()),
-				csByteCode.size()
+				g_cso_cs_motion_blur_tilemax, sizeof(g_cso_cs_motion_blur_tilemax)
 			};
 
 			ThrowIfFailed(m_device->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(m_tileMaxPso.GetAddressOf())));
@@ -289,16 +290,13 @@ namespace udsdx
 		}
 
 		{
-			auto csByteCode = DX::ReadData(L"compiled_shaders\\cs_motion_blur_neighbormax.cso");
-
 			D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc;
 			ZeroMemory(&psoDesc, sizeof(D3D12_COMPUTE_PIPELINE_STATE_DESC));
 
 			psoDesc.pRootSignature = m_computeRootSignature.Get();
 			psoDesc.CS =
 			{
-				reinterpret_cast<BYTE*>(csByteCode.data()),
-				csByteCode.size()
+				g_cso_cs_motion_blur_neighbormax, sizeof(g_cso_cs_motion_blur_neighbormax)
 			};
 
 			ThrowIfFailed(m_device->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(m_neighborMaxPso.GetAddressOf())));
@@ -324,11 +322,8 @@ namespace udsdx
 			psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
 			psoDesc.DSVFormat = DXGI_FORMAT_UNKNOWN;
 
-			auto vsByteCode = DX::ReadData(L"compiled_shaders\\vs_drawscreen.cso");
-			auto psByteCode = DX::ReadData(L"compiled_shaders\\ps_motion_blur_pass.cso");
-
-			psoDesc.VS = { vsByteCode.data(), vsByteCode.size() };
-			psoDesc.PS = { psByteCode.data(), psByteCode.size() };
+			psoDesc.VS = { g_cso_vs_drawscreen, sizeof(g_cso_vs_drawscreen) };
+			psoDesc.PS = { g_cso_ps_motion_blur_pass, sizeof(g_cso_ps_motion_blur_pass) };
 
 			ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(m_pso.GetAddressOf())));
 			m_pso->SetName(L"MotionBlur::Pass");

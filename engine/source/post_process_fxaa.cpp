@@ -1,5 +1,7 @@
 #include "pch.h"
 #include "post_process_fxaa.h"
+#include "compiled_shaders/vs_drawscreen.h"
+#include "compiled_shaders/ps_fxaa.h"
 
 namespace udsdx
 {
@@ -155,11 +157,8 @@ namespace udsdx
 		psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
 		psoDesc.DSVFormat = DXGI_FORMAT_UNKNOWN;
 
-		auto vsByteCode = DX::ReadData(L"compiled_shaders\\vs_drawscreen.cso");
-		auto psByteCode = DX::ReadData(L"compiled_shaders\\ps_fxaa.cso");
-
-		psoDesc.VS = { vsByteCode.data(), vsByteCode.size() };
-		psoDesc.PS = { psByteCode.data(), psByteCode.size() };
+		psoDesc.VS = { g_cso_vs_drawscreen, sizeof(g_cso_vs_drawscreen) };
+		psoDesc.PS = { g_cso_ps_fxaa, sizeof(g_cso_ps_fxaa) };
 
 		ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(m_pso.GetAddressOf())));
 		m_pso->SetName(L"PostProcessFXAA::Pass");
