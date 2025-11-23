@@ -31,7 +31,6 @@ namespace udsdx
 		void SetDrawShadow(bool draw) { m_drawShadow = draw; }
 
 	protected:
-		static constexpr unsigned int ShadowMapCount = 4;
 		bool m_drawShadow = true;
 
 		DXGI_FORMAT m_shadowMapFormat = DXGI_FORMAT_R24G8_TYPELESS;
@@ -39,7 +38,7 @@ namespace udsdx
 		UINT m_mapWidth;
 		UINT m_mapHeight;
 
-		float m_shadowRanges[ShadowMapCount] = { 16.0f, 64.0f, 256.0f, 512.0f };
+		float m_shadowRanges[4] = { 16.0f, 64.0f, 256.0f, 512.0f };
 
 		D3D12_VIEWPORT m_viewport;
 		D3D12_RECT m_scissorRect;
@@ -51,5 +50,6 @@ namespace udsdx
 		ComPtr<ID3D12Resource> m_shadowMap;
 
 		std::array<std::unique_ptr<UploadBuffer<ShadowConstants>>, FrameResourceCount> m_constantBuffers;
+		std::array<std::array<std::unique_ptr<UploadBuffer<CameraConstants>>, 4>, FrameResourceCount> m_lightCameraBuffers;
 	};
 }

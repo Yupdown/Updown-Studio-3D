@@ -141,7 +141,6 @@ namespace udsdx
 			};
 
 			auto m_vsByteCode = udsdx::CompileShader(m_path, defines, L"VS", L"vs_6_0");
-			auto m_gsByteCode = udsdx::CompileShader(m_path, defines, L"ShadowGS", L"gs_6_0");
 			auto m_psByteCode = udsdx::CompileShader(m_path, defines, L"ShadowPS", L"ps_6_0");
 
 			psoDesc.InputLayout = { Vertex::DescriptionTable, Vertex::DescriptionTableSize };
@@ -151,16 +150,12 @@ namespace udsdx
 				reinterpret_cast<BYTE*>(m_vsByteCode->GetBufferPointer()),
 				m_vsByteCode->GetBufferSize()
 			};
-			psoDesc.GS =
-			{
-				reinterpret_cast<BYTE*>(m_gsByteCode->GetBufferPointer()),
-				m_gsByteCode->GetBufferSize()
-			};
 			psoDesc.PS =
 			{
 				reinterpret_cast<BYTE*>(m_psByteCode->GetBufferPointer()),
 				m_psByteCode->GetBufferSize()
 			};
+			psoDesc.GS = {};
 
 			ComPtr<IDxcBlob> gsByteCode = nullptr;
 			try
@@ -213,7 +208,6 @@ namespace udsdx
 			};
 
 			auto m_vsByteCode = udsdx::CompileShader(m_path, defines, L"VS", L"vs_6_0");
-			auto m_gsByteCode = udsdx::CompileShader(m_path, defines, L"ShadowGS", L"gs_6_0");
 			auto m_psByteCode = udsdx::CompileShader(m_path, defines, L"ShadowPS", L"ps_6_0");
 
 			psoDesc.InputLayout = { RiggedVertex::DescriptionTable, RiggedVertex::DescriptionTableSize };
@@ -222,11 +216,6 @@ namespace udsdx
 			{
 				reinterpret_cast<BYTE*>(m_vsByteCode->GetBufferPointer()),
 				m_vsByteCode->GetBufferSize()
-			};
-			psoDesc.GS =
-			{
-				reinterpret_cast<BYTE*>(m_gsByteCode->GetBufferPointer()),
-				m_gsByteCode->GetBufferSize()
 			};
 			psoDesc.PS =
 			{

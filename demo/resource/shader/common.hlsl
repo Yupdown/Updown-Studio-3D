@@ -1,5 +1,4 @@
 #define MAX_BONES 256
-#define NUM_CASCADES 4
 
 static const float4x4 gTex =
 {
@@ -36,8 +35,9 @@ ConstantBuffer<BoneData> gPrevBoneTransforms : register(b2, space1);
 
 cbuffer cbPerShadow : register(b3)
 {
-    float4x4 gLightViewProj[NUM_CASCADES];
-	float4 gLightPosW[NUM_CASCADES];
+    float4x4 gLightViewProj[4];
+    float4x4 gLightViewProjClip[4];
+	float4 gLightPosW[4];
     float4 gShadowDistance;
     float3 gDirLight;
 };
@@ -163,39 +163,9 @@ inline float3 LocalToWorldNormal(float3 normalL)
 
 #if defined(GENERATE_SHADOWS) && !defined(USE_CUSTOM_SHADOWPS)
 
-struct GeometryShadowOut
+void ShadowPS(VertexOut pin)
 {
-	float4 PosH : SV_POSITION;
-    float2 TexC : TEXCOORD;
-    uint LayerIndex : SV_RenderTargetArrayIndex;
-};
-
-[maxvertexcount(3 * NUM_CASCADES)]
-void ShadowGS(triangle VertexOut input[3], inout TriangleStream<GeometryShadowOut> stream)
-{
-    GeometryShadowOut output;
-
-    // "Duplicate" each triangle of the polygon by the number of the cascades.
-    for (uint cascadeIndex = 0; cascadeIndex < NUM_CASCADES; ++cascadeIndex)
-    {
-        output.LayerIndex = cascadeIndex;
-        
-        for (uint v = 0; v < 3; ++v)
-        {
-            // Transform to clip space for each cascade map.
-            output.PosH = mul(input[v].PosW, gLightViewProj[cascadeIndex]);
-            output.TexC = input[v].Tex;
-            
-            stream.Append(output);
-        }
-        
-        stream.RestartStrip();
-    }
-}
-
-void ShadowPS(GeometryShadowOut pin)
-{
-    float a = gMainTex.Sample(gSampler, pin.TexC).a;
+    float a = gMainTex.Sample(gSampler, pin.Tex).a;
     clip(a - 0.1f);
 }
 
@@ -260,6 +230,7 @@ cbuffer cbPerCamera : register(b0)
 cbuffer cbPerShadow : register(b1)
 {
 	float4x4 gLightViewProj[4];
+	float4x4 gLightViewProjClip[4];
 	float4 gLightPosW[4];
 	float4 gShadowDistance;
 	float3 gDirLight;
@@ -279,12 +250,12 @@ cbuffer cbPerFrame : register(b2)
 };
 
 // Nonnumeric values cannot be added to a cbuffer.
-Texture2D		gBuffer1    : register(t0);
-Texture2D		gBuffer2    : register(t1);
-Texture2D		gBuffer3    : register(t2);
-Texture2DArray	gShadowMap   : register(t3);
-Texture2D		gSSAOMap	: register(t4);
-Texture2D		gBufferDSV  : register(t5);
+Texture2D gBuffer1    : register(t0);
+Texture2D gBuffer2    : register(t1);
+Texture2D gBuffer3    : register(t2);
+Texture2D gShadowMap  : register(t3);
+Texture2D gSSAOMap	  : register(t4);
+Texture2D gBufferDSV  : register(t5);
 
 SamplerState gsamPointClamp : register(s0);
 SamplerState gsamLinearClamp : register(s1);
@@ -302,7 +273,7 @@ struct VertexOut
 
 float ShadowValue(float4 posW, float3 normalW, int level, float bias = 0.0f)
 {
-	float4 shadowPosH = mul(mul(posW, gLightViewProj[level]), gTex);
+	float4 shadowPosH = mul(mul(posW, gLightViewProjClip[level]), gTex);
 
 	// Complete projection by doing division by w.
 	shadowPosH.xy /= shadowPosH.w;
@@ -313,8 +284,8 @@ float ShadowValue(float4 posW, float3 normalW, int level, float bias = 0.0f)
 		// Depth in NDC space.
 		float depth = shadowPosH.z - bias;
 
-		uint width, height, elements;
-		gShadowMap.GetDimensions(width, height, elements);
+		uint width, height, numMips;
+		gShadowMap.GetDimensions(0, width, height, numMips);
 
 		// Texel size.
 		float dx = 1.0f / (float)width;
@@ -326,7 +297,7 @@ float ShadowValue(float4 posW, float3 normalW, int level, float bias = 0.0f)
 
 		[unroll]
 		for (int i = 0; i < 9; ++i)
-			percentLit += gShadowMap.SampleCmpLevelZero(gSamplerShadow, float3(shadowPosH.xy + offsets[i], level), depth).r;
+			percentLit += gShadowMap.SampleCmpLevelZero(gSamplerShadow, shadowPosH.xy + offsets[i], depth).r;
 	}
 	else
 	{
