@@ -794,7 +794,25 @@ namespace udsdx
 			break;
 
 		default:
-			return INSTANCE(Input)->ProcessMessage(hWnd, message, wParam, lParam);
+			bool imGuiFocused = false;
+			if (m_drawImGUIElements)
+			{
+				ImGuiIO& io = ImGui::GetIO();
+				
+				// Check if the message is a mouse event and ImGui wants to capture mouse
+				bool isMouseEvent = message >= WM_MOUSEFIRST && message <= WM_MOUSELAST;
+				
+				// Check if the message is a keyboard event and ImGui wants to capture keyboard
+				bool isKeyboardEvent = message >= WM_KEYFIRST && message <= WM_KEYLAST;
+				
+				imGuiFocused = ((isMouseEvent && io.WantCaptureMouse) || (isKeyboardEvent && io.WantCaptureKeyboard));
+			}
+
+			// Block input from reaching the game when ImGui is using it
+			if (!imGuiFocused)
+			{
+				return INSTANCE(Input)->ProcessMessage(hWnd, message, wParam, lParam);
+			}
 		}
 		
 		return DefWindowProc(hWnd, message, wParam, lParam);
