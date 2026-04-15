@@ -357,12 +357,28 @@ float3 DiffuseLight(VertexOut pin)
 float3 ApplyFog(float3 col, float3 worldPos)
 {
     float distance = max(0.0f, length(worldPos - gEyePosW.xyz) - gFogDistanceStart);
-	float3 direction = normalize(worldPos - gEyePosW.xyz);
+    float3 direction = normalize(worldPos - gEyePosW.xyz);
     float sunAmount = max(dot(direction, -gDirLight), 0.0f);
 
-	float fogAmount = saturate((gFogHeightFalloff * gFogDensity) * exp(-(gEyePosW.y + gFogDistanceStart * direction.y) / gFogDensity) * (1.0f - exp(-distance * direction.y / gFogDensity)) / direction.y);
+    float falloff = gFogHeightFalloff * direction.y;
+    float x = distance * falloff;
+    
+    // x가 매우 작을 때 1.0 - exp(-x) 의 float32 정밀도 손실(Catastrophic Cancellation)로 인해 
+    // 선형 구간에서 계단(Banding) 현상이 발생합니다. 
+    // 이를 방지하고 0으로 나누기 문제도 회피하기 위해 테일러 급수(Taylor series) 전개를 사용합니다.
+    float lineIntegral;
+    if (abs(x) < 0.01f)
+    {
+        lineIntegral = distance * (1.0f - 0.5f * x + 0.1666667f * x * x);
+    }
+    else
+    {
+        lineIntegral = (1.0f - exp(-x)) / falloff;
+    }
+    
+    float fogAmount = saturate(gFogDensity * exp(-gFogHeightFalloff * (gEyePosW.y + gFogDistanceStart * direction.y)) * lineIntegral);
     float3 fogColor = lerp(gFogColor.rgb, gFogSunColor.rgb, pow(sunAmount, 2.0f));
-	
+    
     return lerp(col, fogColor, fogAmount);
 }
 
