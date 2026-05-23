@@ -288,22 +288,69 @@ float ShadowValue(float4 posW, float3 normalW, int level, float bias = 0.0f)
 
 		// Texel size.
 		float dx = 1.0f / (float)width;
-		const float2 offsets[9] = {
-			float2(-dx, -dx), float2(0.0f, -dx), float2(dx, -dx),
-			float2(-dx, 0.0f), float2(0.0f, 0.0f), float2(dx, 0.0f),
-			float2(-dx, +dx), float2(0.0f, +dx), float2(dx, +dx)
+		
+		const float2 offsets[16] = {
+			float2(-0.94201624, -0.39906216), float2(0.94558609, -0.76890725),
+			float2(-0.094184101, -0.92938870), float2(0.34495938, 0.29387760),
+			float2(-0.91588581, 0.45771432), float2(-0.81544232, -0.87912464),
+			float2(-0.38277540, 0.27676845), float2(0.97484398, 0.75648379),
+			float2(0.44323325, -0.97511554), float2(0.53742981, -0.47373420),
+			float2(-0.26405787, -0.52874553), float2(0.79197514, 0.19090188),
+			float2(-0.24188840, 0.99706507), float2(-0.81409955, 0.91437590),
+			float2(0.19984126, 0.78641367), float2(0.14383161, -0.14100790)
 		};
 
+		float randomSeed = frac(sin(dot(shadowPosH.xy, float2(12.9898, 78.233))) * 43758.5453);
+		float s, c;
+		sincos(randomSeed * 2.0f * 3.14159265f, s, c);
+		float2x2 rot = float2x2(c, -s, s, c);
+
+		// 1. Blocker search
+		float blockers = 0.0f;
+		float avgBlockerDepth = 0.0f;
+		float searchRadius = 3.0f;
+
 		[unroll]
-		for (int i = 0; i < 9; ++i)
-			percentLit += gShadowMap.SampleCmpLevelZero(gSamplerShadow, float3(shadowPosH.xy + offsets[i], level), depth).r;
+		for (int j = 0; j < 16; ++j)
+		{
+			float2 rotatedOffset = mul(offsets[j], rot);
+			float blockerDepth = gShadowMap.SampleLevel(gsamDepthMap, float3(shadowPosH.xy + rotatedOffset * searchRadius * dx, level), 0).r;
+			if (blockerDepth < depth)
+			{
+				blockers += 1.0f;
+				avgBlockerDepth += blockerDepth;
+			}
+		}
+
+		if (blockers > 0.0f)
+		{
+			avgBlockerDepth /= blockers;
+			
+			// 2. Penumbra size estimation
+			float wLight = 64.0f;
+			float penumbraRatio = (depth - avgBlockerDepth) / avgBlockerDepth;
+			float filterRadius = max(1.0f, penumbraRatio * wLight);
+
+			// 3. PCF filtering
+			[unroll]
+			for (int i = 0; i < 16; ++i)
+			{
+				float2 rotatedOffset = mul(offsets[i], rot);
+				percentLit += gShadowMap.SampleCmpLevelZero(gSamplerShadow, float3(shadowPosH.xy + rotatedOffset * filterRadius * dx, level), depth).r;
+			}
+			percentLit /= 16.0f;
+		}
+		else
+		{
+			percentLit = 1.0f;
+		}
 	}
 	else
 	{
-		percentLit = 9.0f;
+		percentLit = 1.0f;
 	}
     
-	return percentLit / 9.0f;
+	return percentLit;
 }
 
 float ShadowValue(float4 posW, float3 normalW, float bias = 0.0f)
