@@ -41,3 +41,8 @@
 
 vcpkg_installed/
 engine/source/compiled_shaders/
+
+*.ddscache
+*.yms
+*.yrms
+*.yac
