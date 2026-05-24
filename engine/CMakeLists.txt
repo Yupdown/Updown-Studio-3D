@@ -29,6 +29,7 @@ set(ENGINE_SOURCES
     source/pch.cpp
     source/post_process_bloom.cpp
     source/post_process_fxaa.cpp
+    source/post_process_taa.cpp
     source/post_process_outline.cpp
     source/rect_transform.cpp
     source/renderer_base.cpp
@@ -199,6 +200,8 @@ add_engine_shader(resource/ps_motion_blur_pass.hlsl PS ps_6_0)
 add_engine_shader(resource/ps_outline.hlsl PS ps_6_0)
 add_engine_shader(resource/ps_screenspace_ao.hlsl PS ps_6_0)
 add_engine_shader(resource/ps_skybox.hlsl PS ps_6_0)
+add_engine_shader(resource/ps_skybox_velocity.hlsl PS ps_6_0)
+add_engine_shader(resource/ps_taa.hlsl PS ps_6_0)
 add_engine_shader(resource/ps_fxaa.hlsl FXAAPS ps_6_0
     EXTRA_DEFINES
         FXAA_PC=1

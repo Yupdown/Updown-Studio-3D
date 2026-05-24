@@ -67,10 +67,11 @@ namespace udsdx
 
 		pCommandList->SetPipelineState(m_pso.Get());
 		pCommandList->SetGraphicsRootConstantBufferView(0, cbvGpu);
-		pCommandList->SetGraphicsRootDescriptorTable(1, m_sourceGpuSrv);
-		pCommandList->SetGraphicsRootDescriptorTable(2, param.Renderer->GetGBufferSrv(2));
-		pCommandList->SetGraphicsRootDescriptorTable(3, param.Renderer->GetDepthBufferSrv());
-		pCommandList->SetGraphicsRootDescriptorTable(4, m_neighborMaxGpuSrv);
+		pCommandList->SetGraphicsRootConstantBufferView(1, param.ConstantBufferView);
+		pCommandList->SetGraphicsRootDescriptorTable(2, m_sourceGpuSrv);
+		pCommandList->SetGraphicsRootDescriptorTable(3, param.Renderer->GetGBufferSrv(2));
+		pCommandList->SetGraphicsRootDescriptorTable(4, param.Renderer->GetDepthBufferSrv());
+		pCommandList->SetGraphicsRootDescriptorTable(5, m_neighborMaxGpuSrv);
 		pCommandList->DrawInstanced(6, 1, 0, 0);
 	}
 
@@ -96,7 +97,7 @@ namespace udsdx
 		texDesc.Height = (m_height + MaxBlurRadius - 1) / MaxBlurRadius;
 		texDesc.DepthOrArraySize = 1;
 		texDesc.MipLevels = 1;
-		texDesc.Format = DXGI_FORMAT_R16G16_SNORM;
+		texDesc.Format = DXGI_FORMAT_R16G16_FLOAT;
 		texDesc.SampleDesc.Count = 1;
 		texDesc.SampleDesc.Quality = 0;
 		texDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
@@ -165,7 +166,7 @@ namespace udsdx
 		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 
 		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-		srvDesc.Format = DXGI_FORMAT_R16G16_SNORM;
+		srvDesc.Format = DXGI_FORMAT_R16G16_FLOAT;
 		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 		srvDesc.Texture2D.MipLevels = 1;
 		srvDesc.Texture2D.MostDetailedMip = 0;
@@ -183,7 +184,7 @@ namespace udsdx
 
 		D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
 
-		uavDesc.Format = DXGI_FORMAT_R16G16_SNORM;
+		uavDesc.Format = DXGI_FORMAT_R16G16_FLOAT;
 		uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
 
 		m_device->CreateUnorderedAccessView(m_tileMaxBuffer.Get(), nullptr, &uavDesc, m_tileMaxCpuUav);
@@ -205,13 +206,14 @@ namespace udsdx
 			CD3DX12_DESCRIPTOR_RANGE texTable4;
 			texTable4.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3);
 
-			CD3DX12_ROOT_PARAMETER slotRootParameter[5]{};
+			CD3DX12_ROOT_PARAMETER slotRootParameter[6]{};
 
 			slotRootParameter[0].InitAsConstantBufferView(0);
-			slotRootParameter[1].InitAsDescriptorTable(1, &texTable1);
-			slotRootParameter[2].InitAsDescriptorTable(1, &texTable2);
-			slotRootParameter[3].InitAsDescriptorTable(1, &texTable3);
-			slotRootParameter[4].InitAsDescriptorTable(1, &texTable4);
+			slotRootParameter[1].InitAsConstantBufferView(1);
+			slotRootParameter[2].InitAsDescriptorTable(1, &texTable1);
+			slotRootParameter[3].InitAsDescriptorTable(1, &texTable2);
+			slotRootParameter[4].InitAsDescriptorTable(1, &texTable3);
+			slotRootParameter[5].InitAsDescriptorTable(1, &texTable4);
 
 			CD3DX12_STATIC_SAMPLER_DESC samplerDesc[] = {
 				CD3DX12_STATIC_SAMPLER_DESC(

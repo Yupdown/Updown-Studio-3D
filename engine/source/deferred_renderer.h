@@ -39,12 +39,13 @@ namespace udsdx
 		ID3D12RootSignature*		  GetRootSignature() const { return m_renderRootSignature.Get(); }
 
 	public:
-		static constexpr UINT NUM_GBUFFERS = 3;
+		static constexpr UINT NUM_GBUFFERS = 4;
 
 		static constexpr DXGI_FORMAT GBUFFER_FORMATS[NUM_GBUFFERS] = {
 			DXGI_FORMAT_R8G8B8A8_UNORM, // RGB: Albedo color
 			DXGI_FORMAT_R10G10B10A2_UNORM, // RGB: View normal vector (UNORM encoded)
-			DXGI_FORMAT_R8G8B8A8_SNORM, // RG: Screenspace motion vector, B: Metallic, A: Roughness
+			DXGI_FORMAT_R16G16_FLOAT, // RG: Screen-space UV motion vector delta
+			DXGI_FORMAT_R8G8_UNORM, // R: Metallic, G: Roughness
 		};
 
 		static constexpr float GBUFFER_CLEAR_VALUES[NUM_GBUFFERS][4] = {
@@ -64,6 +65,7 @@ namespace udsdx
 		ComPtr<ID3D12RootSignature> m_renderRootSignature;
 		ComPtr<ID3D12RootSignature> m_skyboxRootSignature;
 		ComPtr<ID3D12PipelineState> m_skyboxPipelineState;
+		ComPtr<ID3D12PipelineState> m_skyboxVelocityPipelineState;
 
 		// Multiple Render Target (MRT) for deferred rendering
 		std::array<ComPtr<ID3D12Resource>, NUM_GBUFFERS> m_gBuffers;

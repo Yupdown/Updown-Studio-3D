@@ -20,7 +20,7 @@
 #include "deferred_renderer.h"
 #include "motion_blur.h"
 #include "post_process_bloom.h"
-#include "post_process_fxaa.h"
+#include "post_process_taa.h"
 #include "post_process_outline.h"
 
 // Forward declare message handler from imgui_impl_win32.cpp
@@ -177,8 +177,8 @@ namespace udsdx
 		m_motionBlur->BuildPipelineState();
 		m_postProcessBloom = std::make_unique<PostProcessBloom>(m_d3dDevice.Get(), m_commandList.Get());
 		m_postProcessBloom->BuildPipelineState();
-		m_postProcessFXAA = std::make_unique<PostProcessFXAA>(m_d3dDevice.Get(), m_commandList.Get());
-		m_postProcessFXAA->BuildPipelineState();
+		m_postProcessTAA = std::make_unique<PostProcessTAA>(m_d3dDevice.Get(), m_commandList.Get());
+		m_postProcessTAA->BuildPipelineState();
 		m_postProcessOutline = std::make_unique<PostProcessOutline>(m_d3dDevice.Get(), m_commandList.Get());
 		m_postProcessOutline->BuildPipelineState();
 
@@ -327,7 +327,7 @@ namespace udsdx
 		m_screenSpaceAO->BuildDescriptors(descriptorParam, m_depthStencilBuffer.Get());
 		m_motionBlur->BuildDescriptors(descriptorParam);
 		m_postProcessBloom->BuildDescriptors(descriptorParam);
-		m_postProcessFXAA->BuildDescriptors(descriptorParam);
+		m_postProcessTAA->BuildDescriptors(descriptorParam);
 		m_postProcessOutline->BuildDescriptors(descriptorParam);
 
 		for (auto texture : INSTANCE(Resource)->LoadAll<Texture>())
@@ -669,7 +669,7 @@ namespace udsdx
 			.RenderScreenSpaceAO = m_screenSpaceAO.get(),
 			.RenderMotionBlur = m_motionBlur.get(),
 			.RenderPostProcessBloom = m_postProcessBloom.get(),
-			.RenderPostProcessFXAA = m_postProcessFXAA.get(),
+			.RenderPostProcessTAA = m_postProcessTAA.get(),
 			.RenderPostProcessOutline = m_postProcessOutline.get(),
 			.RenderEnvironmentMap = nullptr,
 
@@ -1005,8 +1005,8 @@ namespace udsdx
 		m_motionBlur->RebuildDescriptors();
 		m_postProcessBloom->OnResize(width, height);
 		m_postProcessBloom->RebuildDescriptors();
-		m_postProcessFXAA->OnResize(width, height);
-		m_postProcessFXAA->RebuildDescriptors();
+		m_postProcessTAA->OnResize(width, height);
+		m_postProcessTAA->RebuildDescriptors();
 		m_postProcessOutline->OnResize(width, height);
 		m_postProcessOutline->RebuildDescriptors();
 
@@ -1121,7 +1121,7 @@ namespace udsdx
 		bool changeSSAO = ImGui::Checkbox("Draw SSAO", &m_renderOptions.DrawSSAO);
 		ImGui::Checkbox("Draw Motion Blur", &m_renderOptions.DrawMotionBlur);
 		ImGui::Checkbox("Draw Post Process Bloom", &m_renderOptions.DrawBloom);
-		ImGui::Checkbox("Draw Post Process FXAA", &m_renderOptions.DrawFXAA);
+		ImGui::Checkbox("Draw Post Process TAA", &m_renderOptions.DrawTAA);
 		ImGui::Checkbox("Draw Post Process Outline", &m_renderOptions.DrawOutline);
 
 		static float exposure = m_postProcessBloom->GetExposure();

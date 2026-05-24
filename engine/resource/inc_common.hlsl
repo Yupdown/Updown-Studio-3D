@@ -116,7 +116,8 @@ struct PixelOut
 {
 	float4 Buffer1 : SV_TARGET0;
     float4 Buffer2 : SV_TARGET1;
-    float4 Buffer3 : SV_TARGET2;
+    float2 Buffer3 : SV_TARGET2;
+    float2 Buffer4 : SV_TARGET3;
 };
 
 #ifdef RIGGED
@@ -210,10 +211,8 @@ float3 NormalSampleToWorldSpace(float3 normalSample, float3 normalW, float3 tang
 
 float2 PackMotion(float4 posH, float4 prevPosH)
 {
-	float2 motion = (posH.xy / posH.w) - (prevPosH.xy / prevPosH.w);
-	motion *= gMotionBlurFactor * 0.5f * gRenderTargetSize / gMotionBlurRadius;
-	motion /= max(length(motion), 1.0f);
-	return motion;
+	float2 ndcDelta = (posH.xy / posH.w) - (prevPosH.xy / prevPosH.w);
+	return ndcDelta * float2(0.5f, -0.5f);
 }
 
 float GetDitherThreshold(float2 fragCoord)
@@ -265,9 +264,10 @@ cbuffer cbPerFrame : register(b2)
 Texture2D		gBuffer1    : register(t0);
 Texture2D		gBuffer2    : register(t1);
 Texture2D		gBuffer3    : register(t2);
-Texture2DArray	gShadowMap   : register(t3);
-Texture2D		gSSAOMap	: register(t4);
-Texture2D		gBufferDSV  : register(t5);
+Texture2D		gBuffer4    : register(t3);
+Texture2DArray	gShadowMap   : register(t4);
+Texture2D		gSSAOMap	: register(t5);
+Texture2D		gBufferDSV  : register(t6);
 
 SamplerState gsamPointClamp : register(s0);
 SamplerState gsamLinearClamp : register(s1);

@@ -13,6 +13,14 @@ cbuffer cbPerCamera : register(b0)
 	float2 gRenderTargetSize;
 };
 
+cbuffer cbPerFrame : register(b1)
+{
+	float gTime;
+	float gDeltaTime;
+	float gMotionBlurFactor;
+	float gMotionBlurRadius;
+};
+
 Texture2D gSource : register(t0);
 Texture2D gMotion : register(t1);
 Texture2D gDepth : register(t2);
@@ -67,11 +75,23 @@ float SampleWeight(float centerDepth, float sampleDepth, float offsetLen, float 
 	return dot(depthComp, spreadComp * weights);
 }
 
+float2 ClampMotionRadius(float2 motion, float blurRadius)
+{
+	float len = length(motion);
+	if (len > blurRadius && len > 1e-6f)
+	{
+		motion *= (blurRadius / len);
+	}
+	return motion;
+}
+
 float4 PS(VertexOut pin) : SV_Target
 {
 	float2 rcpro = rcp(gRenderTargetSize);
-	float2 vc = gMotion.Sample(gSamPoint, pin.TexC).xy * float2(MAX_BLUR_RADIUS, -MAX_BLUR_RADIUS);
-	float2 vn = gNeighborMax.Sample(gSamPoint, pin.TexC).xy * float2(MAX_BLUR_RADIUS, -MAX_BLUR_RADIUS);
+	const float blurRadius = max(gMotionBlurRadius, 1e-6f);
+
+	float2 vc = ClampMotionRadius(gMotion.Sample(gSamPoint, pin.TexC).xy * gRenderTargetSize, blurRadius);
+	float2 vn = ClampMotionRadius(gNeighborMax.Sample(gSamPoint, pin.TexC).xy * gRenderTargetSize, blurRadius);
 
 	if (length(vn) < 0.5f)
 	{
@@ -99,7 +119,7 @@ float4 PS(VertexOut pin) : SV_Target
 		float2 texDest = pin.TexC + d * rcpro * t;
 		float depthDst = NdcDepthToViewDepth(gDepth.Sample(gSamPoint, texDest).r);
 
-		float2 vs = gMotion.Sample(gSamPoint, texDest).xy * float2(MAX_BLUR_RADIUS, -MAX_BLUR_RADIUS);
+		float2 vs = ClampMotionRadius(gMotion.Sample(gSamPoint, texDest).xy * gRenderTargetSize, blurRadius);
 		float wa = dot(wc, normalize(d));
 		float wb = abs(dot(normalize(vs), normalize(d)));
 

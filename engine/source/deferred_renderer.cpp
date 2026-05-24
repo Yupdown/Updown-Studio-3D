@@ -8,6 +8,7 @@
 #include "shader_compile.h"
 #include "compiled_shaders/vs_skybox.h"
 #include "compiled_shaders/ps_skybox.h"
+#include "compiled_shaders/ps_skybox_velocity.h"
 
 namespace udsdx
 {
@@ -114,22 +115,22 @@ namespace udsdx
 		};
 
 		CD3DX12_DESCRIPTOR_RANGE texTable1;
-		texTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0);
+		texTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 4, 0);
 
 		CD3DX12_DESCRIPTOR_RANGE texTable2;
-		texTable2.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3);
+		texTable2.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 4);
 
 		CD3DX12_DESCRIPTOR_RANGE texTable3;
-		texTable3.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 4);
+		texTable3.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 5);
 
 		CD3DX12_DESCRIPTOR_RANGE texTable4;
-		texTable4.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 5);
+		texTable4.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 6);
 
 		CD3DX12_DESCRIPTOR_RANGE texTable5;
-		texTable5.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 6);
+		texTable5.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 7);
 
 		CD3DX12_DESCRIPTOR_RANGE texTable6;
-		texTable6.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 7);
+		texTable6.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 8);
 
 		CD3DX12_ROOT_PARAMETER slotRootParameter[9];
 
@@ -232,6 +233,17 @@ namespace udsdx
 
 		ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(m_skyboxPipelineState.GetAddressOf())));
 		m_skyboxPipelineState->SetName(L"DeferredRenderer::SkyboxPass");
+
+		psoDesc.PS = { g_cso_ps_skybox_velocity, sizeof(g_cso_ps_skybox_velocity) };
+		psoDesc.NumRenderTargets = 1;
+		psoDesc.RTVFormats[0] = GBUFFER_FORMATS[2];
+		psoDesc.DepthStencilState.DepthEnable = true;
+		psoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+		psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_EQUAL;
+		psoDesc.DepthStencilState.StencilEnable = false;
+
+		ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(m_skyboxVelocityPipelineState.GetAddressOf())));
+		m_skyboxVelocityPipelineState->SetName(L"DeferredRenderer::SkyboxVelocityPass");
 	}
 
     void DeferredRenderer::RebuildDescriptors()
@@ -488,10 +500,33 @@ namespace udsdx
 
 		if (renderParam.RenderEnvironmentMap != nullptr && renderParam.RenderEnvironmentMap->HasValidCubeMap())
 		{
+			pCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
+				m_gBuffers[2].Get(),
+				D3D12_RESOURCE_STATE_GENERIC_READ,
+				D3D12_RESOURCE_STATE_RENDER_TARGET));
+
+			pCommandList->SetGraphicsRootSignature(m_skyboxRootSignature.Get());
+			pCommandList->SetPipelineState(m_skyboxVelocityPipelineState.Get());
+			pCommandList->SetGraphicsRootConstantBufferView(0, cbvGpu);
+			pCommandList->OMSetRenderTargets(1, &m_gBuffersCpuRtv[2], true, &renderParam.DepthStencilView);
+			pCommandList->RSSetViewports(1, &renderParam.Viewport);
+			pCommandList->RSSetScissorRects(1, &renderParam.ScissorRect);
+			pCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			pCommandList->DrawInstanced(6, 1, 0, 0);
+
+			pCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
+				m_gBuffers[2].Get(),
+				D3D12_RESOURCE_STATE_RENDER_TARGET,
+				D3D12_RESOURCE_STATE_GENERIC_READ));
+
 			pCommandList->SetGraphicsRootSignature(m_skyboxRootSignature.Get());
 			pCommandList->SetPipelineState(m_skyboxPipelineState.Get());
 			pCommandList->SetGraphicsRootConstantBufferView(0, cbvGpu);
 			pCommandList->SetGraphicsRootDescriptorTable(1, renderParam.RenderEnvironmentMap->GetCubeMapSrvGpu());
+			pCommandList->OMSetRenderTargets(1, &m_targetViewCpuRtv, true, &renderParam.DepthStencilView);
+			pCommandList->RSSetViewports(1, &renderParam.Viewport);
+			pCommandList->RSSetScissorRects(1, &renderParam.ScissorRect);
+			pCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 			pCommandList->DrawInstanced(6, 1, 0, 0);
 		}
 

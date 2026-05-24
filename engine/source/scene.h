@@ -66,6 +66,7 @@ namespace udsdx
 	protected:
 		std::shared_ptr<SceneObject> m_rootObject;
 		std::shared_ptr<SceneObject> m_rootObjectSub;
+		uint64_t m_taaFrameIndex = 0;
 
 		std::vector<Camera*> m_renderCameraQueue;
 		std::vector<LightDirectional*> m_renderLightQueue;

@@ -13,7 +13,7 @@ namespace udsdx
 	class DeferredRenderer;
 	class MotionBlur;
 	class PostProcessBloom;
-	class PostProcessFXAA;
+	class PostProcessTAA;
 	class PostProcessOutline;
 	class Texture;
 
@@ -247,7 +247,7 @@ namespace udsdx
 		std::unique_ptr<ScreenSpaceAO> m_screenSpaceAO;
 		std::unique_ptr<PostProcessBloom> m_postProcessBloom;
 		std::unique_ptr<MotionBlur> m_motionBlur;
-		std::unique_ptr<PostProcessFXAA> m_postProcessFXAA;
+		std::unique_ptr<PostProcessTAA> m_postProcessTAA;
 		std::unique_ptr<PostProcessOutline> m_postProcessOutline;
 
 		std::unique_ptr<GraphicsMemory> m_graphicsMemory;

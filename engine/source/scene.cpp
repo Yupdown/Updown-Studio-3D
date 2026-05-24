@@ -16,7 +16,7 @@
 #include "deferred_renderer.h"
 #include "motion_blur.h"
 #include "post_process_bloom.h"
-#include "post_process_fxaa.h"
+#include "post_process_taa.h"
 #include "post_process_outline.h"
 #include "gui_element.h"
 #include "debug_console.h"
@@ -24,6 +24,23 @@
 
 namespace udsdx
 {
+	namespace
+	{
+		float Halton(uint64_t index, uint32_t base)
+		{
+			float result = 0.0f;
+			float fraction = 1.0f;
+			uint64_t i = index;
+			while (i > 0)
+			{
+				fraction /= static_cast<float>(base);
+				result += fraction * static_cast<float>(i % base);
+				i /= base;
+			}
+			return result;
+		}
+	}
+
 	extern unsigned long long g_localMatrixRecalculateCounter;
 	extern unsigned long long g_worldMatrixRecalculateCounter;
 
@@ -140,11 +157,23 @@ namespace udsdx
 
 	void Scene::Render(RenderParam& param)
 	{ ZoneScoped;
+		const bool enableTAAJitter = param.RenderOptions->DrawTAA;
+		const float viewportWidth = std::max(param.Viewport.Width, 1.0f);
+		const float viewportHeight = std::max(param.Viewport.Height, 1.0f);
+		const uint64_t haltonIndex = m_taaFrameIndex + 1;
+		const Vector2 jitterOffset = enableTAAJitter
+			? Vector2(
+				(Halton(haltonIndex, 2) - 0.5f) * 2.0f / viewportWidth,
+				(Halton(haltonIndex, 3) - 0.5f) * 2.0f / viewportHeight)
+			: Vector2::Zero;
+
 		std::vector<D3D12_GPU_VIRTUAL_ADDRESS> cameraCbvs(m_renderCameraQueue.size());
 		for (size_t i = 0; i < m_renderCameraQueue.size(); ++i)
 		{
+			m_renderCameraQueue[i]->SetClipOffset(jitterOffset);
 			cameraCbvs[i] = m_renderCameraQueue[i]->UpdateConstantBuffer(param.FrameResourceIndex, param.Viewport.Width, param.Viewport.Height);
 		}
+		m_taaFrameIndex++;
 
 		param.CommandList->SetGraphicsRootSignature(param.RootSignature);
 
@@ -320,10 +349,10 @@ namespace udsdx
 			param.RenderMotionBlur->Pass(param, cameraCbv);
 		}
 
-		// FXAA pass
-		if (param.RenderOptions->DrawFXAA)
+		// TAA pass
+		if (param.RenderOptions->DrawTAA)
 		{
-			param.RenderPostProcessFXAA->Pass(param);
+			param.RenderPostProcessTAA->Pass(param);
 		}
 
 		// Post-process outline pass

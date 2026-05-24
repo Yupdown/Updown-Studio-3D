@@ -70,7 +70,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
             renderer->SetMaterial(materialTile);
 
             chunkObject[i][j]->GetTransform()->SetLocalPosition(
-                Vector3(static_cast<float>(i), 0.1f, static_cast<float>(j)) * 32.0f);
+                Vector3(static_cast<float>(i), 0.0f, static_cast<float>(j)) * 32.0f);
 
             scene->AddObject(chunkObject[i][j]);
 		}
@@ -82,7 +82,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 		auto renderer = objects[i]->AddComponent<MeshRenderer>();
 		renderer->SetMesh(mesh);
         renderer->SetMaterial(material);
-		objects[i]->GetTransform()->SetLocalPosition(Vector3(static_cast<float>(i % 10) * 3, 0, static_cast<float>(i / 10) * 3));
+		objects[i]->GetTransform()->SetLocalPosition(Vector3(static_cast<float>(i % 10) * 3, 16.0f, static_cast<float>(i / 10) * 3));
         objects[i]->GetTransform()->SetLocalScale(Vector3::One * 0.001f);
 		scene->AddObject(objects[i]);
 	}

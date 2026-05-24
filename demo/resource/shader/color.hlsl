@@ -28,7 +28,8 @@ PixelOut PS(VertexOut pin)
      
     pOut.Buffer1 = texColor;
     pOut.Buffer2 = float4(normal * 0.5f + 0.5f, 1.0f);
-    pOut.Buffer3.rg = PackMotion(posH, pin.PrevPosH);
+    pOut.Buffer3 = PackMotion(posH, pin.PrevPosH);
+    pOut.Buffer4 = float2(0.0f, 1.0f); // metallic, roughness
     return pOut;
 }
 

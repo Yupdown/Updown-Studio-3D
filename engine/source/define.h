@@ -28,6 +28,7 @@ namespace udsdx
 	class MotionBlur;
 	class PostProcessBloom;
 	class PostProcessFXAA;
+	class PostProcessTAA;
 	class PostProcessOutline;
 	class BoundingCamera;
 	class EnvironmentMap;
@@ -37,7 +38,7 @@ namespace udsdx
 		bool DrawSSAO = true;
 		bool DrawMotionBlur = true;
 		bool DrawBloom = true;
-		bool DrawFXAA = true;
+		bool DrawTAA = true;
 		bool DrawOutline = true;
 		bool DrawShadowMap = true;
 		unsigned int ShadowMapSize = 2048u;
@@ -84,7 +85,7 @@ namespace udsdx
 		ScreenSpaceAO* RenderScreenSpaceAO;
 		MotionBlur* RenderMotionBlur;
 		PostProcessBloom* RenderPostProcessBloom;
-		PostProcessFXAA* RenderPostProcessFXAA;
+		PostProcessTAA* RenderPostProcessTAA;
 		PostProcessOutline* RenderPostProcessOutline;
 		EnvironmentMap* RenderEnvironmentMap;
 
