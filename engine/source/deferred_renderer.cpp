@@ -128,7 +128,10 @@ namespace udsdx
 		CD3DX12_DESCRIPTOR_RANGE texTable5;
 		texTable5.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 6);
 
-		CD3DX12_ROOT_PARAMETER slotRootParameter[7];
+		CD3DX12_DESCRIPTOR_RANGE texTable6;
+		texTable6.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 7);
+
+		CD3DX12_ROOT_PARAMETER slotRootParameter[9];
 
 		// Perfomance TIP: Order from most frequent to least frequent.
 		slotRootParameter[0].InitAsConstantBufferView(0);
@@ -138,6 +141,8 @@ namespace udsdx
 		slotRootParameter[4].InitAsDescriptorTable(1, &texTable2, D3D12_SHADER_VISIBILITY_PIXEL);
 		slotRootParameter[5].InitAsDescriptorTable(1, &texTable3, D3D12_SHADER_VISIBILITY_PIXEL);
 		slotRootParameter[6].InitAsDescriptorTable(1, &texTable4, D3D12_SHADER_VISIBILITY_PIXEL);
+		slotRootParameter[7].InitAsDescriptorTable(1, &texTable5, D3D12_SHADER_VISIBILITY_PIXEL);
+		slotRootParameter[8].InitAsDescriptorTable(1, &texTable6, D3D12_SHADER_VISIBILITY_PIXEL);
 
 		CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(_countof(slotRootParameter), slotRootParameter,
 			static_cast<UINT>(staticSamplers.size()), staticSamplers.data(),
@@ -462,6 +467,21 @@ namespace udsdx
 		pCommandList->SetGraphicsRootDescriptorTable(4, renderParam.RenderShadowMap->GetSrvGpu());
 		pCommandList->SetGraphicsRootDescriptorTable(5, renderParam.RenderScreenSpaceAO->GetSSAOMapGpuSrv());
 		pCommandList->SetGraphicsRootDescriptorTable(6, m_depthBufferGpuSrv);
+		if (renderParam.RenderEnvironmentMap != nullptr && renderParam.RenderEnvironmentMap->HasValidIblMaps())
+		{
+			pCommandList->SetGraphicsRootDescriptorTable(7, renderParam.RenderEnvironmentMap->GetIrradianceMapSrvGpu());
+			pCommandList->SetGraphicsRootDescriptorTable(8, renderParam.RenderEnvironmentMap->GetPrefilterMapSrvGpu());
+		}
+		else if (renderParam.RenderEnvironmentMap != nullptr && renderParam.RenderEnvironmentMap->HasValidCubeMap())
+		{
+			pCommandList->SetGraphicsRootDescriptorTable(7, renderParam.RenderEnvironmentMap->GetCubeMapSrvGpu());
+			pCommandList->SetGraphicsRootDescriptorTable(8, renderParam.RenderEnvironmentMap->GetCubeMapSrvGpu());
+		}
+		else
+		{
+			pCommandList->SetGraphicsRootDescriptorTable(7, m_depthBufferGpuSrv);
+			pCommandList->SetGraphicsRootDescriptorTable(8, m_depthBufferGpuSrv);
+		}
 
 		// clear a render target
 		pCommandList->ClearRenderTargetView(m_targetViewCpuRtv, Colors::Black, 0, nullptr);
