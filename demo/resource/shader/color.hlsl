@@ -21,7 +21,7 @@ PixelOut PS(VertexOut pin)
 {
 	PixelOut pOut;
     float3 normal = normalize(mul(pin.NormalW.xyz, (float3x3)gView));
-    float4 texColor = gMainTex.Sample(gSampler, pin.Tex);
+    float4 texColor = SampleMainTex(pin.Tex);
     float4 posH = mul(pin.PosW, gViewProj);
     
     clip(texColor.a - 0.1f);

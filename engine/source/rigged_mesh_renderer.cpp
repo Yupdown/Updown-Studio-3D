@@ -156,6 +156,7 @@ namespace udsdx
 		ObjectConstants objectConstants;
 		objectConstants.World = m_transformCache.Transpose();
 		objectConstants.PrevWorld = m_prevTransformCache.Transpose();
+		objectConstants.SamplerMode = static_cast<UINT>(m_materials[parameter].GetSamplerMode());
 
 		param.CommandList->SetGraphicsRoot32BitConstants(RootParam::PerObjectCBV, sizeof(ObjectConstants) / 4, &objectConstants, 0);
 		param.CommandList->IASetVertexBuffers(0, 1, &m_riggedMesh->VertexBufferView());

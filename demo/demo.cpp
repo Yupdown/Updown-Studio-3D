@@ -46,7 +46,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     auto pipelineStateTexture = INSTANCE(Resource)->Load<Shader>(L"resource\\shader\\color.hlsl");
     audioClip = INSTANCE(Resource)->Load<AudioClip>(L"resource\\audio\\Psychic_Soothe_Pulser_01a.wav");
     udsdx::Material material = udsdx::Material(pipelineStateTexture, INSTANCE(Resource)->Load<udsdx::Texture>(L"resource\\texture\\dingus_nowhiskers.jpg"));
-    udsdx::Material materialTile = udsdx::Material(pipelineState, INSTANCE(Resource)->Load<udsdx::Texture>(L"resource\\texture\\tile_10x.png"));
+    udsdx::Material materialTile = udsdx::Material(pipelineState, INSTANCE(Resource)->Load<udsdx::Texture>(L"resource\\texture\\tile.png"));
+    materialTile.SetSamplerMode(udsdx::MaterialSamplerMode::Nearest);
 
     tilemap = std::make_shared<MCTilemap>();
     terrainGenerator = std::make_shared<MCTerrainGenerator>();
@@ -94,7 +95,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
     lightObject = SceneObject::MakeShared();
     auto light = lightObject->AddComponent<LightDirectional>();
-    lightObject->GetTransform()->SetLocalRotation(Quaternion::CreateFromYawPitchRoll(0.5f, 0.5f, 0));
+    lightObject->GetTransform()->SetLocalRotation(Quaternion::CreateFromYawPitchRoll(3.7429f, 0.8652f, 0));
     scene->AddObject(lightObject);
 
     environmentObject = SceneObject::MakeShared();
@@ -185,6 +186,4 @@ void Update(const Time& time)
     {
         objects[i]->GetTransform()->Rotate(Quaternion::CreateFromAxisAngle(Vector3::Up, time.deltaTime * 10.0f * rotations[i]));
 	}
-
-    // lightObject->GetTransform()->Rotate(Quaternion::CreateFromYawPitchRoll(time.deltaTime * 0.02f, 0, 0));
 }

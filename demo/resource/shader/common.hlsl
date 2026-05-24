@@ -15,6 +15,8 @@ cbuffer cbPerObject : register(b0)
 {
     float4x4 gWorld;
     float4x4 gPrevWorld;
+    uint gSamplerMode;
+    float3 gPerObjectPadding;
 };
 
 cbuffer cbPerCamera : register(b1)
@@ -69,7 +71,23 @@ static const float Bayer8x8[64] =
 
 Texture2D gMainTex : register(t0);
 
-SamplerState gSampler : register(s0);
+SamplerState gSamplerNearest : register(s0);
+SamplerState gSamplerLinear : register(s1);
+SamplerState gSamplerAnisotropic : register(s2);
+
+float4 SampleMainTex(float2 uv)
+{
+    switch (gSamplerMode)
+    {
+    case 0:
+        return gMainTex.SampleLevel(gSamplerNearest, uv, 0.0f);
+    case 1:
+        return gMainTex.Sample(gSamplerLinear, uv);
+    case 2:
+    default:
+        return gMainTex.Sample(gSamplerAnisotropic, uv);
+    }
+}
 
 struct VertexIn
 {
@@ -165,7 +183,7 @@ inline float3 LocalToWorldNormal(float3 normalL)
 
 void ShadowPS(VertexOut pin)
 {
-    float a = gMainTex.Sample(gSampler, pin.Tex).a;
+    float a = SampleMainTex(pin.Tex).a;
     clip(a - 0.1f);
 }
 

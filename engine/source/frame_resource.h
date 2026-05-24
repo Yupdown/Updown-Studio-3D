@@ -8,6 +8,8 @@ namespace udsdx
 	{
 		Matrix4x4 World = Matrix4x4::Identity;
 		Matrix4x4 PrevWorld = Matrix4x4::Identity;
+		UINT SamplerMode = 2;
+		Vector3 Padding = Vector3::Zero;
 	};
 
 	struct CameraConstants

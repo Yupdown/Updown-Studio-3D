@@ -43,6 +43,7 @@ namespace udsdx
 		ObjectConstants objectConstants;
 		objectConstants.World = m_transformCache.Transpose();
 		objectConstants.PrevWorld = m_prevTransformCache.Transpose();
+		objectConstants.SamplerMode = static_cast<UINT>(m_materials[parameter].GetSamplerMode());
 
 		param.CommandList->SetGraphicsRoot32BitConstants(RootParam::PerObjectCBV, sizeof(ObjectConstants) / 4, &objectConstants, 0);
 

@@ -32,6 +32,11 @@ namespace udsdx
 		m_mainTex[index] = texture;
 	}
 
+	void Material::SetSamplerMode(MaterialSamplerMode samplerMode)
+	{
+		m_samplerMode = samplerMode;
+	}
+
 	Shader* Material::GetShader() const
 	{
 		return m_shader;
@@ -45,5 +50,10 @@ namespace udsdx
 	UINT Material::GetTextureCount() const
 	{
 		return static_cast<UINT>(m_mainTex.size());
+	}
+
+	MaterialSamplerMode Material::GetSamplerMode() const
+	{
+		return m_samplerMode;
 	}
 }
