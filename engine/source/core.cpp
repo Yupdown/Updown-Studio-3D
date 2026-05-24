@@ -947,10 +947,10 @@ namespace udsdx
 
 		// Correction 11/12/2016: SSAO chapter requires an SRV to the depth buffer to read from 
 		// the depth buffer.  Therefore, because we need to create two views to the same resource:
-		//   1. SRV format: DXGI_FORMAT_R24_UNORM_X8_TYPELESS
-		//   2. DSV Format: DXGI_FORMAT_D24_UNORM_S8_UINT
+		//   1. SRV format: DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS
+		//   2. DSV Format: DXGI_FORMAT_D32_FLOAT_S8X24_UINT
 		// we need to create the depth buffer resource with a typeless format.
-		depthStencilDesc.Format = DXGI_FORMAT_R24G8_TYPELESS;
+		depthStencilDesc.Format = DXGI_FORMAT_R32G8X24_TYPELESS;
 
 		depthStencilDesc.SampleDesc.Count = m_4xMsaaState ? 4 : 1;
 		depthStencilDesc.SampleDesc.Quality = m_4xMsaaState ? (m_4xMsaaQuality - 1) : 0;
@@ -958,8 +958,8 @@ namespace udsdx
 		depthStencilDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;	// resource is used as a depth-stencil buffer.
 
 		D3D12_CLEAR_VALUE optClear;
-		optClear.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
-		optClear.DepthStencil.Depth = 1.0f;
+		optClear.Format = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
+		optClear.DepthStencil.Depth = 0.0f;
 		optClear.DepthStencil.Stencil = 0;
 		ThrowIfFailed(m_d3dDevice->CreateCommittedResource(
 			&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
@@ -974,7 +974,7 @@ namespace udsdx
 		D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc;
 		dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
 		dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-		dsvDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+		dsvDesc.Format = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
 		dsvDesc.Texture2D.MipSlice = 0;
 		m_d3dDevice->CreateDepthStencilView(m_depthStencilBuffer.Get(), &dsvDesc, m_dsvHeap->GetCPUDescriptorHandleForHeapStart());
 

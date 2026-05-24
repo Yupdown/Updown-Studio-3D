@@ -87,8 +87,18 @@ namespace udsdx
 
 	Matrix4x4 CameraPerspective::GetProjMatrix(float aspect) const
 	{
-		Matrix4x4 m;
-		XMMATRIX projectionMatrix = XMMatrixPerspectiveFovLH(m_fov, aspect, m_near, m_far);
+	Matrix4x4 m;
+	const float safeAspect = std::max(aspect, 1e-6f);
+	const float tanHalfFov = tanf(m_fov * 0.5f);
+	const float yScale = 1.0f / tanHalfFov;
+	const float xScale = yScale / safeAspect;
+
+	// Infinite-far reverse-Z projection (LH): depth = near / viewZ.
+	XMMATRIX projectionMatrix = XMMatrixSet(
+		xScale, 0.0f, 0.0f, 0.0f,
+		0.0f, yScale, 0.0f, 0.0f,
+		0.0f, 0.0f, 0.0f, 1.0f,
+		0.0f, 0.0f, m_near, 0.0f);
 		projectionMatrix *= XMMatrixTranslation(m_clipOffset.x, m_clipOffset.y, 0.0f);
 		XMStoreFloat4x4(&m, projectionMatrix);
 		return m;
@@ -96,7 +106,13 @@ namespace udsdx
 
 	std::unique_ptr<BoundingCamera> CameraPerspective::GetViewFrustumWorld(float aspect) const
 	{
-		return std::make_unique<BoundingCameraPerspective>(GetViewMatrix(false), GetProjMatrix(aspect));
+	const float safeAspect = std::max(aspect, 1e-6f);
+	XMMATRIX cullProj = XMMatrixPerspectiveFovLH(m_fov, safeAspect, m_near, m_far);
+	cullProj *= XMMatrixTranslation(m_clipOffset.x, m_clipOffset.y, 0.0f);
+
+	Matrix4x4 cullProjM;
+	XMStoreFloat4x4(&cullProjM, cullProj);
+	return std::make_unique<BoundingCameraPerspective>(GetViewMatrix(false), cullProjM);
 	}
 
 	void CameraPerspective::SetFov(float fov)
@@ -111,7 +127,7 @@ namespace udsdx
 
 	void CameraPerspective::SetFar(float fFar)
 	{
-		m_far = fFar;
+	m_far = std::max(fFar, m_near + 1e-3f);
 	}
 
 	float CameraPerspective::GetFov() const
@@ -126,7 +142,7 @@ namespace udsdx
 
 	float CameraPerspective::GetFar() const
 	{
-		return m_far;
+	return m_far;
 	}
 
 	Matrix4x4 CameraOrthographic::GetProjMatrix(float aspect) const

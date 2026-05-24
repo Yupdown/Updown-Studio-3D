@@ -279,7 +279,7 @@ namespace udsdx
 		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-		srvDesc.Format = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
+		srvDesc.Format = DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS;
 		srvDesc.Texture2D.MostDetailedMip = 0;
 		srvDesc.Texture2D.MipLevels = 1;
 		m_device->CreateShaderResourceView(depthStencilBuffer, &srvDesc, m_depthMapCpuSrv);
@@ -327,8 +327,8 @@ namespace udsdx
 			D3D12_TEXTURE_ADDRESS_MODE_BORDER,  // addressW
 			0.0f,
 			0,
-			D3D12_COMPARISON_FUNC_LESS_EQUAL,
-			D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE);
+			D3D12_COMPARISON_FUNC_GREATER_EQUAL,
+			D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK);
 
 		const CD3DX12_STATIC_SAMPLER_DESC linearWrap(
 			3, // shaderRegister

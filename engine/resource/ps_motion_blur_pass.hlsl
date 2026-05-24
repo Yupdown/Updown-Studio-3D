@@ -43,7 +43,7 @@ float GetDitherThreshold(float2 fragCoord)
 
 float NdcDepthToViewDepth(float z_ndc)
 {
-	float viewZ = gProj[3][2] / (z_ndc - gProj[2][2]);
+	float viewZ = gProj[3][2] / max(z_ndc, 1e-6f);
 	return viewZ;
 }
 

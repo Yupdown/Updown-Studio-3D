@@ -28,6 +28,7 @@ namespace udsdx
 		psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 		psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 		psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+		psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_GREATER_EQUAL;
 		psoDesc.DepthStencilState.StencilEnable = TRUE;
 		psoDesc.DepthStencilState.FrontFace = stencilOpDesc;
 		psoDesc.DepthStencilState.BackFace = stencilOpDesc;
@@ -133,6 +134,8 @@ namespace udsdx
 			psoDesc.RTVFormats[i] = DXGI_FORMAT_UNKNOWN;
 		}
 
+		// Shadow map rendering keeps forward depth convention.
+		psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
 		psoDesc.RasterizerState.DepthBias = 1024;
 		psoDesc.RasterizerState.SlopeScaledDepthBias = 1.5f;
 
@@ -287,7 +290,7 @@ namespace udsdx
 		psoDesc.SampleDesc.Count = 1;
 		psoDesc.SampleDesc.Quality = 0;
 		psoDesc.RTVFormats[0] = DXGI_FORMAT_R11G11B10_FLOAT;
-		psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+		psoDesc.DSVFormat = DeferredRenderer::DEPTH_FORMAT;
 
 		std::wstring defines[] = {
 			L"DEFERRED"

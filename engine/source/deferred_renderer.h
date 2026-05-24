@@ -53,7 +53,7 @@ namespace udsdx
 			{ 0.0f, 0.0f, 0.0f, 0.0f },
 		};
 
-		static constexpr DXGI_FORMAT DEPTH_FORMAT = DXGI_FORMAT_D24_UNORM_S8_UINT;
+		static constexpr DXGI_FORMAT DEPTH_FORMAT = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
 
 	private:
 		ID3D12Device* m_device;

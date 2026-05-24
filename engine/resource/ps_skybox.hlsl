@@ -17,20 +17,12 @@ cbuffer cbCamera : register(b0)
     float2 gRenderTargetSize;
 };
 
-Texture2D<float> gDepthMap : register(t0);
-TextureCube<float4> gSkyboxMap : register(t1);
+TextureCube<float4> gSkyboxMap : register(t0);
 
-SamplerState gPointClampSampler : register(s0);
-SamplerState gLinearClampSampler : register(s1);
+SamplerState gLinearClampSampler : register(s0);
 
 float4 PS(VS_OUT input) : SV_Target
 {
-    const float depth = gDepthMap.SampleLevel(gPointClampSampler, input.TexC, 0).r;
-    if (depth < 0.9999f)
-    {
-        discard;
-    }
-
     const float2 ndc = float2(input.TexC.x * 2.0f - 1.0f, 1.0f - input.TexC.y * 2.0f);
     float4 viewPos = mul(float4(ndc, 1.0f, 1.0f), gProjInverse);
     viewPos /= max(viewPos.w, 1e-5f);

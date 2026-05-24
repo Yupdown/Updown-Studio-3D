@@ -106,7 +106,7 @@ namespace udsdx
 			0.0f,
 			16,
 			D3D12_COMPARISON_FUNC_LESS_EQUAL,
-			D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK);
+			D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE);
 
 		std::array<CD3DX12_STATIC_SAMPLER_DESC, 5> staticSamplers =
 		{
@@ -168,26 +168,16 @@ namespace udsdx
 
 	void DeferredRenderer::BuildSkyboxPipelineState()
 	{
-		CD3DX12_DESCRIPTOR_RANGE depthTable;
-		depthTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
-
 		CD3DX12_DESCRIPTOR_RANGE skyboxTable;
-		skyboxTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
+		skyboxTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
 
-		CD3DX12_ROOT_PARAMETER rootParameters[3]{};
+		CD3DX12_ROOT_PARAMETER rootParameters[2]{};
 		rootParameters[0].InitAsConstantBufferView(0);
-		rootParameters[1].InitAsDescriptorTable(1, &depthTable, D3D12_SHADER_VISIBILITY_PIXEL);
-		rootParameters[2].InitAsDescriptorTable(1, &skyboxTable, D3D12_SHADER_VISIBILITY_PIXEL);
+		rootParameters[1].InitAsDescriptorTable(1, &skyboxTable, D3D12_SHADER_VISIBILITY_PIXEL);
 
 		CD3DX12_STATIC_SAMPLER_DESC samplers[] = {
 			CD3DX12_STATIC_SAMPLER_DESC(
 				0,
-				D3D12_FILTER_MIN_MAG_MIP_POINT,
-				D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
-				D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
-				D3D12_TEXTURE_ADDRESS_MODE_CLAMP),
-			CD3DX12_STATIC_SAMPLER_DESC(
-				1,
 				D3D12_FILTER_MIN_MAG_MIP_LINEAR,
 				D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
 				D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
@@ -229,13 +219,15 @@ namespace udsdx
 		psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 		psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 		psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-		psoDesc.DepthStencilState.DepthEnable = false;
+		psoDesc.DepthStencilState.DepthEnable = true;
+		psoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+		psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_EQUAL;
 		psoDesc.DepthStencilState.StencilEnable = false;
 		psoDesc.SampleMask = UINT_MAX;
 		psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 		psoDesc.NumRenderTargets = 1;
 		psoDesc.RTVFormats[0] = DXGI_FORMAT_R11G11B10_FLOAT;
-		psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+		psoDesc.DSVFormat = DEPTH_FORMAT;
 		psoDesc.SampleDesc.Count = 1;
 
 		ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(m_skyboxPipelineState.GetAddressOf())));
@@ -281,11 +273,11 @@ namespace udsdx
 		}
 
 		// Create the depth buffer view
-		srvDesc.Format = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
+		srvDesc.Format = DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS;
 		m_device->CreateShaderResourceView(m_depthBuffer.Get(), &srvDesc, m_depthBufferCpuSrv);
 
 		// Create the stencil buffer view
-		srvDesc.Format = DXGI_FORMAT_X24_TYPELESS_G8_UINT;
+		srvDesc.Format = DXGI_FORMAT_X32_TYPELESS_G8X24_UINT;
 		srvDesc.Texture2D.PlaneSlice = 1;
 		m_device->CreateShaderResourceView(m_depthBuffer.Get(), &srvDesc, m_stencilBufferCpuSrv);
 
@@ -370,7 +362,7 @@ namespace udsdx
 		depthStencilDesc.Height = m_height;		// size of the height.
 		depthStencilDesc.DepthOrArraySize = 1;	// size of the depth.
 		depthStencilDesc.MipLevels = 1;			// number of mip levels.
-		depthStencilDesc.Format = DXGI_FORMAT_R24G8_TYPELESS;
+		depthStencilDesc.Format = DXGI_FORMAT_R32G8X24_TYPELESS;
 
 		depthStencilDesc.SampleDesc.Count = 1;
 		depthStencilDesc.SampleDesc.Quality = 0;
@@ -378,8 +370,8 @@ namespace udsdx
 		depthStencilDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;	// resource is used as a depth-stencil buffer.
 
 		D3D12_CLEAR_VALUE optClear;
-		optClear.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
-		optClear.DepthStencil.Depth = 1.0f;
+		optClear.Format = DEPTH_FORMAT;
+		optClear.DepthStencil.Depth = 0.0f;
 		optClear.DepthStencil.Stencil = 0;
 		ThrowIfFailed(m_device->CreateCommittedResource(
 			&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
@@ -413,7 +405,7 @@ namespace udsdx
 		{
 			commandList->ClearRenderTargetView(m_gBuffersCpuRtv[i], GBUFFER_CLEAR_VALUES[i], 0, nullptr);
 		}
-		commandList->ClearDepthStencilView(m_depthBufferCpuDsv, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
+		commandList->ClearDepthStencilView(m_depthBufferCpuDsv, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 0.0f, 0, 0, nullptr);
 	}
 
     void DeferredRenderer::SetRenderTargets(ID3D12GraphicsCommandList* commandList)
@@ -499,8 +491,7 @@ namespace udsdx
 			pCommandList->SetGraphicsRootSignature(m_skyboxRootSignature.Get());
 			pCommandList->SetPipelineState(m_skyboxPipelineState.Get());
 			pCommandList->SetGraphicsRootConstantBufferView(0, cbvGpu);
-			pCommandList->SetGraphicsRootDescriptorTable(1, m_depthBufferGpuSrv);
-			pCommandList->SetGraphicsRootDescriptorTable(2, renderParam.RenderEnvironmentMap->GetCubeMapSrvGpu());
+			pCommandList->SetGraphicsRootDescriptorTable(1, renderParam.RenderEnvironmentMap->GetCubeMapSrvGpu());
 			pCommandList->DrawInstanced(6, 1, 0, 0);
 		}
 
