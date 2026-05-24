@@ -67,7 +67,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
             renderer->SetMesh(chunkMeshes[i][j].get());
             renderer->SetMaterial(materialTile);
 
-            chunkObject[i][j]->GetTransform()->SetLocalPosition(Vector3(i, 0.1f, j) * 32.0f);
+            chunkObject[i][j]->GetTransform()->SetLocalPosition(
+                Vector3(static_cast<float>(i), 0.1f, static_cast<float>(j)) * 32.0f);
 
             scene->AddObject(chunkObject[i][j]);
 		}

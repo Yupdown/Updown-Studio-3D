@@ -24,10 +24,10 @@ std::unique_ptr<udsdx::Mesh> MCTilemapMeshGenerator::CreateMeshFromChunk(MCTilem
         AddPlaneGreedyMesh(planeMap, MCTileChunk::CHUNK_WIDTH, MCTileChunk::CHUNK_WIDTH, [y](int xmin, int ymin, int xmax, int ymax)noexcept
             {
                 std::vector<Vector3> vertices;
-                vertices.emplace_back(Vector3(xmin, y + 1, ymin));
-                vertices.emplace_back(Vector3(xmax, y + 1, ymin));
-                vertices.emplace_back(Vector3(xmin, y + 1, ymax));
-                vertices.emplace_back(Vector3(xmax, y + 1, ymax));
+                vertices.emplace_back(Vector3(static_cast<float>(xmin), static_cast<float>(y + 1), static_cast<float>(ymin)));
+                vertices.emplace_back(Vector3(static_cast<float>(xmax), static_cast<float>(y + 1), static_cast<float>(ymin)));
+                vertices.emplace_back(Vector3(static_cast<float>(xmin), static_cast<float>(y + 1), static_cast<float>(ymax)));
+                vertices.emplace_back(Vector3(static_cast<float>(xmax), static_cast<float>(y + 1), static_cast<float>(ymax)));
                 return vertices;
             }, Vector3(0.0f, 1.0f, 0.0f), vertices, triangles);
     }
@@ -44,10 +44,10 @@ std::unique_ptr<udsdx::Mesh> MCTilemapMeshGenerator::CreateMeshFromChunk(MCTilem
         AddPlaneGreedyMesh(planeMap, MCTileChunk::CHUNK_WIDTH, MCTileChunk::CHUNK_WIDTH, [y](int xmin, int ymin, int xmax, int ymax)noexcept
             {
                 std::vector<Vector3> vertices;
-                vertices.emplace_back(Vector3(xmax, y, ymin));
-                vertices.emplace_back(Vector3(xmin, y, ymin));
-                vertices.emplace_back(Vector3(xmax, y, ymax));
-                vertices.emplace_back(Vector3(xmin, y, ymax));
+                vertices.emplace_back(Vector3(static_cast<float>(xmax), static_cast<float>(y), static_cast<float>(ymin)));
+                vertices.emplace_back(Vector3(static_cast<float>(xmin), static_cast<float>(y), static_cast<float>(ymin)));
+                vertices.emplace_back(Vector3(static_cast<float>(xmax), static_cast<float>(y), static_cast<float>(ymax)));
+                vertices.emplace_back(Vector3(static_cast<float>(xmin), static_cast<float>(y), static_cast<float>(ymax)));
                 return vertices;
             }, Vector3(0.0f, -1.0f, 0.0f), vertices, triangles);
     }
@@ -64,10 +64,10 @@ std::unique_ptr<udsdx::Mesh> MCTilemapMeshGenerator::CreateMeshFromChunk(MCTilem
         AddPlaneGreedyMesh(planeMap, MCTileChunk::CHUNK_WIDTH, MCTileChunk::CHUNK_HEIGHT, [x](int xmin, int ymin, int xmax, int ymax)noexcept
             {
                 std::vector<Vector3> vertices;
-                vertices.emplace_back(Vector3(x + 1, ymin, xmin));
-                vertices.emplace_back(Vector3(x + 1, ymin, xmax));
-                vertices.emplace_back(Vector3(x + 1, ymax, xmin));
-                vertices.emplace_back(Vector3(x + 1, ymax, xmax));
+                vertices.emplace_back(Vector3(static_cast<float>(x + 1), static_cast<float>(ymin), static_cast<float>(xmin)));
+                vertices.emplace_back(Vector3(static_cast<float>(x + 1), static_cast<float>(ymin), static_cast<float>(xmax)));
+                vertices.emplace_back(Vector3(static_cast<float>(x + 1), static_cast<float>(ymax), static_cast<float>(xmin)));
+                vertices.emplace_back(Vector3(static_cast<float>(x + 1), static_cast<float>(ymax), static_cast<float>(xmax)));
                 return vertices;
             }, Vector3(1.0f, 0.0f, 0.0f), vertices, triangles);
     }
@@ -84,10 +84,10 @@ std::unique_ptr<udsdx::Mesh> MCTilemapMeshGenerator::CreateMeshFromChunk(MCTilem
         AddPlaneGreedyMesh(planeMap, MCTileChunk::CHUNK_WIDTH, MCTileChunk::CHUNK_HEIGHT, [x](int xmin, int ymin, int xmax, int ymax)noexcept
             {
                 std::vector<Vector3> vertices;
-                vertices.emplace_back(Vector3(x, ymin, xmax));
-                vertices.emplace_back(Vector3(x, ymin, xmin));
-                vertices.emplace_back(Vector3(x, ymax, xmax));
-                vertices.emplace_back(Vector3(x, ymax, xmin));
+                vertices.emplace_back(Vector3(static_cast<float>(x), static_cast<float>(ymin), static_cast<float>(xmax)));
+                vertices.emplace_back(Vector3(static_cast<float>(x), static_cast<float>(ymin), static_cast<float>(xmin)));
+                vertices.emplace_back(Vector3(static_cast<float>(x), static_cast<float>(ymax), static_cast<float>(xmax)));
+                vertices.emplace_back(Vector3(static_cast<float>(x), static_cast<float>(ymax), static_cast<float>(xmin)));
                 return vertices;
             }, Vector3(-1.0f, 0.0f, 0.0f), vertices, triangles);
     }
@@ -104,10 +104,10 @@ std::unique_ptr<udsdx::Mesh> MCTilemapMeshGenerator::CreateMeshFromChunk(MCTilem
         AddPlaneGreedyMesh(planeMap, MCTileChunk::CHUNK_WIDTH, MCTileChunk::CHUNK_HEIGHT, [z](int xmin, int ymin, int xmax, int ymax)noexcept
             {
                 std::vector<Vector3> vertices;
-                vertices.emplace_back(Vector3(xmax, ymin, z + 1));
-                vertices.emplace_back(Vector3(xmin, ymin, z + 1));
-                vertices.emplace_back(Vector3(xmax, ymax, z + 1));
-                vertices.emplace_back(Vector3(xmin, ymax, z + 1));
+                vertices.emplace_back(Vector3(static_cast<float>(xmax), static_cast<float>(ymin), static_cast<float>(z + 1)));
+                vertices.emplace_back(Vector3(static_cast<float>(xmin), static_cast<float>(ymin), static_cast<float>(z + 1)));
+                vertices.emplace_back(Vector3(static_cast<float>(xmax), static_cast<float>(ymax), static_cast<float>(z + 1)));
+                vertices.emplace_back(Vector3(static_cast<float>(xmin), static_cast<float>(ymax), static_cast<float>(z + 1)));
                 return vertices;
             }, Vector3(0.0f, 0.0f, 1.0f), vertices, triangles);
     }
@@ -124,10 +124,10 @@ std::unique_ptr<udsdx::Mesh> MCTilemapMeshGenerator::CreateMeshFromChunk(MCTilem
         AddPlaneGreedyMesh(planeMap, MCTileChunk::CHUNK_WIDTH, MCTileChunk::CHUNK_HEIGHT, [z](int xmin, int ymin, int xmax, int ymax)noexcept
             {
                 std::vector<Vector3> vertices;
-                vertices.emplace_back(Vector3(xmin, ymin, z));
-                vertices.emplace_back(Vector3(xmax, ymin, z));
-                vertices.emplace_back(Vector3(xmin, ymax, z));
-                vertices.emplace_back(Vector3(xmax, ymax, z));
+                vertices.emplace_back(Vector3(static_cast<float>(xmin), static_cast<float>(ymin), static_cast<float>(z)));
+                vertices.emplace_back(Vector3(static_cast<float>(xmax), static_cast<float>(ymin), static_cast<float>(z)));
+                vertices.emplace_back(Vector3(static_cast<float>(xmin), static_cast<float>(ymax), static_cast<float>(z)));
+                vertices.emplace_back(Vector3(static_cast<float>(xmax), static_cast<float>(ymax), static_cast<float>(z)));
                 return vertices;
             }, Vector3(0.0f, 0.0f, -1.0f), vertices, triangles);
     }
@@ -145,7 +145,7 @@ void MCTilemapMeshGenerator::AddPlaneGreedyMesh(int map[][MCTileChunk::CHUNK_WID
         {
             if (map[x][y] != 0)
             {
-                unsigned int triangleIndex = vertices.size() / 4 * 4;
+                const UINT triangleIndex = static_cast<UINT>(vertices.size());
 
                 float uvUnitX = 1.0f / 12.0f;
                 float uvOffsetX = static_cast<float>(map[x][y] - 1) * uvUnitX;
