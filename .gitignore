@@ -39,8 +39,4 @@
 # clang-tidy output
 /clang-tidy-fixes.patch
 
-vcpkg_installed/
-engine/tracy/
-engine/source/compiled_shaders/
-
 *.ddscache

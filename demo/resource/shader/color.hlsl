@@ -1,4 +1,4 @@
-#include "common.hlsl"
+#include "inc_common.hlsl"
 
 #ifdef DEFERRED
 

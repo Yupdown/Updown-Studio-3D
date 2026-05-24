@@ -15,7 +15,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
-include(Dependencies)
+include(dependencies)
 updown_setup_dependencies()
 
 if(CMAKE_CONFIGURATION_TYPES)

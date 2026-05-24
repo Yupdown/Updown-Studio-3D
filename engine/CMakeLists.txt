@@ -60,6 +60,7 @@ target_include_directories(engine
         ${CMAKE_CURRENT_SOURCE_DIR}/source
     PRIVATE
         ${UPDOWN_DIRECTX_HEADERS_INCLUDE_DIR}
+        ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
 
 target_compile_definitions(engine
@@ -139,7 +140,8 @@ if(NOT UPDOWN_DXC_EXECUTABLE)
     message(FATAL_ERROR "UPDOWN_DXC_EXECUTABLE is not set. Check FetchContent DXC setup.")
 endif()
 
-set(ENGINE_COMPILED_SHADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/source/compiled_shaders")
+set(ENGINE_COMPILED_SHADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/compiled_shaders")
+set(ENGINE_EMBEDDED_SHADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/embedded_shaders")
 set(ENGINE_SHADER_COMMON_DEFINES
     KERNEL_SIZE=32
     BLUR_SAMPLE=16
@@ -205,6 +207,24 @@ add_engine_shader(resource/ps_fxaa.hlsl FXAAPS ps_6_0
 )
 add_engine_shader(resource/vs_drawscreen.hlsl VS vs_6_0)
 add_engine_shader(resource/vs_skybox.hlsl VS vs_6_0)
+
+set(EMBEDDED_COMMON_HLSL_INPUT "${CMAKE_CURRENT_SOURCE_DIR}/resource/inc_common.hlsl")
+set(EMBEDDED_COMMON_HLSL_HEADER "${ENGINE_EMBEDDED_SHADER_DIR}/inc_common_hlsl.h")
+add_custom_command(
+    OUTPUT "${EMBEDDED_COMMON_HLSL_HEADER}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${ENGINE_EMBEDDED_SHADER_DIR}"
+    COMMAND ${CMAKE_COMMAND}
+        -DINPUT=${EMBEDDED_COMMON_HLSL_INPUT}
+        -DOUTPUT=${EMBEDDED_COMMON_HLSL_HEADER}
+        -DSYMBOL=g_embedded_common_hlsl
+        -P ${CMAKE_SOURCE_DIR}/cmake/embed_binary_as_header.cmake
+    DEPENDS
+        "${EMBEDDED_COMMON_HLSL_INPUT}"
+        "${CMAKE_SOURCE_DIR}/cmake/embed_binary_as_header.cmake"
+    VERBATIM
+    COMMENT "Embedding inc_common.hlsl into ${EMBEDDED_COMMON_HLSL_HEADER}"
+)
+list(APPEND ENGINE_SHADER_HEADERS "${EMBEDDED_COMMON_HLSL_HEADER}")
 
 add_custom_target(engine_compiled_shaders DEPENDS ${ENGINE_SHADER_HEADERS})
 add_dependencies(engine engine_compiled_shaders)

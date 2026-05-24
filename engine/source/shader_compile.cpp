@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "shader_compile.h"
 #include "debug_console.h"
+#include "embedded_shaders/inc_common_hlsl.h"
 
 namespace udsdx
 {
@@ -15,7 +16,23 @@ namespace udsdx
     {
         std::wstring filename = m_shaderDirectory + pFilename;
         ComPtr<IDxcBlobEncoding> pBlob;
-        ThrowIfFailed(g_pUtils->LoadFile(filename.c_str(), nullptr, &pBlob));
+        HRESULT hr = g_pUtils->LoadFile(filename.c_str(), nullptr, &pBlob);
+        if (FAILED(hr))
+        {
+            if (std::wcscmp(pFilename, L"inc_common.hlsl"))
+            {
+                ThrowIfFailed(g_pUtils->CreateBlob(
+                    g_embedded_common_hlsl,
+                    g_embedded_common_hlsl_size,
+                    DXC_CP_UTF8,
+                    &pBlob
+                ));
+            }
+            else
+            {
+                ThrowIfFailed(hr);
+            }
+        }
         *ppIncludeSource = pBlob.Detach();
         return S_OK;
     }

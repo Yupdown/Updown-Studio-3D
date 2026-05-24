@@ -132,7 +132,6 @@ namespace udsdx
 
 	void Resource::InitializeIgnoreFiles()
 	{
-		m_ignoreFiles.insert(L"common.hlsl");
 	}
 
 	ResourceLoader::ResourceLoader(ID3D12Device* device, ID3D12GraphicsCommandList* commandList) : m_device(device), m_commandList(commandList)
