@@ -27,7 +27,6 @@ namespace udsdx
 	class DeferredRenderer;
 	class MotionBlur;
 	class PostProcessBloom;
-	class PostProcessFXAA;
 	class PostProcessTAA;
 	class PostProcessOutline;
 	class BoundingCamera;
