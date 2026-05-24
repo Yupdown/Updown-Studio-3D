@@ -1,10 +1,10 @@
 #include "pch.h"
-#include "audio.h"
+#include "audio_system.h"
 #include "debug_console.h"
 
 namespace udsdx
 {
-	Audio::Audio()
+	AudioSystem::AudioSystem()
 	{
 		std::wstring logMessage = L"Audio Renderer Details:\n\n";
 		for (const auto& detail : AudioEngine::GetRendererDetails())
@@ -21,34 +21,35 @@ namespace udsdx
 		m_audioEngine->SetReverb(Reverb_Cave);
 	}
 
-	Audio::~Audio()
+	AudioSystem::~AudioSystem()
 	{
 
 	}
 
-	AudioEngine* Audio::GetAudioEngine() const
+	AudioEngine* AudioSystem::GetAudioEngine() const
 	{
 		return m_audioEngine.get();
 	}
 
-	const AudioListener& Audio::GetAudioListener() const
+	const AudioListener& AudioSystem::GetAudioListener() const
 	{
 		return m_audioListener;
 	}
 
-	void Audio::UpdateAudioListener(const Vector3& position, const Quaternion& orientation)
+	void AudioSystem::UpdateAudioListener(const Vector3& position, const Quaternion& orientation)
 	{
 		if (!m_audioEngine)
 		{
 			return;
 		}
-		
+
 		m_audioListener.SetPosition(position);
 		m_audioListener.SetOrientationFromQuaternion(orientation);
 	}
 
-	void Audio::Update()
-	{ ZoneScoped;
+	void AudioSystem::Update()
+	{
+		ZoneScoped;
 		if (!m_audioEngine)
 		{
 			return;

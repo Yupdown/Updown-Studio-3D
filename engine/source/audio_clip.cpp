@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "audio_clip.h"
-#include "audio.h"
+#include "audio_system.h"
 
 namespace udsdx
 {
@@ -28,7 +28,7 @@ namespace udsdx
 		emitter.CurveDistanceScaler = 10.0f;
 		instance->SetVolume(volume);
 		instance->Play();
-		instance->Apply3D(INSTANCE(Audio)->GetAudioListener(), emitter, false);
+		instance->Apply3D(INSTANCE(AudioSystem)->GetAudioListener(), emitter, false);
 		return instance;
 	}
 }

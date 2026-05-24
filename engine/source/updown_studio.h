@@ -25,7 +25,7 @@
 #include "debug_console.h"
 #include "time_measure.h"
 #include "input.h"
-#include "audio.h"
+#include "audio_system.h"
 #include "core.h"
 
 #include "scene.h"

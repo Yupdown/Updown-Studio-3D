@@ -1,7 +1,7 @@
 set(ENGINE_SOURCES
     source/allocation.cpp
     source/animation_clip.cpp
-    source/audio.cpp
+    source/audio_system.cpp
     source/audio_clip.cpp
     source/camera.cpp
     source/component.cpp
@@ -58,8 +58,8 @@ target_compile_features(engine PUBLIC cxx_std_20)
 target_include_directories(engine
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/source
-    PRIVATE
         ${UPDOWN_DIRECTX_HEADERS_INCLUDE_DIR}
+    PRIVATE
         ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
 

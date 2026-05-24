@@ -66,30 +66,30 @@ using namespace Microsoft::WRL;
 using namespace DirectX;
 
 // DirectXTK Library
-#include <directxtk12/Audio.h>
-#include <directxtk12/BufferHelpers.h>
-#include <directxtk12/CommonStates.h>
-#include <directxtk12/DDSTextureLoader.h>
-#include <directxtk12/DescriptorHeap.h>
-#include <directxtk12/DirectXHelpers.h>
-#include <directxtk12/EffectPipelineStateDescription.h>
-#include <directxtk12/Effects.h>
-#include <directxtk12/GamePad.h>
-#include <directxtk12/GeometricPrimitive.h>
-#include <directxtk12/GraphicsMemory.h>
-#include <directxtk12/Keyboard.h>
-#include <directxtk12/Model.h>
-#include <directxtk12/Mouse.h>
-#include <directxtk12/PostProcess.h>
-#include <directxtk12/PrimitiveBatch.h>
-#include <directxtk12/RenderTargetState.h>
-#include <directxtk12/ResourceUploadBatch.h>
-#include <directxtk12/ScreenGrab.h>
-#include <directxtk12/SimpleMath.h>
-#include <directxtk12/SpriteBatch.h>
-#include <directxtk12/SpriteFont.h>
-#include <directxtk12/VertexTypes.h>
-#include <directxtk12/WICTextureLoader.h>
+#include <Audio.h>
+#include <BufferHelpers.h>
+#include <CommonStates.h>
+#include <DDSTextureLoader.h>
+#include <DescriptorHeap.h>
+#include <DirectXHelpers.h>
+#include <EffectPipelineStateDescription.h>
+#include <Effects.h>
+#include <GamePad.h>
+#include <GeometricPrimitive.h>
+#include <GraphicsMemory.h>
+#include <Keyboard.h>
+#include <Model.h>
+#include <Mouse.h>
+#include <PostProcess.h>
+#include <PrimitiveBatch.h>
+#include <RenderTargetState.h>
+#include <ResourceUploadBatch.h>
+#include <ScreenGrab.h>
+#include <SimpleMath.h>
+#include <SpriteBatch.h>
+#include <SpriteFont.h>
+#include <VertexTypes.h>
+#include <WICTextureLoader.h>
 
 // Tracy Profiler
 #include <tracy/Tracy.hpp>

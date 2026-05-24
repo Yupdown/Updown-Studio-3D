@@ -12,7 +12,7 @@
 #include "shader.h"
 #include "frame_debug.h"
 #include "debug_console.h"
-#include "audio.h"
+#include "audio_system.h"
 #include "texture.h"
 #include "font.h"
 #include "shadow_map.h"
@@ -36,7 +36,7 @@ namespace udsdx
 	{
 		Singleton<TimeMeasure>::ReleaseInstance();
 		Singleton<Resource>::ReleaseInstance();
-		Singleton<Audio>::ReleaseInstance();
+		Singleton<AudioSystem>::ReleaseInstance();
 	}
 
 	void Core::Initialize(HINSTANCE hInstance, HWND hWnd)
@@ -68,7 +68,7 @@ namespace udsdx
 			m_frameResources[i] = std::make_unique<FrameResource>(m_d3dDevice.Get());
 		}
 
-		auto audio = Singleton<Audio>::GetInstance();
+		auto audio = Singleton<AudioSystem>::GetInstance();
 		auto resource = Singleton<Resource>::GetInstance();
 		m_timeMeasure = Singleton<TimeMeasure>::GetInstance();
 
@@ -590,7 +590,7 @@ namespace udsdx
 		// Advance the time measure
 		m_timeMeasure->Tick();
 
-		INSTANCE(Audio)->Update();
+		INSTANCE(AudioSystem)->Update();
 		INSTANCE(Input)->Update();
 
 		std::shared_ptr<Scene> lastScene = m_scene;

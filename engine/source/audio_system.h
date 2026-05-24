@@ -4,11 +4,11 @@
 
 namespace udsdx
 {
-	class Audio
+	class AudioSystem
 	{
 	public:
-		Audio();
-		~Audio();
+		AudioSystem();
+		~AudioSystem();
 
 		void Update();
 		AudioEngine* GetAudioEngine() const;

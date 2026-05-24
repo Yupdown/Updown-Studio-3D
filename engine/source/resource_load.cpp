@@ -6,7 +6,7 @@
 #include "animation_clip.h"
 #include "shader.h"
 #include "debug_console.h"
-#include "audio.h"
+#include "audio_system.h"
 #include "audio_clip.h"
 #include "font.h"
 
@@ -201,7 +201,7 @@ namespace udsdx
 
 	AudioClipLoader::AudioClipLoader(ID3D12Device* device, ID3D12GraphicsCommandList* commandList) : ResourceLoader(device, commandList)
 	{
-		m_audioEngine = INSTANCE(Audio)->GetAudioEngine();
+		m_audioEngine = INSTANCE(AudioSystem)->GetAudioEngine();
 	}
 
 	std::unique_ptr<ResourceObject> AudioClipLoader::Load(std::wstring_view path, const std::type_info* requestedType)
