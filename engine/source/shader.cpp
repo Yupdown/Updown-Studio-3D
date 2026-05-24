@@ -133,6 +133,7 @@ namespace udsdx
 		{
 			psoDesc.RTVFormats[i] = DXGI_FORMAT_UNKNOWN;
 		}
+		psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
 
 		// Shadow map rendering keeps forward depth convention.
 		psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
