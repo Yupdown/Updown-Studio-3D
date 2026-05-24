@@ -35,9 +35,18 @@ namespace udsdx
 		}
 		else
 		{
-			if (path.ends_with(L".tga"))
+			std::filesystem::path sourcePath(path);
+			std::wstring extension = sourcePath.extension().wstring();
+			std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
+			const bool isHdr = (extension == L".hdr");
+
+			if (extension == L".tga")
 			{
 				ThrowIfFailed(::LoadFromTGAFile(path.data(), nullptr, image));
+			}
+			else if (isHdr)
+			{
+				ThrowIfFailed(::LoadFromHDRFile(path.data(), nullptr, image));
 			}
 			else
 			{
@@ -61,8 +70,11 @@ namespace udsdx
 
 			// Generate MipMaps
 			ThrowIfFailed(::GenerateMipMaps(image.GetImages(), image.GetImageCount(), image.GetMetadata(), TEX_FILTER_DEFAULT, mipChainLevels, mipChain));
-			// BC3 Compression
-			ThrowIfFailed(::CompressEx(mipChain.GetImages(), mipChain.GetImageCount(), mipChain.GetMetadata(), DirectX::IsSRGB(mipChain.GetMetadata().format) ? DXGI_FORMAT_BC3_UNORM_SRGB : DXGI_FORMAT_BC3_UNORM, compressOptions, compressedImage, [&](size_t, size_t) { return true; }));
+			// Use HDR-friendly BC6H compression for Radiance HDR, otherwise keep BC3 path.
+			const DXGI_FORMAT compressedFormat = isHdr
+				? DXGI_FORMAT_BC6H_UF16
+				: (DirectX::IsSRGB(mipChain.GetMetadata().format) ? DXGI_FORMAT_BC3_UNORM_SRGB : DXGI_FORMAT_BC3_UNORM);
+			ThrowIfFailed(::CompressEx(mipChain.GetImages(), mipChain.GetImageCount(), mipChain.GetMetadata(), compressedFormat, compressOptions, compressedImage, [&](size_t, size_t) { return true; }));
 
 			ThrowIfFailed(::SaveToDDSFile(compressedImage.GetImages(), compressedImage.GetImageCount(), compressedImage.GetMetadata(), DDS_FLAGS_NONE, pathDds.c_str()));
 			std::filesystem::last_write_time(pathDds, std::filesystem::last_write_time(path));

@@ -117,6 +117,7 @@ namespace udsdx
 		m_extensionDictionary.emplace(L".bmp", L"texture");
 		m_extensionDictionary.emplace(L".tif", L"texture");
 		m_extensionDictionary.emplace(L".tga", L"texture");
+		m_extensionDictionary.emplace(L".hdr", L"texture");
 		m_extensionDictionary.emplace(L".fbx", L"model");
 		m_extensionDictionary.emplace(L".obj", L"model");
 		m_extensionDictionary.emplace(L".dae", L"model");
