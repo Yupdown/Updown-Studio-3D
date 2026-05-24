@@ -30,8 +30,3 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 add_subdirectory(engine)
 add_subdirectory(demo)
-
-option(BUILD_SCENE_EXPORT "Build tools/SceneExport exporter tool" ON)
-if(BUILD_SCENE_EXPORT)
-    add_subdirectory(tools/SceneExport)
-endif()

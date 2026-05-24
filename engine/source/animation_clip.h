@@ -3,6 +3,8 @@
 #include "pch.h"
 #include "resource_object.h"
 
+struct aiAnimation;
+
 namespace udsdx
 {
 	struct Bone;
@@ -26,7 +28,7 @@ namespace udsdx
 
 	public:
 		Animation() = delete;
-		Animation(const AnimationClip* clip, std::ifstream& fileStream);
+		Animation(const AnimationClip* clip, const aiAnimation* animationSrc, const std::unordered_map<std::string, int>& boneIndexMap, unsigned int boneCount);
 		void PopulateTransforms(float animationTime, std::vector<Matrix4x4>& out) const;
 		void PopulateTransforms(float animationTime, const std::vector<int>& boneMap, std::vector<Matrix4x4>& out, const std::map<std::string_view, Matrix4x4>& modifiers = {}) const;
 		float GetAnimationDuration() const { return m_duration / m_ticksPerSecond; }

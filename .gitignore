@@ -44,6 +44,3 @@ engine/tracy/
 engine/source/compiled_shaders/
 
 *.ddscache
-*.yms
-*.yrms
-*.yac

@@ -128,6 +128,10 @@ link_first_available(engine PUBLIC
     Tracy::TracyClient
     TracyClient
 )
+link_first_available(engine PUBLIC
+    assimp::assimp
+    assimp
+)
 target_link_libraries(engine PUBLIC updown::imgui)
 
 if(NOT UPDOWN_DXC_EXECUTABLE)

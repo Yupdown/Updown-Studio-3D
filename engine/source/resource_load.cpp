@@ -12,6 +12,15 @@
 
 namespace udsdx
 {
+	std::wstring Resource::NormalizePath(std::wstring_view path)
+	{
+		std::filesystem::path fsPath(path);
+		fsPath = fsPath.lexically_normal();
+		std::wstring normalized = fsPath.generic_wstring();
+		std::transform(normalized.begin(), normalized.end(), normalized.begin(), ::tolower);
+		return normalized;
+	}
+
 	Resource::Resource()
 	{
 
@@ -41,7 +50,7 @@ namespace udsdx
 				continue;
 			}
 
-			std::wstring path = directory.path().wstring();
+			std::wstring path = NormalizePath(directory.path().wstring());
 			std::wstring filename = directory.path().filename().wstring();
 			std::wstring suffix = directory.path().extension().wstring();
 
@@ -72,7 +81,16 @@ namespace udsdx
 			}
 
 			DebugConsole::Log(L"> " + iter->second + L": " + path);
-			m_resources.emplace(path, loader_iter->second->Load(path));
+			if (iter->second == L"model")
+			{
+				continue;
+			}
+
+			auto loaded = loader_iter->second->Load(path);
+			if (loaded)
+			{
+				m_resources[path].emplace_back(std::move(loaded));
+			}
 		}
 		std::cout << std::endl;
 	}
@@ -88,7 +106,7 @@ namespace udsdx
 
 	void Resource::SetResourceRootPath(std::wstring_view path)
 	{
-		m_resourceRootPath = path;
+		m_resourceRootPath = NormalizePath(path);
 	}
 
 	void Resource::InitializeExtensionDictionary()
@@ -99,9 +117,13 @@ namespace udsdx
 		m_extensionDictionary.emplace(L".bmp", L"texture");
 		m_extensionDictionary.emplace(L".tif", L"texture");
 		m_extensionDictionary.emplace(L".tga", L"texture");
-		m_extensionDictionary.emplace(L".yms", L"model");
-		m_extensionDictionary.emplace(L".yrms", L"model");
-		m_extensionDictionary.emplace(L".yac", L"model");
+		m_extensionDictionary.emplace(L".fbx", L"model");
+		m_extensionDictionary.emplace(L".obj", L"model");
+		m_extensionDictionary.emplace(L".dae", L"model");
+		m_extensionDictionary.emplace(L".3ds", L"model");
+		m_extensionDictionary.emplace(L".x", L"model");
+		m_extensionDictionary.emplace(L".gltf", L"model");
+		m_extensionDictionary.emplace(L".glb", L"model");
 		m_extensionDictionary.emplace(L".hlsl", L"shader");
 		m_extensionDictionary.emplace(L".wav", L"audio");
 		m_extensionDictionary.emplace(L".spritefont", L"font");
@@ -125,8 +147,9 @@ namespace udsdx
 
 	}
 
-	std::unique_ptr<ResourceObject> TextureLoader::Load(std::wstring_view path)
+	std::unique_ptr<ResourceObject> TextureLoader::Load(std::wstring_view path, const std::type_info* requestedType)
 	{ ZoneScoped;
+		(void)requestedType;
 		auto texture = std::make_unique<Texture>(path, m_device, m_commandList);
 		return texture;
 	}
@@ -135,28 +158,29 @@ namespace udsdx
 	{
 	}
 
-	std::unique_ptr<ResourceObject> ModelLoader::Load(std::wstring_view path)
+	std::unique_ptr<ResourceObject> ModelLoader::Load(std::wstring_view path, const std::type_info* requestedType)
 	{ ZoneScoped;
 		std::filesystem::path pathString(path);
 
 		std::unique_ptr<ResourceObject> ret;
-		if (pathString.extension().string() == ".yms")
+		if (requestedType != nullptr)
 		{
-			std::unique_ptr<MeshBase> mesh = nullptr;
-			mesh = std::make_unique<Mesh>(pathString);
-			mesh->UploadBuffers(m_device, m_commandList);
-			ret = std::move(mesh);
-		}
-		else if (pathString.extension().string() == ".yrms")
-		{
-			std::unique_ptr<MeshBase> mesh = nullptr;
-			mesh = std::make_unique<RiggedMesh>(pathString);
-			mesh->UploadBuffers(m_device, m_commandList);
-			ret = std::move(mesh);
-		}
-		else if (pathString.extension().string() == ".yac")
-		{
-			ret = std::make_unique<AnimationClip>(pathString);
+			if (*requestedType == typeid(Mesh))
+			{
+				std::unique_ptr<MeshBase> mesh = std::make_unique<Mesh>(pathString);
+				mesh->UploadBuffers(m_device, m_commandList);
+				ret = std::move(mesh);
+			}
+			else if (*requestedType == typeid(RiggedMesh))
+			{
+				std::unique_ptr<MeshBase> mesh = std::make_unique<RiggedMesh>(pathString);
+				mesh->UploadBuffers(m_device, m_commandList);
+				ret = std::move(mesh);
+			}
+			else if (*requestedType == typeid(AnimationClip))
+			{
+				ret = std::make_unique<AnimationClip>(pathString);
+			}
 		}
 
 		return ret;
@@ -166,8 +190,9 @@ namespace udsdx
 	{
 	}
 
-	std::unique_ptr<ResourceObject> ShaderLoader::Load(std::wstring_view path)
+	std::unique_ptr<ResourceObject> ShaderLoader::Load(std::wstring_view path, const std::type_info* requestedType)
 	{ ZoneScoped;
+		(void)requestedType;
 		auto shader = std::make_unique<Shader>(path);
 		shader->BuildPipelineState(m_device, m_rootSignature);
 		shader->BuildDeferredPipelineState(m_device, m_rootSignature);
@@ -179,9 +204,18 @@ namespace udsdx
 		m_audioEngine = INSTANCE(Audio)->GetAudioEngine();
 	}
 
-	std::unique_ptr<ResourceObject> AudioClipLoader::Load(std::wstring_view path)
+	std::unique_ptr<ResourceObject> AudioClipLoader::Load(std::wstring_view path, const std::type_info* requestedType)
 	{ ZoneScoped;
-		return std::make_unique<AudioClip>(path, m_audioEngine);
+		(void)requestedType;
+		try
+		{
+			return std::make_unique<AudioClip>(path, m_audioEngine);
+		}
+		catch (const std::exception& exception)
+		{
+			DebugConsole::LogError("Failed to load audio clip: " + std::filesystem::path(path).string() + " (" + exception.what() + ")");
+		}
+		return nullptr;
 	}
 
 	FontLoader::FontLoader(ID3D12Device* device, ID3D12GraphicsCommandList* commandList) : ResourceLoader(device, commandList)
@@ -189,8 +223,9 @@ namespace udsdx
 
 	}
 
-	std::unique_ptr<ResourceObject> FontLoader::Load(std::wstring_view path)
+	std::unique_ptr<ResourceObject> FontLoader::Load(std::wstring_view path, const std::type_info* requestedType)
 	{
+		(void)requestedType;
 		return std::make_unique<Font>(path);
 	}
 }

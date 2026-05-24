@@ -2,6 +2,9 @@
 #include "animation_clip.h"
 #include "rigged_mesh.h"
 #include "debug_console.h"
+#include <assimp/Importer.hpp>
+#include <assimp/postprocess.h>
+#include <assimp/scene.h>
 
 
 namespace udsdx
@@ -26,44 +29,54 @@ namespace udsdx
 
 	AnimationClip::AnimationClip(const std::filesystem::path& resourcePath)
 	{
-		std::ifstream file(resourcePath, std::ios::binary);
-		if (!file.is_open())
+		Assimp::Importer importer;
+		importer.SetPropertyBool(AI_CONFIG_IMPORT_FBX_PRESERVE_PIVOTS, false);
+		const aiScene* scene = importer.ReadFile(
+			resourcePath.string(),
+			aiProcess_ConvertToLeftHanded |
+			aiProcess_Triangulate |
+			aiProcess_GenNormals |
+			aiProcess_CalcTangentSpace |
+			aiProcess_LimitBoneWeights |
+			aiProcess_OptimizeMeshes |
+			aiProcess_RemoveRedundantMaterials
+		);
+		if (scene == nullptr || scene->mRootNode == nullptr)
 		{
-			DebugConsole::LogError("Failed to open rigged mesh file: " + resourcePath.string());
+			DebugConsole::LogError("Failed to load animation clip with assimp: " + resourcePath.string());
 			return;
 		}
 
-		// Read bone data
-		size_t boneCount = 0;
-		file.read(reinterpret_cast<char*>(&boneCount), sizeof(size_t));
-		m_bones.resize(boneCount);
-		m_boneParents.resize(boneCount, -1);
+		m_bones.clear();
+		m_boneParents.clear();
 		m_boneIndexMap.clear();
-		for (size_t i = 0; i < boneCount; ++i)
+		m_animations.clear();
+
+		std::vector<std::pair<aiNode*, int>> nodeStack;
+		nodeStack.emplace_back(scene->mRootNode, -1);
+		while (!nodeStack.empty())
 		{
-			Bone& bone = m_bones[i];
-			size_t nameLength = 0;
-			file.read(reinterpret_cast<char*>(&nameLength), sizeof(size_t));
-			bone.Name.resize(nameLength);
-			file.read(bone.Name.data(), nameLength);
-			file.read(reinterpret_cast<char*>(&bone.Transform), sizeof(Matrix4x4));
-			m_boneIndexMap[bone.Name] = static_cast<int>(i);
+			auto [node, parentIndex] = nodeStack.back();
+			nodeStack.pop_back();
+
+			Bone boneData{};
+			boneData.Name = node->mName.C_Str();
+			aiMatrix4x4 transposed = node->mTransformation.Transpose();
+			boneData.Transform = XMFLOAT4X4(reinterpret_cast<float*>(&transposed.a1));
+
+			m_boneIndexMap[boneData.Name] = static_cast<int>(m_bones.size());
+			m_bones.emplace_back(std::move(boneData));
+			m_boneParents.emplace_back(parentIndex);
+
+			for (unsigned int childIndex = 0; childIndex < node->mNumChildren; ++childIndex)
+			{
+				nodeStack.emplace_back(node->mChildren[childIndex], static_cast<int>(m_bones.size()) - 1);
+			}
 		}
 
-		// Read bone parent data
-		for (size_t i = 0; i < boneCount; ++i)
+		for (unsigned int i = 0; i < scene->mNumAnimations; ++i)
 		{
-			int parentIndex = -1;
-			file.read(reinterpret_cast<char*>(&parentIndex), sizeof(int));
-			m_boneParents[i] = parentIndex;
-		}
-
-		size_t animationCount = 0;
-		file.read(reinterpret_cast<char*>(&animationCount), sizeof(size_t));
-
-		for (size_t i = 0; i < animationCount; ++i)
-		{
-			Animation animationDest = Animation(this, file);
+			Animation animationDest(this, scene->mAnimations[i], m_boneIndexMap, static_cast<unsigned int>(m_bones.size()));
 			m_animations.emplace(animationDest.GetName().data(), std::move(animationDest));
 		}
 	}
@@ -113,54 +126,43 @@ namespace udsdx
 		return static_cast<UINT>(m_bones.size());
 	}
 
-	Animation::Animation(const AnimationClip* clip, std::ifstream& fileStream) : m_clip(clip)
+	Animation::Animation(const AnimationClip* clip, const aiAnimation* animationSrc, const std::unordered_map<std::string, int>& boneIndexMap, unsigned int boneCount) : m_clip(clip)
 	{
-		// Read animation data
-		size_t nameLength = 0;
-		fileStream.read(reinterpret_cast<char*>(&nameLength), sizeof(size_t));
-		m_name.resize(nameLength);
-		fileStream.read(m_name.data(), nameLength);
-		fileStream.read(reinterpret_cast<char*>(&m_ticksPerSecond), sizeof(float));
-		fileStream.read(reinterpret_cast<char*>(&m_duration), sizeof(float));
-		size_t channelCount = 0;
+		m_name = animationSrc->mName.C_Str();
+		m_ticksPerSecond = static_cast<float>(animationSrc->mTicksPerSecond != 0.0 ? animationSrc->mTicksPerSecond : 1.0);
+		m_duration = static_cast<float>(animationSrc->mDuration);
+		m_channels.resize(boneCount);
 
-		fileStream.read(reinterpret_cast<char*>(&channelCount), sizeof(size_t));
-		m_channels.resize(channelCount);
-		for (size_t i = 0; i < channelCount; ++i)
+		for (unsigned int i = 0; i < animationSrc->mNumChannels; ++i)
 		{
-			Animation::Channel& channel = m_channels[i];
-			size_t channelNameLength = 0;
-			fileStream.read(reinterpret_cast<char*>(&channelNameLength), sizeof(size_t));
-			channel.Name.resize(channelNameLength);
-			fileStream.read(channel.Name.data(), channelNameLength);
+			const aiNodeAnim* channelSrc = animationSrc->mChannels[i];
+			Channel channel{};
+			channel.Name = channelSrc->mNodeName.C_Str();
+			for (unsigned int j = 0; j < channelSrc->mNumPositionKeys; ++j)
+			{
+				const aiVectorKey& key = channelSrc->mPositionKeys[j];
+				channel.PositionTimestamps.push_back(static_cast<float>(key.mTime));
+				channel.Positions.emplace_back(key.mValue.x, key.mValue.y, key.mValue.z);
+			}
+			for (unsigned int j = 0; j < channelSrc->mNumRotationKeys; ++j)
+			{
+				const aiQuatKey& key = channelSrc->mRotationKeys[j];
+				channel.RotationTimestamps.push_back(static_cast<float>(key.mTime));
+				channel.Rotations.emplace_back(key.mValue.x, key.mValue.y, key.mValue.z, key.mValue.w);
+			}
+			for (unsigned int j = 0; j < channelSrc->mNumScalingKeys; ++j)
+			{
+				const aiVectorKey& key = channelSrc->mScalingKeys[j];
+				channel.ScaleTimestamps.push_back(static_cast<float>(key.mTime));
+				channel.Scales.emplace_back(key.mValue.x, key.mValue.y, key.mValue.z);
+			}
 
-			size_t positionKeyCount = 0;
-			fileStream.read(reinterpret_cast<char*>(&positionKeyCount), sizeof(size_t));
-			channel.PositionTimestamps.resize(positionKeyCount);
-			channel.Positions.resize(positionKeyCount);
-			for (size_t j = 0; j < positionKeyCount; ++j)
+			auto channelIter = boneIndexMap.find(channel.Name);
+			if (channelIter == boneIndexMap.end())
 			{
-				fileStream.read(reinterpret_cast<char*>(&channel.PositionTimestamps[j]), sizeof(float));
-				fileStream.read(reinterpret_cast<char*>(&channel.Positions[j]), sizeof(Vector3));
+				continue;
 			}
-			size_t rotationKeyCount = 0;
-			fileStream.read(reinterpret_cast<char*>(&rotationKeyCount), sizeof(size_t));
-			channel.RotationTimestamps.resize(rotationKeyCount);
-			channel.Rotations.resize(rotationKeyCount);
-			for (size_t j = 0; j < rotationKeyCount; ++j)
-			{
-				fileStream.read(reinterpret_cast<char*>(&channel.RotationTimestamps[j]), sizeof(float));
-				fileStream.read(reinterpret_cast<char*>(&channel.Rotations[j]), sizeof(Quaternion));
-			}
-			size_t scaleKeyCount = 0;
-			fileStream.read(reinterpret_cast<char*>(&scaleKeyCount), sizeof(size_t));
-			channel.ScaleTimestamps.resize(scaleKeyCount);
-			channel.Scales.resize(scaleKeyCount);
-			for (size_t j = 0; j < scaleKeyCount; ++j)
-			{
-				fileStream.read(reinterpret_cast<char*>(&channel.ScaleTimestamps[j]), sizeof(float));
-				fileStream.read(reinterpret_cast<char*>(&channel.Scales[j]), sizeof(Vector3));
-			}
+			m_channels[channelIter->second] = std::move(channel);
 		}
 	}
 

@@ -3,6 +3,9 @@
 #include "animation_clip.h"
 #include "debug_console.h"
 #include "mesh.h"
+#include <assimp/Importer.hpp>
+#include <assimp/postprocess.h>
+#include <assimp/scene.h>
 
 namespace udsdx
 {
@@ -10,94 +13,146 @@ namespace udsdx
 	{
 		std::vector<RiggedVertex> vertices;
 		std::vector<UINT> indices;
-
-		std::ifstream file(resourcePath, std::ios::binary);
-		if (!file.is_open())
+		Assimp::Importer importer;
+		importer.SetPropertyBool(AI_CONFIG_IMPORT_FBX_PRESERVE_PIVOTS, false);
+		const aiScene* scene = importer.ReadFile(
+			resourcePath.string(),
+			aiProcess_ConvertToLeftHanded |
+			aiProcess_Triangulate |
+			aiProcess_GenNormals |
+			aiProcess_CalcTangentSpace |
+			aiProcess_LimitBoneWeights |
+			aiProcess_OptimizeMeshes |
+			aiProcess_RemoveRedundantMaterials
+		);
+		if (scene == nullptr || scene->mRootNode == nullptr)
 		{
-			DebugConsole::LogError("Failed to open rigged mesh file: " + resourcePath.string());
+			DebugConsole::LogError("Failed to load rigged mesh with assimp: " + resourcePath.string());
 			return;
 		}
 
-		// Read bone data
-		size_t boneCount = 0;
-		file.read(reinterpret_cast<char*>(&boneCount), sizeof(size_t));
-		m_bones.resize(boneCount);
-		m_boneParents.resize(boneCount, -1);
+		m_bones.clear();
+		m_boneParents.clear();
 		m_boneIndexMap.clear();
-		for (size_t i = 0; i < boneCount; ++i)
+		m_submeshes.clear();
+
+		std::vector<std::pair<aiNode*, int>> nodeStack;
+		std::vector<std::pair<aiNode*, aiMesh*>> meshStack;
+		nodeStack.emplace_back(scene->mRootNode, -1);
+		while (!nodeStack.empty())
 		{
-			Bone& bone = m_bones[i];
-			size_t nameLength = 0;
-			file.read(reinterpret_cast<char*>(&nameLength), sizeof(size_t));
-			bone.Name.resize(nameLength);
-			file.read(bone.Name.data(), nameLength);
-			file.read(reinterpret_cast<char*>(&bone.Transform), sizeof(Matrix4x4));
-			m_boneIndexMap[bone.Name] = static_cast<int>(i);
-		}
+			auto [node, parentIndex] = nodeStack.back();
+			nodeStack.pop_back();
 
-		// Read bone parent data
-		for (size_t i = 0; i < boneCount; ++i)
-		{
-			int parentIndex = -1;
-			file.read(reinterpret_cast<char*>(&parentIndex), sizeof(int));
-			m_boneParents[i] = parentIndex;
-		}
+			Bone boneData{};
+			boneData.Name = node->mName.C_Str();
+			aiMatrix4x4 transposed = node->mTransformation.Transpose();
+			boneData.Transform = XMFLOAT4X4(reinterpret_cast<float*>(&transposed.a1));
 
-		size_t submeshCount = 0;
-		file.read(reinterpret_cast<char*>(&submeshCount), sizeof(size_t));
-		m_submeshes.resize(submeshCount);
-		for (size_t i = 0; i < submeshCount; ++i)
-		{
-			size_t nameLength = 0;
-
-			Submesh& submesh = m_submeshes[i];
-			file.read(reinterpret_cast<char*>(&nameLength), sizeof(size_t));
-			submesh.Name.resize(nameLength);
-			file.read(submesh.Name.data(), nameLength);
-			file.read(reinterpret_cast<char*>(&submesh.IndexCount), sizeof(unsigned int));
-			file.read(reinterpret_cast<char*>(&submesh.StartIndexLocation), sizeof(unsigned int));
-			file.read(reinterpret_cast<char*>(&submesh.BaseVertexLocation), sizeof(unsigned int));
-
-			file.read(reinterpret_cast<char*>(&submesh.NodeID), sizeof(int));
-			size_t boneCount = 0;
-			file.read(reinterpret_cast<char*>(&boneCount), sizeof(size_t));
-			submesh.BoneNodeIDs.resize(boneCount);
-			for (size_t j = 0; j < boneCount; ++j)
+			for (unsigned int i = 0; i < node->mNumMeshes; ++i)
 			{
-				size_t boneNameLength = 0;
-				file.read(reinterpret_cast<char*>(&boneNameLength), sizeof(size_t));
-				submesh.BoneNodeIDs[j].resize(boneNameLength);
-				file.read(submesh.BoneNodeIDs[j].data(), boneNameLength);
+				meshStack.emplace_back(node, scene->mMeshes[node->mMeshes[i]]);
 			}
 
-			submesh.BoneOffsets.resize(boneCount);
-			for (size_t j = 0; j < boneCount; ++j)
+			m_boneIndexMap[boneData.Name] = static_cast<int>(m_bones.size());
+			m_bones.emplace_back(boneData);
+			m_boneParents.push_back(parentIndex);
+
+			for (unsigned int i = 0; i < node->mNumChildren; ++i)
 			{
-				file.read(reinterpret_cast<char*>(&submesh.BoneOffsets[j]), sizeof(Matrix4x4));
+				nodeStack.emplace_back(node->mChildren[i], static_cast<int>(m_bones.size()) - 1);
 			}
 		}
 
-		size_t vertexCount = 0;
-		file.read(reinterpret_cast<char*>(&vertexCount), sizeof(size_t));
-		vertices.resize(vertexCount);
-		for (size_t i = 0; i < vertexCount; ++i)
+		for (const auto& [node, mesh] : meshStack)
 		{
-			RiggedVertex& vertex = vertices[i];
-			file.read(reinterpret_cast<char*>(&vertex.position), sizeof(Vector3));
-			file.read(reinterpret_cast<char*>(&vertex.uv), sizeof(Vector2));
-			file.read(reinterpret_cast<char*>(&vertex.normal), sizeof(Vector3));
-			file.read(reinterpret_cast<char*>(&vertex.tangent), sizeof(Vector3));
-			file.read(reinterpret_cast<char*>(&vertex.boneIndices), sizeof(UINT));
-			file.read(reinterpret_cast<char*>(&vertex.boneWeights), sizeof(Vector4));
+			Submesh submesh{};
+			submesh.Name = node->mName.C_Str();
+			submesh.StartIndexLocation = static_cast<unsigned int>(indices.size());
+			submesh.BaseVertexLocation = static_cast<unsigned int>(vertices.size());
+			auto nodeIter = m_boneIndexMap.find(submesh.Name);
+			submesh.NodeID = nodeIter == m_boneIndexMap.end() ? -1 : nodeIter->second;
 
+			for (unsigned int i = 0; i < mesh->mNumVertices; ++i)
+			{
+				RiggedVertex vertex{};
+				vertex.position = XMFLOAT3(mesh->mVertices[i].x, mesh->mVertices[i].y, mesh->mVertices[i].z);
+				if (mesh->HasNormals())
+				{
+					vertex.normal = XMFLOAT3(mesh->mNormals[i].x, mesh->mNormals[i].y, mesh->mNormals[i].z);
+				}
+				if (mesh->HasTextureCoords(0))
+				{
+					vertex.uv = XMFLOAT2(mesh->mTextureCoords[0][i].x, mesh->mTextureCoords[0][i].y);
+				}
+				if (mesh->HasTangentsAndBitangents())
+				{
+					vertex.tangent = XMFLOAT3(mesh->mTangents[i].x, mesh->mTangents[i].y, mesh->mTangents[i].z);
+				}
+				vertex.boneIndices = 0;
+				vertex.boneWeights = XMFLOAT4(0.0f, 0.0f, 0.0f, 0.0f);
+				vertices.emplace_back(vertex);
+			}
+
+			for (unsigned int i = 0; i < mesh->mNumFaces; ++i)
+			{
+				const aiFace& face = mesh->mFaces[i];
+				for (unsigned int j = 0; j < face.mNumIndices; ++j)
+				{
+					indices.push_back(face.mIndices[j]);
+				}
+			}
+
+			if (mesh->HasBones())
+			{
+				std::vector<unsigned int> weightCount(vertices.size(), 0);
+				for (unsigned int boneIndex = 0; boneIndex < mesh->mNumBones; ++boneIndex)
+				{
+					aiBone* boneSrc = mesh->mBones[boneIndex];
+					submesh.BoneNodeIDs.emplace_back(boneSrc->mName.C_Str());
+					aiMatrix4x4 offsetTransposed = boneSrc->mOffsetMatrix.Transpose();
+					submesh.BoneOffsets.emplace_back(reinterpret_cast<float*>(&offsetTransposed.a1));
+
+					for (unsigned int weightIndex = 0; weightIndex < boneSrc->mNumWeights; ++weightIndex)
+					{
+						const auto& weightSrc = boneSrc->mWeights[weightIndex];
+						unsigned int vertexID = submesh.BaseVertexLocation + weightSrc.mVertexId;
+						float weight = weightSrc.mWeight;
+
+						switch (++weightCount[vertexID])
+						{
+						case 1:
+							vertices[vertexID].boneIndices |= boneIndex;
+							vertices[vertexID].boneWeights.x = weight;
+							break;
+						case 2:
+							vertices[vertexID].boneIndices |= boneIndex << 8;
+							vertices[vertexID].boneWeights.y = weight;
+							break;
+						case 3:
+							vertices[vertexID].boneIndices |= boneIndex << 16;
+							vertices[vertexID].boneWeights.z = weight;
+							break;
+						case 4:
+							vertices[vertexID].boneIndices |= boneIndex << 24;
+							vertices[vertexID].boneWeights.w = weight;
+							break;
+						default:
+							DebugConsole::LogError("Vertex has more than 4 bones affecting it.");
+							break;
+						}
+					}
+				}
+			}
+
+			submesh.IndexCount = static_cast<unsigned int>(indices.size()) - submesh.StartIndexLocation;
+			m_submeshes.emplace_back(std::move(submesh));
 		}
 
-		size_t indexCount = 0;
-		file.read(reinterpret_cast<char*>(&indexCount), sizeof(size_t));
-		indices.resize(indexCount);
-		for (size_t i = 0; i < indexCount; ++i)
+		if (vertices.empty() || indices.empty())
 		{
-			file.read(reinterpret_cast<char*>(&indices[i]), sizeof(UINT));
+			DebugConsole::LogError("No rigged mesh data loaded from file: " + resourcePath.string());
+			return;
 		}
 
 		MeshBase::CreateBuffers<RiggedVertex>(vertices, indices);

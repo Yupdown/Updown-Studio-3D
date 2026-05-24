@@ -40,7 +40,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     UpdownStudio::RegisterUpdateCallback(Update);
 
     std::shared_ptr<Scene> scene = std::make_shared<Scene>();
-    auto mesh = INSTANCE(Resource)->Load<udsdx::Mesh>(L"resource\\model\\maxwell.yms");
+    auto mesh = INSTANCE(Resource)->Load<udsdx::Mesh>(L"resource\\model\\maxwell.obj");
     auto pipelineState = INSTANCE(Resource)->Load<Shader>(L"resource\\shader\\color.hlsl");
     auto pipelineStateTexture = INSTANCE(Resource)->Load<Shader>(L"resource\\shader\\color.hlsl");
     audioClip = INSTANCE(Resource)->Load<AudioClip>(L"resource\\audio\\Psychic_Soothe_Pulser_01a.wav");

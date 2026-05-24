@@ -12,4 +12,3 @@ cmake --build --preset build-debug
 Targets:
 - `engine` static library
 - `demo` executable
-- `SceneExport` executable (`tools/SceneExport`)

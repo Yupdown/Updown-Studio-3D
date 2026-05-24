@@ -1,1 +1,0 @@
-x64\Release\SceneExport.exe ..\..\resource
