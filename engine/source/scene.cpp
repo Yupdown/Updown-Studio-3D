@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "scene.h"
 #include "light_directional.h"
+#include "environment_map.h"
 #include "shadow_map.h"
 #include "screen_space_ao.h"
 #include "renderer_base.h"
@@ -52,6 +53,7 @@ namespace udsdx
 	{
 		m_renderCameraQueue.clear();
 		m_renderLightQueue.clear();
+		m_renderEnvironmentMapQueue.clear();
 		for (auto& queue : m_renderObjectQueues)
 		{
 			queue.clear();
@@ -224,6 +226,11 @@ namespace udsdx
 		m_renderLightQueue.emplace_back(light);
 	}
 
+	void Scene::EnqueueRenderEnvironmentMap(EnvironmentMap* environmentMap)
+	{
+		m_renderEnvironmentMapQueue.emplace_back(environmentMap);
+	}
+
 	void Scene::EnqueueRenderObject(RendererBase* object, RenderGroup group, ID3D12PipelineState* pipelineState, ID3D12PipelineState* deferredPipelineState, int parameter)
 	{
 		m_renderObjectQueues[group][deferredPipelineState][pipelineState].emplace_back(object, parameter);
@@ -284,6 +291,7 @@ namespace udsdx
 
 		PassRenderSSAO(param, camera);
 
+		param.RenderEnvironmentMap = m_renderEnvironmentMapQueue.empty() ? nullptr : m_renderEnvironmentMapQueue.front();
 		param.Renderer->PassRender(param, cameraCbv, defferedPipelineStates);
 
 		// Forward rendering pass

@@ -38,6 +38,7 @@
 #include "inline_mesh_renderer.h"
 #include "camera.h"
 #include "light_directional.h"
+#include "environment_map.h"
 
 namespace udsdx
 {

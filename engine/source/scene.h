@@ -9,6 +9,7 @@ namespace udsdx
 	class GUIElement;
 	class Camera;
 	class LightDirectional;
+	class EnvironmentMap;
 
 	class Scene
 	{
@@ -47,6 +48,7 @@ namespace udsdx
 	public:
 		void EnqueueRenderCamera(Camera* camera);
 		void EnqueueRenderLight(LightDirectional* light);
+		void EnqueueRenderEnvironmentMap(EnvironmentMap* environmentMap);
 		void EnqueueRenderObject(RendererBase* object, RenderGroup group, ID3D12PipelineState* pipelineState, ID3D12PipelineState* deferredPipelineState, int parameter);
 		void EnqueueRenderShadowObject(RendererBase* object, ID3D12PipelineState* pipelineState, int parameter);
 		void EnqueueRenderGUIObject(GUIElement* object);
@@ -67,6 +69,7 @@ namespace udsdx
 
 		std::vector<Camera*> m_renderCameraQueue;
 		std::vector<LightDirectional*> m_renderLightQueue;
+		std::vector<EnvironmentMap*> m_renderEnvironmentMapQueue;
 		std::array<RendererGroup, 2> m_renderObjectQueues;
 		std::unordered_map<ID3D12PipelineState*, std::vector<std::pair<RendererBase*, int>>> m_renderShadowObjectQueue;
 		std::vector<GUIElement*> m_renderGUIObjectQueue;

@@ -3,8 +3,11 @@
 #include "screen_space_ao.h"
 #include "shadow_map.h"
 #include "texture.h"
+#include "environment_map.h"
 #include "scene.h"
 #include "shader_compile.h"
+#include "compiled_shaders/vs_skybox.h"
+#include "compiled_shaders/ps_skybox.h"
 
 namespace udsdx
 {
@@ -13,6 +16,7 @@ namespace udsdx
 		m_device = device;
 
 		BuildRootSignature();
+		BuildSkyboxPipelineState();
     }
 
     DeferredRenderer::~DeferredRenderer()
@@ -155,6 +159,82 @@ namespace udsdx
 			serializedRootSig->GetBufferPointer(),
 			serializedRootSig->GetBufferSize(),
 			IID_PPV_ARGS(m_renderRootSignature.GetAddressOf())));
+	}
+
+	void DeferredRenderer::BuildSkyboxPipelineState()
+	{
+		CD3DX12_DESCRIPTOR_RANGE depthTable;
+		depthTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+
+		CD3DX12_DESCRIPTOR_RANGE skyboxTable;
+		skyboxTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
+
+		CD3DX12_ROOT_PARAMETER rootParameters[3]{};
+		rootParameters[0].InitAsConstantBufferView(0);
+		rootParameters[1].InitAsDescriptorTable(1, &depthTable, D3D12_SHADER_VISIBILITY_PIXEL);
+		rootParameters[2].InitAsDescriptorTable(1, &skyboxTable, D3D12_SHADER_VISIBILITY_PIXEL);
+
+		CD3DX12_STATIC_SAMPLER_DESC samplers[] = {
+			CD3DX12_STATIC_SAMPLER_DESC(
+				0,
+				D3D12_FILTER_MIN_MAG_MIP_POINT,
+				D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+				D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+				D3D12_TEXTURE_ADDRESS_MODE_CLAMP),
+			CD3DX12_STATIC_SAMPLER_DESC(
+				1,
+				D3D12_FILTER_MIN_MAG_MIP_LINEAR,
+				D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+				D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+				D3D12_TEXTURE_ADDRESS_MODE_CLAMP)
+		};
+
+		CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(
+			_countof(rootParameters),
+			rootParameters,
+			_countof(samplers),
+			samplers,
+			D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+		ComPtr<ID3DBlob> serializedRootSig = nullptr;
+		ComPtr<ID3DBlob> errorBlob = nullptr;
+		HRESULT hr = D3D12SerializeRootSignature(
+			&rootSigDesc,
+			D3D_ROOT_SIGNATURE_VERSION_1,
+			serializedRootSig.GetAddressOf(),
+			errorBlob.GetAddressOf());
+
+		if (errorBlob != nullptr)
+		{
+			::OutputDebugStringA((char*)errorBlob->GetBufferPointer());
+		}
+		ThrowIfFailed(hr);
+
+		ThrowIfFailed(m_device->CreateRootSignature(
+			0,
+			serializedRootSig->GetBufferPointer(),
+			serializedRootSig->GetBufferSize(),
+			IID_PPV_ARGS(m_skyboxRootSignature.GetAddressOf())));
+
+		D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc{};
+		psoDesc.InputLayout = { nullptr, 0 };
+		psoDesc.pRootSignature = m_skyboxRootSignature.Get();
+		psoDesc.VS = { g_cso_vs_skybox, sizeof(g_cso_vs_skybox) };
+		psoDesc.PS = { g_cso_ps_skybox, sizeof(g_cso_ps_skybox) };
+		psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+		psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+		psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+		psoDesc.DepthStencilState.DepthEnable = false;
+		psoDesc.DepthStencilState.StencilEnable = false;
+		psoDesc.SampleMask = UINT_MAX;
+		psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+		psoDesc.NumRenderTargets = 1;
+		psoDesc.RTVFormats[0] = DXGI_FORMAT_R11G11B10_FLOAT;
+		psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+		psoDesc.SampleDesc.Count = 1;
+
+		ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(m_skyboxPipelineState.GetAddressOf())));
+		m_skyboxPipelineState->SetName(L"DeferredRenderer::SkyboxPass");
 	}
 
     void DeferredRenderer::RebuildDescriptors()
@@ -391,6 +471,16 @@ namespace udsdx
 			pCommandList->SetPipelineState(pipelineStates[index]);
 			pCommandList->OMSetStencilRef(static_cast<UINT>(index));
 
+			pCommandList->DrawInstanced(6, 1, 0, 0);
+		}
+
+		if (renderParam.RenderEnvironmentMap != nullptr && renderParam.RenderEnvironmentMap->HasValidCubeMap())
+		{
+			pCommandList->SetGraphicsRootSignature(m_skyboxRootSignature.Get());
+			pCommandList->SetPipelineState(m_skyboxPipelineState.Get());
+			pCommandList->SetGraphicsRootConstantBufferView(0, cbvGpu);
+			pCommandList->SetGraphicsRootDescriptorTable(1, m_depthBufferGpuSrv);
+			pCommandList->SetGraphicsRootDescriptorTable(2, renderParam.RenderEnvironmentMap->GetCubeMapSrvGpu());
 			pCommandList->DrawInstanced(6, 1, 0, 0);
 		}
 

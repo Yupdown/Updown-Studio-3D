@@ -21,6 +21,7 @@ namespace udsdx
 
 		D3D12_CPU_DESCRIPTOR_HANDLE GetSrvCpu() const;
 		D3D12_GPU_DESCRIPTOR_HANDLE GetSrvGpu() const;
+		bool HasShaderResourceView() const { return m_hasShaderResourceView; }
 
 		Vector2Int GetSize() const { return m_size; }
 		int GetWidth() const { return m_size.x; }
@@ -31,8 +32,9 @@ namespace udsdx
 
 		ComPtr<ID3D12Resource> m_texture;
 
-		D3D12_CPU_DESCRIPTOR_HANDLE m_srvCpu;
-		D3D12_GPU_DESCRIPTOR_HANDLE m_srvGpu;
+		D3D12_CPU_DESCRIPTOR_HANDLE m_srvCpu{};
+		D3D12_GPU_DESCRIPTOR_HANDLE m_srvGpu{};
+		bool m_hasShaderResourceView = false;
 
 		Vector2Int m_size = Vector2Int(0, 0);
 	};

@@ -659,6 +659,7 @@ namespace udsdx
 			.RenderPostProcessBloom = m_postProcessBloom.get(),
 			.RenderPostProcessFXAA = m_postProcessFXAA.get(),
 			.RenderPostProcessOutline = m_postProcessOutline.get(),
+			.RenderEnvironmentMap = nullptr,
 
 			.TracyQueueContext = &m_tracyQueueCtx
 		};
@@ -1227,6 +1228,11 @@ namespace udsdx
 		return m_rootSignature.Get();
 	}
 
+	ID3D12DescriptorHeap* Core::GetSrvDescriptorHeap() const
+	{
+		return m_srvHeap.Get();
+	}
+
 	ID3D12Resource* Core::CurrentBackBuffer() const
 	{
 		return m_swapChainBuffers[m_currBackBuffer].Get();
@@ -1299,6 +1305,18 @@ namespace udsdx
 		m_srvHeapSize = static_cast<UINT>(param.SrvCpuHandle.ptr - m_srvHeap->GetCPUDescriptorHandleForHeapStart().ptr) / m_cbvSrvUavDescriptorSize;
 		m_rtvHeapSize = static_cast<UINT>(param.RtvCpuHandle.ptr - m_rtvHeap->GetCPUDescriptorHandleForHeapStart().ptr) / m_rtvDescriptorSize;
 		m_dsvHeapSize = static_cast<UINT>(param.DsvCpuHandle.ptr - m_dsvHeap->GetCPUDescriptorHandleForHeapStart().ptr) / m_dsvDescriptorSize;
+	}
+
+	void Core::EnsureTextureShaderResourceView(Texture* texture)
+	{
+		if (texture == nullptr || texture->HasShaderResourceView())
+		{
+			return;
+		}
+
+		DescriptorParam descriptorParam = GetDescriptorParameters();
+		texture->CreateShaderResourceView(m_d3dDevice.Get(), descriptorParam);
+		ApplyDescriptorParameters(descriptorParam);
 	}
 
 	RenderOptions& Core::GetRenderOptionsRef()

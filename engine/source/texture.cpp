@@ -121,6 +121,11 @@ namespace udsdx
 
 	void Texture::CreateShaderResourceView(ID3D12Device* device, DescriptorParam& descriptorParam)
 	{
+		if (m_hasShaderResourceView)
+		{
+			return;
+		}
+
 		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 		srvDesc.Format = m_texture->GetDesc().Format;
@@ -137,6 +142,7 @@ namespace udsdx
 		descriptorParam.SrvGpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
 
 		device->CreateShaderResourceView(m_texture.Get(), &srvDesc, m_srvCpu);
+		m_hasShaderResourceView = true;
 	}
 
 	D3D12_CPU_DESCRIPTOR_HANDLE Texture::GetSrvCpu() const

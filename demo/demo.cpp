@@ -12,6 +12,7 @@ std::array<float, 100> rotations;
 
 std::shared_ptr<SceneObject> cameraObject;
 std::shared_ptr<SceneObject> lightObject;
+std::shared_ptr<SceneObject> environmentObject;
 
 std::unique_ptr<SoundEffectInstance> soundEffectInstance;
 AudioClip* audioClip;
@@ -95,6 +96,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     auto light = lightObject->AddComponent<LightDirectional>();
     lightObject->GetTransform()->SetLocalRotation(Quaternion::CreateFromYawPitchRoll(0.5f, 0.5f, 0));
     scene->AddObject(lightObject);
+
+    environmentObject = SceneObject::MakeShared();
+    auto environmentMap = environmentObject->AddComponent<EnvironmentMap>();
+    environmentMap->SetEnvironmentMap(L"resource\\texture\\kloofendal_48d_partly_cloudy_puresky_4k.hdr");
+    scene->AddObject(environmentObject);
 
     for (auto& rotation : rotations)
     {

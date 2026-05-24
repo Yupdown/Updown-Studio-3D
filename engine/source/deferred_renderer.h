@@ -19,6 +19,7 @@ namespace udsdx
 		void BuildRootSignature();
 		void RebuildDescriptors();
 		void BuildResources();
+		void BuildSkyboxPipelineState();
 
 	public:
 		void ClearRenderTargets(ID3D12GraphicsCommandList* commandList);
@@ -61,6 +62,8 @@ namespace udsdx
 		UINT m_height = 0;
 
 		ComPtr<ID3D12RootSignature> m_renderRootSignature;
+		ComPtr<ID3D12RootSignature> m_skyboxRootSignature;
+		ComPtr<ID3D12PipelineState> m_skyboxPipelineState;
 
 		// Multiple Render Target (MRT) for deferred rendering
 		std::array<ComPtr<ID3D12Resource>, NUM_GBUFFERS> m_gBuffers;

@@ -15,6 +15,7 @@ namespace udsdx
 	class PostProcessBloom;
 	class PostProcessFXAA;
 	class PostProcessOutline;
+	class Texture;
 
 	class Core
 	{
@@ -63,6 +64,7 @@ namespace udsdx
 		ID3D12CommandAllocator* GetCommandAllocator() const;
 		ID3D12GraphicsCommandList* GetCommandList() const;
 		ID3D12RootSignature* GetRootSignature() const;
+		ID3D12DescriptorHeap* GetSrvDescriptorHeap() const;
 		DeferredRenderer* GetRenderer() const;
 		ShadowMap* GetShadowMap() const;
 		ScreenSpaceAO* GetScreenSpaceAO() const;
@@ -76,6 +78,7 @@ namespace udsdx
 
 		DescriptorParam GetDescriptorParameters() const;
 		void ApplyDescriptorParameters(const DescriptorParam& param);
+		void EnsureTextureShaderResourceView(Texture* texture);
 		RenderOptions& GetRenderOptionsRef();
 
 		int GetClientPosX() const;

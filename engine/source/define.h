@@ -30,6 +30,7 @@ namespace udsdx
 	class PostProcessFXAA;
 	class PostProcessOutline;
 	class BoundingCamera;
+	class EnvironmentMap;
 
 	struct RenderOptions
 	{
@@ -85,6 +86,7 @@ namespace udsdx
 		PostProcessBloom* RenderPostProcessBloom;
 		PostProcessFXAA* RenderPostProcessFXAA;
 		PostProcessOutline* RenderPostProcessOutline;
+		EnvironmentMap* RenderEnvironmentMap;
 
 		TracyD3D12Ctx* TracyQueueContext;
 	};

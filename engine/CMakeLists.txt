@@ -9,6 +9,7 @@ set(ENGINE_SOURCES
     source/d3dUtil.cpp
     source/debug_console.cpp
     source/deferred_renderer.cpp
+    source/environment_map.cpp
     source/font.cpp
     source/frame_debug.cpp
     source/frame_resource.cpp
@@ -185,6 +186,7 @@ set(ENGINE_SHADER_HEADERS)
 add_engine_shader(resource/cs_motion_blur_neighbormax.hlsl CS cs_6_0)
 add_engine_shader(resource/cs_motion_blur_tilemax.hlsl CS cs_6_0)
 add_engine_shader(resource/cs_screenspace_ao_blur.hlsl CS cs_6_0)
+add_engine_shader(resource/cs_env_equirect_to_cubemap.hlsl CS cs_6_0)
 add_engine_shader(resource/ps_bloom_downsample.hlsl PS ps_6_0)
 add_engine_shader(resource/ps_bloom_prepass.hlsl PS ps_6_0)
 add_engine_shader(resource/ps_bloom_synthesize.hlsl PS ps_6_0)
@@ -192,6 +194,7 @@ add_engine_shader(resource/ps_bloom_upsample.hlsl PS ps_6_0)
 add_engine_shader(resource/ps_motion_blur_pass.hlsl PS ps_6_0)
 add_engine_shader(resource/ps_outline.hlsl PS ps_6_0)
 add_engine_shader(resource/ps_screenspace_ao.hlsl PS ps_6_0)
+add_engine_shader(resource/ps_skybox.hlsl PS ps_6_0)
 add_engine_shader(resource/ps_fxaa.hlsl FXAAPS ps_6_0
     EXTRA_DEFINES
         FXAA_PC=1
@@ -199,6 +202,7 @@ add_engine_shader(resource/ps_fxaa.hlsl FXAAPS ps_6_0
         FXAA_QUALITY__PRESET=12
 )
 add_engine_shader(resource/vs_drawscreen.hlsl VS vs_6_0)
+add_engine_shader(resource/vs_skybox.hlsl VS vs_6_0)
 
 add_custom_target(engine_compiled_shaders DEPENDS ${ENGINE_SHADER_HEADERS})
 add_dependencies(engine engine_compiled_shaders)
