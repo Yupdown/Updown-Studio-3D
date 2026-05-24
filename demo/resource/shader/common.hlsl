@@ -97,7 +97,7 @@ struct VertexOut
 struct PixelOut
 {
 	float4 Buffer1 : SV_TARGET0;
-    float2 Buffer2 : SV_TARGET1;
+    float4 Buffer2 : SV_TARGET1;
     float4 Buffer3 : SV_TARGET2;
 };
 
@@ -188,11 +188,6 @@ float3 NormalSampleToWorldSpace(float3 normalSample, float3 normalW, float3 tang
 
     float3x3 TBN = float3x3(T, B, N);
     return mul(normalT, TBN);
-}
-
-float2 PackNormal(float3 n)
-{
-	return normalize(n.xy) * sqrt(n.z * 0.5f + 0.5f);
 }
 
 float2 PackMotion(float4 posH, float4 prevPosH)
@@ -373,14 +368,6 @@ float ShadowValue(float4 posW, float3 normalW, float bias = 0.0f)
 
 static const float gamma = 2.2f;
 
-float3 ReconstructNormal(float2 np)
-{
-	float3 n;
-	n.z = dot(np, np) * 2.0f - 1.0f;
-	n.xy = normalize(np) * sqrt(1.0f - n.z * n.z);
-	return n;
-}
-
 float3 AmbientLight(VertexOut pin)
 {
 	// Sky color. #133771
@@ -392,7 +379,7 @@ float3 AmbientLight(VertexOut pin)
 
 float3 DiffuseLight(VertexOut pin)
 {
-	float3 normalV = ReconstructNormal(gBuffer2.Sample(gsamPointClamp, pin.TexC).xy);
+	float3 normalV = normalize(gBuffer2.Sample(gsamPointClamp, pin.TexC).xyz * 2.0f - 1.0f);
 	float3 normalW = normalize(mul(normalV, transpose((float3x3)gView)));
 
     float3 lightColor = 1.0f;
@@ -431,7 +418,7 @@ float3 ApplyFog(float3 col, float3 worldPos)
 
 float4 PSDeferredDefault(VertexOut pin) : SV_Target
 {
-	float3 normalV = ReconstructNormal(gBuffer2.Sample(gsamPointClamp, pin.TexC).xy);
+	float3 normalV = normalize(gBuffer2.Sample(gsamPointClamp, pin.TexC).xyz * 2.0f - 1.0f);
 	float3 normalW = normalize(mul(normalV, transpose((float3x3)gView)));
 
 	float depth = gBufferDSV.Sample(gsamPointClamp, pin.TexC).r;

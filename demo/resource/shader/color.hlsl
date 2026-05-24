@@ -27,7 +27,7 @@ PixelOut PS(VertexOut pin)
     clip(texColor.a - 0.1f);
      
     pOut.Buffer1 = texColor;
-    pOut.Buffer2 = PackNormal(normal);
+    pOut.Buffer2 = float4(normal * 0.5f + 0.5f, 1.0f);
     pOut.Buffer3.rg = PackMotion(posH, pin.PrevPosH);
     return pOut;
 }

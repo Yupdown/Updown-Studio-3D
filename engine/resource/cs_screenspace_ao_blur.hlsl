@@ -40,14 +40,6 @@ float NdcDepthToViewDepth(float z_ndc)
 	return viewZ;
 }
 
-float3 ReconstructNormal(float2 np)
-{
-	float3 n;
-	n.z = dot(np, np) * 2.0f - 1.0f;
-	n.xy = normalize(np) * sqrt(1.0f - n.z * n.z);
-	return n;
-}
-
 // 20 Bytes per kernel. Expected to take up 1'280 Bytes of shared memory.
 groupshared float gColorCache[THREAD_SIZE + BLUR_SAMPLE * 2];
 groupshared float3 gNormalCache[THREAD_SIZE + BLUR_SAMPLE * 2];
@@ -65,21 +57,21 @@ void CS(int3 id : SV_DISPATCHTHREADID, int3 tid : SV_GROUPTHREADID)
 	
 	// Store the cache value.
 	gColorCache[cacheID] = gSrcTex.Load(dstID).r;
-	gNormalCache[cacheID] = ReconstructNormal(gNormalMap.Load(dstID).rg);
+	gNormalCache[cacheID] = normalize(gNormalMap.Load(dstID).xyz * 2.0f - 1.0f);
 	gDepthCache[cacheID] = NdcDepthToViewDepth(gDepthMap.Load(dstID).r);
 
 	if (tid.x < BLUR_SAMPLE)
 	{
 	    int3 dstpID = max(dstID - offsetID * BLUR_SAMPLE, int3(0, 0, 0));
 		gColorCache[cacheID - BLUR_SAMPLE] = gSrcTex.Load(dstpID).r;
-		gNormalCache[cacheID - BLUR_SAMPLE] = ReconstructNormal(gNormalMap.Load(dstpID).rg);
+		gNormalCache[cacheID - BLUR_SAMPLE] = normalize(gNormalMap.Load(dstpID).xyz * 2.0f - 1.0f);
 		gDepthCache[cacheID - BLUR_SAMPLE] = NdcDepthToViewDepth(gDepthMap.Load(dstpID).r);
 	}
 	if (tid.x >= THREAD_SIZE - BLUR_SAMPLE)
 	{
 	    int3 dstpID = min(dstID + offsetID * BLUR_SAMPLE, int3(width - 1, height - 1, 0));
 		gColorCache[cacheID + BLUR_SAMPLE] = gSrcTex.Load(dstpID).r;
-		gNormalCache[cacheID + BLUR_SAMPLE] = ReconstructNormal(gNormalMap.Load(dstpID).rg);
+		gNormalCache[cacheID + BLUR_SAMPLE] = normalize(gNormalMap.Load(dstpID).xyz * 2.0f - 1.0f);
 		gDepthCache[cacheID + BLUR_SAMPLE] = NdcDepthToViewDepth(gDepthMap.Load(dstpID).r);
 	}
 

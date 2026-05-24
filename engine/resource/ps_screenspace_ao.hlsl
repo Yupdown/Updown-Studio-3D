@@ -55,20 +55,12 @@ float NdcDepthToViewDepth(float z_ndc)
 	return viewZ;
 }
 
-float3 ReconstructNormal(float2 np)
-{
-	float3 n;
-	n.z = dot(np, np) * 2.0f - 1.0f;
-	n.xy = normalize(np) * sqrt(1.0f - n.z * n.z);
-	return n;
-}
- 
 float4 PS(VertexOut pin) : SV_Target
 {
 	// Extract random vector and map from [0,1] --> [-1, +1].
 	float3 randVec = 2.0f * rand3(float3(pin.TexC, 0.0f));
 
-	float3 n = ReconstructNormal(gNormalMap.Sample(gsamPointClamp, pin.TexC).xy);
+	float3 n = normalize(gNormalMap.Sample(gsamPointClamp, pin.TexC).xyz * 2.0f - 1.0f);
 	float pz = gDepthMap.Sample(gsamDepthMap, pin.TexC).r;
 	pz = NdcDepthToViewDepth(pz);
 	
