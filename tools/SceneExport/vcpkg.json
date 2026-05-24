@@ -1,7 +1,0 @@
-{
-    "name": "scene-export-libs",
-    "version-string": "1.0.0",
-  "dependencies": [
-    "assimp"
-  ]
-}

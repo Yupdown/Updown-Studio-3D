@@ -36,25 +36,11 @@ if(MSVC)
     target_compile_options(SceneExport PRIVATE /W3 /sdl)
 endif()
 
-# SceneExport uses its own vcpkg manifest/install tree in this repository.
-# When the top-level configure does not use a toolchain/manifest that includes
-# assimp, prepend the local package prefix so find_package works.
-set(_sceneexport_local_vcpkg_prefix
-    "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg_installed/x64-windows/x64-windows"
-)
-if(EXISTS "${_sceneexport_local_vcpkg_prefix}/share/assimp/assimpConfig.cmake")
-    list(PREPEND CMAKE_PREFIX_PATH "${_sceneexport_local_vcpkg_prefix}")
+if(TARGET assimp::assimp)
+    target_link_libraries(SceneExport PRIVATE assimp::assimp)
+elseif(TARGET assimp)
+    target_link_libraries(SceneExport PRIVATE assimp)
+else()
+    message(FATAL_ERROR "assimp target was not prepared by FetchContent.")
 endif()
 
-find_package(assimp CONFIG REQUIRED)
-target_link_libraries(SceneExport PRIVATE assimp::assimp)
-
-if(WIN32)
-    add_custom_command(TARGET SceneExport POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_RUNTIME_DLLS:SceneExport>
-            $<TARGET_FILE_DIR:SceneExport>
-        COMMAND_EXPAND_LISTS
-        VERBATIM
-    )
-endif()

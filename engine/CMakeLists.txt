@@ -47,7 +47,6 @@ set(ENGINE_SOURCES
     source/transform.cpp
     source/updown_studio.cpp
     source/vertex.cpp
-    tracy/public/TracyClient.cpp
 )
 
 add_library(engine STATIC ${ENGINE_SOURCES})
@@ -59,7 +58,7 @@ target_include_directories(engine
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/source
     PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/tracy/public
+        ${UPDOWN_DIRECTX_HEADERS_INCLUDE_DIR}
 )
 
 target_compile_definitions(engine
@@ -71,7 +70,6 @@ target_compile_definitions(engine
         WIN32_LEAN_AND_MEAN
         NOMINMAX
         IMGUI_DEFINE_MATH_OPERATORS
-        DIRECTX_TOOLKIT_IMPORT
         $<$<CONFIG:Debug>:_DEBUG>
         $<$<NOT:$<CONFIG:Debug>>:NDEBUG>
         $<$<CONFIG:Profile>:TRACY_ENABLE>
@@ -85,7 +83,6 @@ endif()
 target_precompile_headers(engine PRIVATE source/pch.h)
 set_source_files_properties(
     source/d3dUtil.cpp
-    tracy/public/TracyClient.cpp
     PROPERTIES SKIP_PRECOMPILE_HEADERS ON
 )
 
@@ -97,11 +94,6 @@ target_link_libraries(engine
         dxguid
         runtimeobject
 )
-
-find_package(directxtk12 CONFIG REQUIRED)
-find_package(directxtex CONFIG REQUIRED)
-find_package(imgui CONFIG REQUIRED)
-find_package(directx-dxc CONFIG REQUIRED)
 
 function(link_first_available imported_target visibility)
     foreach(candidate IN LISTS ARGN)
@@ -116,17 +108,15 @@ endfunction()
 
 link_first_available(engine PUBLIC
     Microsoft::DirectXTK12
+    DirectXTK12
     directxtk12::directxtk12
     unofficial::directxtk12::directxtk12
 )
 link_first_available(engine PUBLIC
     Microsoft::DirectXTex
+    DirectXTex
     directxtex::directxtex
     unofficial::directxtex::directxtex
-)
-link_first_available(engine PUBLIC
-    imgui::imgui
-    unofficial::imgui::imgui
 )
 link_first_available(engine PUBLIC
     Microsoft::DirectXShaderCompiler
@@ -134,25 +124,14 @@ link_first_available(engine PUBLIC
     unofficial::directx-dxc::directx-dxc
     dxcompiler
 )
-
-set(_vcpkg_triplet "${VCPKG_TARGET_TRIPLET}")
-if(NOT _vcpkg_triplet)
-    set(_vcpkg_triplet "x64-windows")
-endif()
-
-set(_vcpkg_installed_dir "${VCPKG_INSTALLED_DIR}")
-if(NOT _vcpkg_installed_dir)
-    set(_vcpkg_installed_dir "${CMAKE_BINARY_DIR}/vcpkg_installed")
-endif()
-
-find_program(ENGINE_DXC_EXECUTABLE
-    NAMES dxc dxc.exe
-    HINTS
-        "${_vcpkg_installed_dir}/${_vcpkg_triplet}/tools/directx-dxc/bin"
-        "${_vcpkg_installed_dir}/${_vcpkg_triplet}/tools/directx-dxc"
+link_first_available(engine PUBLIC
+    Tracy::TracyClient
+    TracyClient
 )
-if(NOT ENGINE_DXC_EXECUTABLE)
-    message(FATAL_ERROR "dxc executable was not found. Ensure the directx-dxc package is installed by vcpkg.")
+target_link_libraries(engine PUBLIC updown::imgui)
+
+if(NOT UPDOWN_DXC_EXECUTABLE)
+    message(FATAL_ERROR "UPDOWN_DXC_EXECUTABLE is not set. Check FetchContent DXC setup.")
 endif()
 
 set(ENGINE_COMPILED_SHADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/source/compiled_shaders")
@@ -180,7 +159,7 @@ function(add_engine_shader hlsl_file entrypoint profile)
     add_custom_command(
         OUTPUT "${shader_output}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${ENGINE_COMPILED_SHADER_DIR}"
-        COMMAND "${ENGINE_DXC_EXECUTABLE}"
+        COMMAND "${UPDOWN_DXC_EXECUTABLE}"
             -T ${profile}
             -E ${entrypoint}
             -Fh "${shader_output}"
@@ -222,30 +201,24 @@ add_dependencies(engine engine_compiled_shaders)
 target_sources(engine PRIVATE ${ENGINE_SHADER_HEADERS})
 
 function(copy_runtime_dll dll_name)
-    find_file(${dll_name}_DEBUG_PATH
-        NAMES ${dll_name}.dll
-        PATHS "${_vcpkg_installed_dir}/${_vcpkg_triplet}/debug/bin"
-        NO_DEFAULT_PATH
-    )
-    find_file(${dll_name}_RELEASE_PATH
-        NAMES ${dll_name}.dll
-        PATHS "${_vcpkg_installed_dir}/${_vcpkg_triplet}/bin"
-        NO_DEFAULT_PATH
-    )
+    set(_runtime_path "")
+    if(dll_name STREQUAL "dxcompiler")
+        set(_runtime_path "${UPDOWN_DXCOMPILER_DLL}")
+    elseif(dll_name STREQUAL "dxil")
+        set(_runtime_path "${UPDOWN_DXIL_DLL}")
+    endif()
 
-    if(${dll_name}_DEBUG_PATH AND ${dll_name}_RELEASE_PATH)
+    if(_runtime_path)
         add_custom_command(TARGET engine POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "$<IF:$<CONFIG:Debug>,${${dll_name}_DEBUG_PATH},${${dll_name}_RELEASE_PATH}>"
+                "${_runtime_path}"
                 "$<TARGET_FILE_DIR:engine>/${dll_name}.dll"
             VERBATIM
         )
     else()
-        message(WARNING "${dll_name}.dll was not found in the vcpkg install tree.")
+        message(WARNING "${dll_name}.dll path is not configured.")
     endif()
 endfunction()
 
 copy_runtime_dll(dxil)
 copy_runtime_dll(dxcompiler)
-copy_runtime_dll(DirectXTK12)
-copy_runtime_dll(DirectXTex)

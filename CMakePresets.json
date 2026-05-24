@@ -7,69 +7,27 @@
   },
   "configurePresets": [
     {
-      "name": "vs2026-x64-base",
-      "hidden": true,
+      "name": "vs2026-x64",
+      "displayName": "Visual Studio 2026 x64",
       "generator": "Visual Studio 18 2026",
       "architecture": "x64",
-      "binaryDir": "${sourceDir}/build/${presetName}",
-      "cacheVariables": {
-        "VCPKG_TARGET_TRIPLET": "x64-windows"
-      }
-    },
-    {
-      "name": "vs2026-x64-vcpkg",
-      "displayName": "Visual Studio 2026 x64 (vcpkg toolchain)",
-      "inherits": "vs2026-x64-base",
-      "condition": {
-        "type": "notEquals",
-        "lhs": "$env{VCPKG_ROOT}",
-        "rhs": ""
-      },
-      "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
-        "VCPKG_MANIFEST_MODE": "ON"
-      }
-    },
-    {
-      "name": "vs2026-x64-local-installed",
-      "displayName": "Visual Studio 2026 x64 (repo vcpkg_installed)",
-      "inherits": "vs2026-x64-base",
-      "cacheVariables": {
-        "CMAKE_PREFIX_PATH": "${sourceDir}/vcpkg_installed/x64-windows/x64-windows",
-        "VCPKG_INSTALLED_DIR": "${sourceDir}/vcpkg_installed/x64-windows",
-        "VCPKG_MANIFEST_MODE": "OFF"
-      }
+      "binaryDir": "${sourceDir}/build/${presetName}"
     }
   ],
   "buildPresets": [
     {
       "name": "build-debug",
-      "configurePreset": "vs2026-x64-vcpkg",
+      "configurePreset": "vs2026-x64",
       "configuration": "Debug"
     },
     {
       "name": "build-release",
-      "configurePreset": "vs2026-x64-vcpkg",
+      "configurePreset": "vs2026-x64",
       "configuration": "Release"
     },
     {
       "name": "build-profile",
-      "configurePreset": "vs2026-x64-vcpkg",
-      "configuration": "Profile"
-    },
-    {
-      "name": "build-debug-local",
-      "configurePreset": "vs2026-x64-local-installed",
-      "configuration": "Debug"
-    },
-    {
-      "name": "build-release-local",
-      "configurePreset": "vs2026-x64-local-installed",
-      "configuration": "Release"
-    },
-    {
-      "name": "build-profile-local",
-      "configurePreset": "vs2026-x64-local-installed",
+      "configurePreset": "vs2026-x64",
       "configuration": "Profile"
     }
   ]

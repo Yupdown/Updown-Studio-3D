@@ -48,11 +48,10 @@ set_target_properties(demo PROPERTIES
     VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/demo"
 )
 
-foreach(runtime_dll IN ITEMS dxil.dll dxcompiler.dll DirectXTK12.dll DirectXTex.dll)
-    add_custom_command(TARGET demo POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "$<TARGET_FILE_DIR:engine>/${runtime_dll}"
-            "$<TARGET_FILE_DIR:demo>/${runtime_dll}"
-        VERBATIM
-    )
-endforeach()
+add_custom_command(TARGET demo POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_RUNTIME_DLLS:demo>
+        $<TARGET_FILE_DIR:demo>
+    COMMAND_EXPAND_LISTS
+    VERBATIM
+)

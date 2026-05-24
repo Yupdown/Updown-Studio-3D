@@ -66,7 +66,6 @@ using namespace Microsoft::WRL;
 using namespace DirectX;
 
 // DirectXTK Library
-#define DIRECTX_TOOLKIT_IMPORT
 #include <directxtk12/Audio.h>
 #include <directxtk12/BufferHelpers.h>
 #include <directxtk12/CommonStates.h>
@@ -93,8 +92,8 @@ using namespace DirectX;
 #include <directxtk12/WICTextureLoader.h>
 
 // Tracy Profiler
-#include "../tracy/public/tracy/Tracy.hpp"
-#include "../tracy/public/tracy/TracyD3D12.hpp"
+#include <tracy/Tracy.hpp>
+#include <tracy/TracyD3D12.hpp>
 
 // ImGui Library
 #include <imgui.h>
