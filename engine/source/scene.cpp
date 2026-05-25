@@ -26,19 +26,14 @@ namespace udsdx
 {
 	namespace
 	{
-		float Halton(uint64_t index, uint32_t base)
-		{
-			float result = 0.0f;
-			float fraction = 1.0f;
-			uint64_t i = index;
-			while (i > 0)
-			{
-				fraction /= static_cast<float>(base);
-				result += fraction * static_cast<float>(i % base);
-				i /= base;
-			}
-			return result;
-		}
+		// Intel TAA (MiniEngine) uses a 16-step Halton(2,3) jitter pattern.
+		// 0.5 is neutral, therefore (sample - 0.5) maps to +-0.5 pixel radius.
+		constexpr std::array<Vector2, 16> kHalton23_16 = {
+			Vector2(0.0f, 0.0f), Vector2(0.5f, 0.333333f), Vector2(0.25f, 0.666667f), Vector2(0.75f, 0.111111f),
+			Vector2(0.125f, 0.444444f), Vector2(0.625f, 0.777778f), Vector2(0.375f, 0.222222f), Vector2(0.875f, 0.555556f),
+			Vector2(0.0625f, 0.888889f), Vector2(0.5625f, 0.037037f), Vector2(0.3125f, 0.37037f), Vector2(0.8125f, 0.703704f),
+			Vector2(0.1875f, 0.148148f), Vector2(0.6875f, 0.481481f), Vector2(0.4375f, 0.814815f), Vector2(0.9375f, 0.259259f)
+		};
 	}
 
 	extern unsigned long long g_localMatrixRecalculateCounter;
@@ -160,11 +155,11 @@ namespace udsdx
 		const bool enableTAAJitter = param.RenderOptions->DrawTAA;
 		const float viewportWidth = std::max(param.Viewport.Width, 1.0f);
 		const float viewportHeight = std::max(param.Viewport.Height, 1.0f);
-		const uint64_t haltonIndex = m_taaFrameIndex + 1;
+		const Vector2 haltonSample = kHalton23_16[m_taaFrameIndex % kHalton23_16.size()];
 		const Vector2 jitterOffset = enableTAAJitter
 			? Vector2(
-				(Halton(haltonIndex, 2) - 0.5f) * 2.0f / viewportWidth,
-				(Halton(haltonIndex, 3) - 0.5f) * 2.0f / viewportHeight)
+				(haltonSample.x - 0.5f) / viewportWidth,
+				(haltonSample.y - 0.5f) / viewportHeight)
 			: Vector2::Zero;
 
 		std::vector<D3D12_GPU_VIRTUAL_ADDRESS> cameraCbvs(m_renderCameraQueue.size());

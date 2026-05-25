@@ -56,20 +56,19 @@ namespace udsdx
 		pCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		pCommandList->SetPipelineState(m_pso.Get());
 
-		const float baseHistoryBlend = 0.90f;
-		const float velocityRejectScale = 1.0f;
+		const float maxHistoryBlend = 0.95f;
+		const float rcpSpeedLimiter = 1.0f / 64.0f;
 		const float velocityScale = 1.0f;
-		const float maxHistoryWeight = 1.0f;
 
 		const float taaParams[8] = {
 			1.0f / static_cast<float>(m_width),
 			1.0f / static_cast<float>(m_height),
 			m_historyValid ? 1.0f : 0.0f,
-			baseHistoryBlend,
-			48.0f,   // Depth edge rejection scale.
-			velocityRejectScale,
+			maxHistoryBlend,
+			rcpSpeedLimiter,
 			velocityScale,
-			maxHistoryWeight
+			0.0f,
+			0.0f
 		};
 		pCommandList->SetGraphicsRoot32BitConstants(0, 8, taaParams, 0);
 		pCommandList->SetGraphicsRootDescriptorTable(1, m_sourceGpuSrv);
