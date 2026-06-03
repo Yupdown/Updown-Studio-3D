@@ -88,6 +88,12 @@ namespace udsdx
 		void InitializeLoaders(ID3D12Device* device, ID3D12CommandQueue* commandQueue, ID3D12GraphicsCommandList* commandList, ID3D12RootSignature* rootSignature);
 		void InitializeExtensionDictionary();
 		void InitializeIgnoreFiles();
+		// Walks up the directory hierarchy starting from the executable's location and
+		// looks for an ancestor that contains the resource root folder. When found, the
+		// process working directory is set to that ancestor so the relative resource root
+		// resolves regardless of where the executable is launched from.
+		void ResolveResourceRootPath();
+		static std::filesystem::path GetExecutableDirectory();
 		static std::wstring NormalizePath(std::wstring_view path);
 
 	public:

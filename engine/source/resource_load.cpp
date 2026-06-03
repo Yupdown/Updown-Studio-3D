@@ -33,6 +33,8 @@ namespace udsdx
 
 	void Resource::Initialize(ID3D12Device* device, ID3D12CommandQueue* commandQueue, ID3D12GraphicsCommandList* commandList, ID3D12RootSignature* rootSignature)
 	{ ZoneScoped;
+		ResolveResourceRootPath();
+
 		InitializeLoaders(device, commandQueue, commandList, rootSignature);
 		InitializeExtensionDictionary();
 		InitializeIgnoreFiles();
@@ -107,6 +109,45 @@ namespace udsdx
 	void Resource::SetResourceRootPath(std::wstring_view path)
 	{
 		m_resourceRootPath = NormalizePath(path);
+	}
+
+	std::filesystem::path Resource::GetExecutableDirectory()
+	{
+		wchar_t moduleName[MAX_PATH] = {};
+		DWORD length = GetModuleFileNameW(nullptr, moduleName, MAX_PATH);
+		if (length == 0 || length == MAX_PATH)
+		{
+			return {};
+		}
+		return std::filesystem::path(moduleName).parent_path();
+	}
+
+	void Resource::ResolveResourceRootPath()
+	{ ZoneScoped;
+		// Walk up from the executable directory through every parent and use the first
+		// ancestor that contains the resource root folder. The working directory is then
+		// set to that ancestor so the relative root and the relative load paths resolve.
+		std::filesystem::path directory = GetExecutableDirectory();
+		while (!directory.empty())
+		{
+			std::filesystem::path candidate = directory / m_resourceRootPath;
+			if (std::filesystem::is_directory(candidate))
+			{
+				SetCurrentDirectoryW(directory.c_str());
+				DebugConsole::Log(L"Resource root located at: " + std::filesystem::weakly_canonical(candidate).wstring());
+				return;
+			}
+
+			std::filesystem::path parent = directory.parent_path();
+			if (parent == directory)
+			{
+				// reached the filesystem root without finding the folder
+				break;
+			}
+			directory = parent;
+		}
+
+		DebugConsole::LogWarning(L"Failed to locate the '" + m_resourceRootPath + L"' folder by walking up from the executable directory; falling back to the current working directory.");
 	}
 
 	void Resource::InitializeExtensionDictionary()
