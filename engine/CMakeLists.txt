@@ -7,6 +7,7 @@ set(ENGINE_SOURCES
     source/component.cpp
     source/core.cpp
     source/d3dUtil.cpp
+    source/dds_cache.cpp
     source/debug_console.cpp
     source/deferred_renderer.cpp
     source/environment_map.cpp

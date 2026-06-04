@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "texture.h"
-#include "debug_console.h"
+#include "dds_cache.h"
 #include "core.h"
 
 #include <DirectXTex.h>
@@ -13,75 +13,17 @@ namespace udsdx
 		std::filesystem::path pathTexture(path);
 		m_name = pathTexture.filename().string();
 
-		std::filesystem::path pathDds(path);
-		pathDds.replace_extension(L".ddscache");
+		std::wstring extension = pathTexture.extension().wstring();
+		std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
+		const bool isHdr = (extension == L".hdr");
 
-		bool loadFromCache = false;
-		if (std::filesystem::exists(pathDds))
-		{
-			// Check when the file was last modified
-			auto lastWriteTime = std::filesystem::last_write_time(path);
-			auto lastWriteTimeCache = std::filesystem::last_write_time(pathDds);
-			if (lastWriteTimeCache >= lastWriteTime)
-			{
-				loadFromCache = true;
-			}
-		}
+		// Resolve (and lazily build, via texconv on the GPU) the compressed DDS in the
+		// executable-side cache, then load it for upload. All BC compression now happens
+		// out-of-process in texconv; this constructor only consumes the resulting DDS.
+		std::filesystem::path ddsPath = INSTANCE(DDSCache)->GetCompressedTexture(path, isHdr);
 
 		ScratchImage image;
-		if (loadFromCache)
-		{
-			ThrowIfFailed(::LoadFromDDSFile(pathDds.c_str(), DDS_FLAGS_NONE, nullptr, image));
-		}
-		else
-		{
-			std::filesystem::path sourcePath(path);
-			std::wstring extension = sourcePath.extension().wstring();
-			std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
-			const bool isHdr = (extension == L".hdr");
-
-			if (extension == L".tga")
-			{
-				ThrowIfFailed(::LoadFromTGAFile(path.data(), nullptr, image));
-			}
-			else if (isHdr)
-			{
-				ThrowIfFailed(::LoadFromHDRFile(path.data(), nullptr, image));
-			}
-			else
-			{
-				ThrowIfFailed(::LoadFromWICFile(path.data(), WIC_FLAGS_NONE, nullptr, image));
-			}
-
-			ScratchImage compressedImage;
-			CompressOptions compressOptions = {}; 
-			compressOptions.flags = TEX_COMPRESS_PARALLEL;
-			compressOptions.threshold = TEX_THRESHOLD_DEFAULT;
-			compressOptions.alphaWeight = TEX_ALPHA_WEIGHT_DEFAULT;
-
-			// Assertion for image size (for block compression)
-			if (image.GetMetadata().width % 4 || image.GetMetadata().height % 4)
-			{
-				throw std::runtime_error("Texture size must be a multiple of 4 for block compression");
-			}
-
-			ScratchImage mipChain;
-			const size_t mipChainLevels = static_cast<size_t>(std::log2(std::max(image.GetMetadata().width, image.GetMetadata().height))) + 1;
-
-			// Generate MipMaps
-			ThrowIfFailed(::GenerateMipMaps(image.GetImages(), image.GetImageCount(), image.GetMetadata(), TEX_FILTER_DEFAULT, mipChainLevels, mipChain));
-			// Use HDR-friendly BC6H compression for Radiance HDR, otherwise keep BC3 path.
-			const DXGI_FORMAT compressedFormat = isHdr
-				? DXGI_FORMAT_BC6H_UF16
-				: (DirectX::IsSRGB(mipChain.GetMetadata().format) ? DXGI_FORMAT_BC3_UNORM_SRGB : DXGI_FORMAT_BC3_UNORM);
-			ThrowIfFailed(::CompressEx(mipChain.GetImages(), mipChain.GetImageCount(), mipChain.GetMetadata(), compressedFormat, compressOptions, compressedImage, [&](size_t, size_t) { return true; }));
-
-			ThrowIfFailed(::SaveToDDSFile(compressedImage.GetImages(), compressedImage.GetImageCount(), compressedImage.GetMetadata(), DDS_FLAGS_NONE, pathDds.c_str()));
-			std::filesystem::last_write_time(pathDds, std::filesystem::last_write_time(path));
-
-			image = std::move(compressedImage);
-			DebugConsole::Log("\tTexture compressed and cached: " + pathDds.string());
-		}
+		ThrowIfFailed(::LoadFromDDSFile(ddsPath.c_str(), DDS_FLAGS_NONE, nullptr, image));
 
 		std::vector<D3D12_SUBRESOURCE_DATA> subresources;
 		ThrowIfFailed(::CreateTextureEx(device, image.GetMetadata(), D3D12_RESOURCE_FLAG_NONE, CREATETEX_DEFAULT, &m_texture));

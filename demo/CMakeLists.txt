@@ -55,3 +55,17 @@ add_custom_command(TARGET demo POST_BUILD
     COMMAND_EXPAND_LISTS
     VERBATIM
 )
+
+# texconv (built by the DirectXTex dependency) performs GPU texture compression at runtime.
+# Build it before the demo and copy it next to the executable, where the engine resolves it.
+if(TARGET texconv)
+    add_dependencies(demo texconv)
+    add_custom_command(TARGET demo POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:texconv>
+            $<TARGET_FILE_DIR:demo>
+        VERBATIM
+    )
+else()
+    message(WARNING "texconv target not found; runtime texture compression will fail. Ensure the DirectXTex dependency builds its command-line tools.")
+endif()

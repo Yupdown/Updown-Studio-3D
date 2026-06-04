@@ -84,6 +84,12 @@ namespace udsdx
 		void Initialize(ID3D12Device* device, ID3D12CommandQueue* commandQueue, ID3D12GraphicsCommandList* commandList, ID3D12RootSignature* rootSignature);
 		void SetResourceRootPath(std::wstring_view path);
 
+		// Returns the directory that contains the running executable.
+		static std::filesystem::path GetExecutableDirectory();
+		// Lexically normalizes, lowercases, and converts a path to generic separators so it can
+		// be used as a stable lookup key regardless of how it was originally spelled.
+		static std::wstring NormalizePath(std::wstring_view path);
+
 	private:
 		void InitializeLoaders(ID3D12Device* device, ID3D12CommandQueue* commandQueue, ID3D12GraphicsCommandList* commandList, ID3D12RootSignature* rootSignature);
 		void InitializeExtensionDictionary();
@@ -93,8 +99,6 @@ namespace udsdx
 		// process working directory is set to that ancestor so the relative resource root
 		// resolves regardless of where the executable is launched from.
 		void ResolveResourceRootPath();
-		static std::filesystem::path GetExecutableDirectory();
-		static std::wstring NormalizePath(std::wstring_view path);
 
 	public:
 		template <typename T>
