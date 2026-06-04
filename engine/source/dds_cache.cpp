@@ -7,29 +7,29 @@ namespace udsdx
 {
 	namespace
 	{
-		std::string WideToUtf8(const std::wstring& wide)
+		// Deterministic 64-bit FNV-1a over the raw bytes of a file, rendered as 16 lowercase hex
+		// digits. Returns an empty string if the file cannot be opened. A fixed algorithm (not
+		// std::hash, whose values are not guaranteed stable across runs or toolchains) so the cache
+		// file name survives rebuilds and compiler updates.
+		std::wstring HashFileContent(const std::filesystem::path& path)
 		{
-			if (wide.empty())
+			std::ifstream file(path, std::ios::binary);
+			if (!file.is_open())
 			{
 				return {};
 			}
-			int size = ::WideCharToMultiByte(CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()), nullptr, 0, nullptr, nullptr);
-			std::string result(static_cast<size_t>(size), '\0');
-			::WideCharToMultiByte(CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()), result.data(), size, nullptr, nullptr);
-			return result;
-		}
 
-		// Deterministic 64-bit FNV-1a over the UTF-8 bytes of the key, rendered as 16 lowercase hex
-		// digits. A fixed algorithm (not std::hash, whose values are not guaranteed stable across
-		// runs or toolchains) so the cache file name survives rebuilds and compiler updates.
-		std::wstring HashName(const std::wstring& key)
-		{
-			const std::string utf8 = WideToUtf8(key);
 			uint64_t hash = 0xcbf29ce484222325ULL; // FNV-1a 64-bit offset basis
-			for (unsigned char byte : utf8)
+			char buffer[64 * 1024];
+			while (file)
 			{
-				hash ^= static_cast<uint64_t>(byte);
-				hash *= 0x100000001b3ULL; // FNV-1a 64-bit prime
+				file.read(buffer, sizeof(buffer));
+				const std::streamsize count = file.gcount();
+				for (std::streamsize i = 0; i < count; ++i)
+				{
+					hash ^= static_cast<uint64_t>(static_cast<unsigned char>(buffer[i]));
+					hash *= 0x100000001b3ULL; // FNV-1a 64-bit prime
+				}
 			}
 
 			static const wchar_t* const digits = L"0123456789abcdef";
@@ -64,32 +64,22 @@ namespace udsdx
 			throw std::runtime_error("texconv.exe was not found next to the executable. Rebuild the demo target so the post-build step copies it into the executable directory.");
 		}
 
-		// The cache file name is derived purely from the normalized source path, so it always
-		// resolves to the same file without consulting any persisted mapping.
-		std::wstring name = HashName(Resource::NormalizePath(sourcePath));
-		std::filesystem::path ddsPath = m_cacheDir / (name + L".dds");
-
 		std::filesystem::path source(sourcePath);
 
-		// Reuse the cache only when it is at least as new as the source. The compressed file's
-		// modification time is stamped to match the source after compression (below) so staleness
-		// can be detected purely from timestamps.
-		bool upToDate = false;
-		std::error_code ec;
-		if (std::filesystem::exists(ddsPath, ec) && std::filesystem::exists(source, ec))
+		// The cache file name is the hash of the source's *contents*. Any edit to the image yields a
+		// different name and forces a recompress, while identical content (even restored from an
+		// older copy with an older timestamp) reuses the existing entry. The previous content's DDS
+		// is left behind as an orphan; delete the ddscache folder to reclaim space.
+		std::wstring name = HashFileContent(source);
+		if (name.empty())
 		{
-			auto sourceTime = std::filesystem::last_write_time(source, ec);
-			auto ddsTime = std::filesystem::last_write_time(ddsPath, ec);
-			if (!ec && ddsTime >= sourceTime)
-			{
-				upToDate = true;
-			}
+			throw std::runtime_error("Failed to read source texture for hashing: " + source.string());
 		}
+		std::filesystem::path ddsPath = m_cacheDir / (name + L".dds");
 
-		if (!upToDate)
+		if (!std::filesystem::exists(ddsPath))
 		{
 			RunTexconv(source, ddsPath, name, isHdr);
-			std::filesystem::last_write_time(ddsPath, std::filesystem::last_write_time(source, ec), ec);
 			DebugConsole::Log("\tTexture compressed and cached: " + ddsPath.string());
 		}
 

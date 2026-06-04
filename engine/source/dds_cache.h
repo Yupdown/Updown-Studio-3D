@@ -7,8 +7,10 @@ namespace udsdx
 	// Owns the executable-side compressed-texture cache. Compressed textures are produced by the
 	// external texconv tool (GPU BC7 for color, BC6H for HDR) and stored flat as "<hash>.dds" in a
 	// single "ddscache" folder next to the executable. The file name is a deterministic 64-bit
-	// FNV-1a hash of the normalized source path, so the cache file for any source can be located by
-	// recomputing the hash - no on-disk mapping table is required.
+	// FNV-1a hash of the source file's *contents*, so editing an image changes the name and forces a
+	// recompress, while identical content reuses the existing entry - no on-disk mapping table is
+	// required. Edited textures leave their previous content's DDS behind as an orphan; the folder
+	// can be deleted wholesale to reclaim space.
 	//
 	// Accessed through INSTANCE(DDSCache). Resource loading is currently single-threaded, so this
 	// type performs no locking.
@@ -18,10 +20,11 @@ namespace udsdx
 		DDSCache();
 		~DDSCache();
 
-		// Ensures an up-to-date compressed DDS exists for the given source texture and returns its
-		// absolute path. Spawns texconv when the cache is missing or stale. isHdr selects the
-		// compression format (BC6H_UF16 for HDR sources, BC7_UNORM otherwise). Throws
-		// std::runtime_error when texconv.exe is missing or compression fails.
+		// Ensures a compressed DDS exists for the current contents of the given source texture and
+		// returns its absolute path. Spawns texconv when no cache entry matches the source's content
+		// hash. isHdr selects the compression format (BC6H_UF16 for HDR sources, BC7_UNORM
+		// otherwise). Throws std::runtime_error when the source cannot be read, texconv.exe is
+		// missing, or compression fails.
 		std::filesystem::path GetCompressedTexture(std::wstring_view sourcePath, bool isHdr);
 
 	private:
