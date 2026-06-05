@@ -37,12 +37,22 @@ namespace udsdx
             return -1;
         }
 
-        // Create console window for debug
+        // Route debug output to a console.
 #ifdef CONSOLE
-        if (AllocConsole())
+        // Attach to the parent process's console (e.g. the CLI that launched us)
+        // so logs are printed inline.
+        if (AttachConsole(ATTACH_PARENT_PROCESS))
         {
             FILE* fp;
             freopen_s(&fp, "CONOUT$", "w", stdout);
+            freopen_s(&fp, "CONOUT$", "w", stderr);
+            freopen_s(&fp, "CONIN$", "r", stdin);
+
+            // Keep the C++ iostream objects in sync with the reopened C streams.
+            std::ios::sync_with_stdio(true);
+            std::cout.clear();
+            std::wcout.clear();
+            std::cerr.clear();
         }
 #endif
 
