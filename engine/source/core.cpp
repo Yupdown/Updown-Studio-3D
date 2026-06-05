@@ -1038,6 +1038,11 @@ namespace udsdx
 		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 		io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
 
+		// Keep imgui.ini next to the executable rather than in the working directory.
+		// ImGui stores this pointer without copying, so it must outlive the context.
+		static std::string s_iniFilename = (Resource::GetExecutableDirectory() / L"imgui.ini").string();
+		io.IniFilename = s_iniFilename.c_str();
+
 		ImGui_ImplDX12_InitInfo init_info = {};
 		init_info.Device = m_d3dDevice.Get();
 		init_info.CommandQueue = m_commandQueue.Get();
