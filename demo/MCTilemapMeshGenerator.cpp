@@ -3,7 +3,9 @@
 
 std::unique_ptr<udsdx::Mesh> MCTilemapMeshGenerator::CreateMeshFromChunk(MCTilemap* tilemap, int chunkX, int chunkZ) noexcept
 {
-    static int planeMap[MCTileChunk::CHUNK_WIDTH][MCTileChunk::CHUNK_WIDTH];
+    // Local (not static) so that concurrent chunk meshing on multiple threads
+    // does not share/clobber this scratch buffer.
+    int planeMap[MCTileChunk::CHUNK_WIDTH][MCTileChunk::CHUNK_WIDTH];
 
     const MCTileChunk* const chunk = tilemap->GetChunk(chunkX, chunkZ);
     const int offsetX = chunkX * MCTileChunk::CHUNK_WIDTH;

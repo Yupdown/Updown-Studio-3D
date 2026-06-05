@@ -5,6 +5,11 @@
 #include "MCTerrainGenerator.h"
 #include "MCTilemapMeshGenerator.h"
 
+#include <thread>
+#include <atomic>
+#include <vector>
+#include <algorithm>
+
 using namespace udsdx;
 
 std::array<std::shared_ptr<SceneObject>, 100> objects;
@@ -54,11 +59,44 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     tilemapMeshGenerator = std::make_shared<MCTilemapMeshGenerator>();
 
     terrainGenerator->Generate(tilemap);
+
+    // Generate chunk meshes in parallel. This is purely CPU-side work (greedy
+    // meshing + system-memory buffer fills), so it scales across all cores.
+    // Tilemap reads are const, and each call writes a distinct chunkMeshes slot.
+    {
+        constexpr int chunkCount = MCTilemap::CHUNK_SIZE * MCTilemap::CHUNK_SIZE;
+        // Parenthesized to dodge the <windows.h> min/max macros.
+        unsigned int threadCount = (std::max)(1u, std::thread::hardware_concurrency());
+        threadCount = (std::min)(threadCount, static_cast<unsigned int>(chunkCount));
+
+        // Atomic cursor balances load across threads since per-chunk cost varies.
+        std::atomic<int> nextChunk{ 0 };
+        std::vector<std::thread> workers;
+        workers.reserve(threadCount);
+        for (unsigned int t = 0; t < threadCount; ++t)
+        {
+            workers.emplace_back([&nextChunk]()
+            {
+                for (int index = nextChunk.fetch_add(1); index < chunkCount; index = nextChunk.fetch_add(1))
+                {
+                    const int i = index / MCTilemap::CHUNK_SIZE;
+                    const int j = index % MCTilemap::CHUNK_SIZE;
+                    chunkMeshes[i][j] = MCTilemapMeshGenerator::CreateMeshFromChunk(tilemap.get(), i, j);
+                }
+            });
+        }
+        for (auto& worker : workers)
+        {
+            worker.join();
+        }
+    }
+
+    // Upload buffers and build scene objects on the main thread: the D3D12
+    // device/command list and scene mutation are not thread-safe.
     for (int i = 0; i < tilemap->CHUNK_SIZE; i++)
 	{
 		for (int j = 0; j < tilemap->CHUNK_SIZE; j++)
 		{
-            chunkMeshes[i][j] = tilemapMeshGenerator->CreateMeshFromChunk(tilemap.get(), i, j);
             if (chunkMeshes[i][j] == nullptr) {
                 continue;
             }
