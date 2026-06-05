@@ -30,6 +30,8 @@ cbuffer cbPerCamera : register(b1)
 	float4x4 gPrevViewProj;
     float4 gEyePosW;
     float2 gRenderTargetSize;
+    float2 gClipOffset;
+    float2 gPrevClipOffset;
 }
 
 struct BoneData { float4x4 m[MAX_BONES]; };
@@ -211,7 +213,12 @@ float3 NormalSampleToWorldSpace(float3 normalSample, float3 normalW, float3 tang
 
 float2 PackMotion(float4 posH, float4 prevPosH)
 {
-	float2 ndcDelta = (posH.xy / posH.w) - (prevPosH.xy / prevPosH.w);
+	// Subtract the per-frame TAA jitter so the motion vector represents true geometric
+	// motion. Otherwise the jitter delta leaks into the velocity buffer and gets amplified
+	// by large motion-blur shutter speeds, blurring an otherwise static camera.
+	float2 ndcCurr = (posH.xy / posH.w) - gClipOffset;
+	float2 ndcPrev = (prevPosH.xy / prevPosH.w) - gPrevClipOffset;
+	float2 ndcDelta = ndcCurr - ndcPrev;
 	return ndcDelta * float2(0.5f, -0.5f);
 }
 

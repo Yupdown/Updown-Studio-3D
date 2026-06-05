@@ -40,8 +40,11 @@ namespace udsdx
 		constants.PrevViewProj = m_prevViewProjMatrix.Transpose();
 		constants.CameraPosition = Vector4::Transform(Vector4::UnitW, worldMat);
 		constants.RenderTargetSize = Vector2(width, height);
+		constants.ClipOffset = m_clipOffset;
+		constants.PrevClipOffset = m_prevClipOffset;
 
 		m_prevViewProjMatrix = viewProjMat;
+		m_prevClipOffset = m_clipOffset;
 
 		m_constantBuffers[frameResourceIndex]->CopyData(0, constants);
 		return m_constantBuffers[frameResourceIndex]->Resource()->GetGPUVirtualAddress();

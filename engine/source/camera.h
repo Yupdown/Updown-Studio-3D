@@ -77,6 +77,7 @@ namespace udsdx
 		Color m_clearColor = Color(0.0f, 0.0f, 0.0f, 1.0f);
 		Matrix4x4 m_prevViewProjMatrix = Matrix4x4::Identity;
 		Vector2 m_clipOffset = Vector2(0.0f, 0.0f);
+		Vector2 m_prevClipOffset = Vector2(0.0f, 0.0f);
 	};
 
 	class CameraPerspective : public Camera

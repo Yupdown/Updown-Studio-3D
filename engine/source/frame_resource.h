@@ -23,6 +23,8 @@ namespace udsdx
 		Matrix4x4 PrevViewProj = Matrix4x4::Identity;
 		Vector4 CameraPosition = Vector4::Zero;
 		Vector2 RenderTargetSize = Vector2::Zero;
+		Vector2 ClipOffset = Vector2::Zero;     // current-frame TAA jitter (NDC), removed from motion vectors
+		Vector2 PrevClipOffset = Vector2::Zero; // previous-frame TAA jitter (NDC)
 	};
 
 	struct ShadowConstants

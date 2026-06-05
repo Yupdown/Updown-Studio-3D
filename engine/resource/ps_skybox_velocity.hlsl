@@ -15,12 +15,15 @@ cbuffer cbCamera : register(b0)
     float4x4 gPrevViewProj;
     float4 gCameraPosition;
     float2 gRenderTargetSize;
+    float2 gClipOffset;
+    float2 gPrevClipOffset;
 };
 
-float2 ClipToUV(float4 clipPos)
+float2 ClipToUV(float4 clipPos, float2 jitter)
 {
     float invW = rcp(max(abs(clipPos.w), 1e-5f));
-    float2 ndc = clipPos.xy * invW;
+    // Remove the TAA jitter so static-camera reprojection produces zero velocity.
+    float2 ndc = clipPos.xy * invW - jitter;
     return ndc * float2(0.5f, -0.5f) + 0.5f;
 }
 
@@ -36,7 +39,7 @@ float2 PS(VS_OUT input) : SV_Target
     const float4 currClip = mul(float4(worldDir, 0.0f), gViewProj);
     const float4 prevClip = mul(float4(worldDir, 0.0f), gPrevViewProj);
 
-    const float2 currUv = ClipToUV(currClip);
-    const float2 prevUv = ClipToUV(prevClip);
+    const float2 currUv = ClipToUV(currClip, gClipOffset);
+    const float2 prevUv = ClipToUV(prevClip, gPrevClipOffset);
     return currUv - prevUv;
 }
