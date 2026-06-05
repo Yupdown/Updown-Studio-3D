@@ -90,8 +90,10 @@ float4 PS(VertexOut pin) : SV_Target
 	float2 rcpro = rcp(gRenderTargetSize);
 	const float blurRadius = max(gMotionBlurRadius, 1e-6f);
 
-	float2 vc = ClampMotionRadius(gMotion.Sample(gSamPoint, pin.TexC).xy * gRenderTargetSize, blurRadius);
-	float2 vn = ClampMotionRadius(gNeighborMax.Sample(gSamPoint, pin.TexC).xy * gRenderTargetSize, blurRadius);
+	// gMotionBlurFactor = shutterSpeed / deltaTime: linearly interpolates the raw per-frame
+	// delta into the motion accumulated while the shutter is open.
+	float2 vc = ClampMotionRadius(gMotion.Sample(gSamPoint, pin.TexC).xy * gRenderTargetSize * gMotionBlurFactor, blurRadius);
+	float2 vn = ClampMotionRadius(gNeighborMax.Sample(gSamPoint, pin.TexC).xy * gRenderTargetSize * gMotionBlurFactor, blurRadius);
 
 	if (length(vn) < 0.5f)
 	{
@@ -119,7 +121,7 @@ float4 PS(VertexOut pin) : SV_Target
 		float2 texDest = pin.TexC + d * rcpro * t;
 		float depthDst = NdcDepthToViewDepth(gDepth.Sample(gSamPoint, texDest).r);
 
-		float2 vs = ClampMotionRadius(gMotion.Sample(gSamPoint, texDest).xy * gRenderTargetSize, blurRadius);
+		float2 vs = ClampMotionRadius(gMotion.Sample(gSamPoint, texDest).xy * gRenderTargetSize * gMotionBlurFactor, blurRadius);
 		float wa = dot(wc, normalize(d));
 		float wb = abs(dot(normalize(vs), normalize(d)));
 

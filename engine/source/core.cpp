@@ -753,7 +753,9 @@ namespace udsdx
 		PassConstants passConstants;
 		passConstants.TotalTime = m_timeMeasure->GetTime().totalTime;
 		passConstants.DeltaTime = m_timeMeasure->GetTime().deltaTime;
-		passConstants.MotionBlurFactor = MotionBlur::BlurTimeScale / m_timeMeasure->GetTime().deltaTime;
+		// Shutter speed (in seconds) scales the per-frame motion delta into the fraction of the
+		// frame the shutter is open, linearly interpolating the blur instead of using the raw delta.
+		passConstants.MotionBlurFactor = m_renderOptions.MotionBlurShutterSpeed / m_timeMeasure->GetTime().deltaTime;
 		passConstants.MotionBlurRadius = static_cast<float>(MotionBlur::MaxBlurRadius);
 		passConstants.FogColor = m_renderOptions.FogColor;
 		passConstants.FogSunColor = m_renderOptions.FogSunColor;
@@ -1125,6 +1127,7 @@ namespace udsdx
 		ImGui::Checkbox("Draw Shadow Map", &m_renderOptions.DrawShadowMap);
 		bool changeSSAO = ImGui::Checkbox("Draw SSAO", &m_renderOptions.DrawSSAO);
 		ImGui::Checkbox("Draw Motion Blur", &m_renderOptions.DrawMotionBlur);
+		ImGui::SliderFloat("Motion Blur Shutter Speed", &m_renderOptions.MotionBlurShutterSpeed, 0.0f, 0.1f, "%.4f", ImGuiSliderFlags_AlwaysClamp);
 		ImGui::Checkbox("Draw Post Process Bloom", &m_renderOptions.DrawBloom);
 		ImGui::Checkbox("Draw Post Process TAA", &m_renderOptions.DrawTAA);
 		ImGui::Checkbox("Draw Post Process Outline", &m_renderOptions.DrawOutline);

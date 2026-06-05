@@ -10,7 +10,6 @@ namespace udsdx
 	{
 	public:
 		constexpr const static UINT MaxBlurRadius = 20;
-		constexpr const static float BlurTimeScale = 0.01f;
 
 	public:
 		MotionBlur(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList);
