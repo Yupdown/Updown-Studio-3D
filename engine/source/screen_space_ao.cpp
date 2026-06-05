@@ -37,7 +37,7 @@ namespace udsdx
 	{
 		SSAOConstants ssaoCB;
 
-		XMMATRIX P = pCamera->GetProjMatrix(param.AspectRatio);
+		XMMATRIX P = pCamera->GetJitteredProjMatrix(param.AspectRatio);
 
 		// Transform NDC space [-1,+1]^2 to texture space [0,1]^2
 		XMMATRIX T(

@@ -60,6 +60,9 @@ namespace udsdx
 	public:
 		virtual Matrix4x4 GetViewMatrix(bool validate = true) const;
 		virtual Matrix4x4 GetProjMatrix(float aspect) const = 0;
+		// Jitter-free GetProjMatrix() with the current TAA clip offset applied. Used by the render
+		// path (and SSAO, which must match the jittered depth buffer); UI/culling use the base matrix.
+		Matrix4x4 GetJitteredProjMatrix(float aspect) const;
 		virtual std::unique_ptr<BoundingCamera> GetViewFrustumWorld(float aspect) const = 0;
 
 		void SetClearColor(const Color& color);

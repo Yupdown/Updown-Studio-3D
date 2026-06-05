@@ -28,7 +28,7 @@ namespace udsdx
 		CameraConstants constants;
 		Matrix4x4 worldMat = GetTransform()->GetWorldSRTMatrix(false);
 		Matrix4x4 viewMat = GetViewMatrix(false);
-		Matrix4x4 projMat = GetProjMatrix(aspect);
+		Matrix4x4 projMat = GetJitteredProjMatrix(aspect);
 		Matrix4x4 viewProjMat = viewMat * projMat;
 
 		constants.View = viewMat.Transpose();
@@ -48,6 +48,16 @@ namespace udsdx
 
 		m_constantBuffers[frameResourceIndex]->CopyData(0, constants);
 		return m_constantBuffers[frameResourceIndex]->Resource()->GetGPUVirtualAddress();
+	}
+
+	Matrix4x4 Camera::GetJitteredProjMatrix(float aspect) const
+	{
+		Matrix4x4 base = GetProjMatrix(aspect);
+		XMMATRIX proj = XMLoadFloat4x4(&base);
+		proj *= XMMatrixTranslation(m_clipOffset.x, m_clipOffset.y, 0.0f);
+		Matrix4x4 m;
+		XMStoreFloat4x4(&m, proj);
+		return m;
 	}
 
 	Matrix4x4 Camera::GetViewMatrix(bool validate) const
@@ -102,7 +112,6 @@ namespace udsdx
 		0.0f, yScale, 0.0f, 0.0f,
 		0.0f, 0.0f, 0.0f, 1.0f,
 		0.0f, 0.0f, m_near, 0.0f);
-		projectionMatrix *= XMMatrixTranslation(m_clipOffset.x, m_clipOffset.y, 0.0f);
 		XMStoreFloat4x4(&m, projectionMatrix);
 		return m;
 	}
@@ -111,7 +120,6 @@ namespace udsdx
 	{
 	const float safeAspect = std::max(aspect, 1e-6f);
 	XMMATRIX cullProj = XMMatrixPerspectiveFovLH(m_fov, safeAspect, m_near, m_far);
-	cullProj *= XMMatrixTranslation(m_clipOffset.x, m_clipOffset.y, 0.0f);
 
 	Matrix4x4 cullProjM;
 	XMStoreFloat4x4(&cullProjM, cullProj);
