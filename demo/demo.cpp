@@ -19,9 +19,6 @@ std::shared_ptr<SceneObject> cameraObject;
 std::shared_ptr<SceneObject> lightObject;
 std::shared_ptr<SceneObject> environmentObject;
 
-std::unique_ptr<SoundEffectInstance> soundEffectInstance;
-AudioClip* audioClip;
-
 std::shared_ptr<udsdx::Material> materialTile;
 
 std::shared_ptr<MCTilemap> tilemap;
@@ -49,7 +46,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     auto mesh = INSTANCE(Resource)->Load<udsdx::Mesh>(L"resource\\model\\maxwell.obj");
     auto pipelineState = INSTANCE(Resource)->Load<Shader>(L"resource\\shader\\color.hlsl");
     auto pipelineStateTexture = INSTANCE(Resource)->Load<Shader>(L"resource\\shader\\color.hlsl");
-    audioClip = INSTANCE(Resource)->Load<AudioClip>(L"resource\\audio\\Psychic_Soothe_Pulser_01a.wav");
     udsdx::Material material = udsdx::Material(pipelineStateTexture, INSTANCE(Resource)->Load<udsdx::Texture>(L"resource\\texture\\dingus_nowhiskers.jpg"));
     udsdx::Material materialTile = udsdx::Material(pipelineState, INSTANCE(Resource)->Load<udsdx::Texture>(L"resource\\texture\\tile.png"));
     materialTile.SetSamplerMode(udsdx::MaterialSamplerMode::Nearest);
@@ -213,12 +209,6 @@ void Update(const Time& time)
 
     auto camera = cameraObject->GetComponent<CameraPerspective>();
     camera->SetFov((INSTANCE(Input)->GetMouseScroll() * 0.01f + 60.0f) * DEG2RAD);
-
-    if (INSTANCE(Input)->GetKeyDown(Keyboard::G))
-    {
-        soundEffectInstance = audioClip->CreateInstance();
-        soundEffectInstance->Play();
-    }
 
     for (int i = 0; i < objects.size(); ++i)
     {
