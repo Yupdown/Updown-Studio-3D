@@ -29,6 +29,10 @@ namespace udsdx
 		void SetAnimation(const AnimationClip* animationClip, bool loop = false, bool forcePlay = false);
 		void SetAnimation(const AnimationClip* animationClip, std::string_view animationName, bool loop = false, bool forcePlay = false);
 		void SetAnimation(const Animation* animation, bool loop = false, bool forcePlay = false);
+		// Plays an animation from the mesh's embedded clip (requires SetMesh to be called first).
+		void SetAnimation(std::string_view animationName, bool loop = false, bool forcePlay = false);
+		// Plays the first/default animation from the mesh's embedded clip.
+		void SetAnimation(bool loop = false, bool forcePlay = false);
 		void SetTransitionFactor(float factor);
 		void SetBoneModifier(std::string_view boneName, const Matrix4x4& transform);
 		const Matrix4x4& GetBoneTransform(std::string_view boneName) const;

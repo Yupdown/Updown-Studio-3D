@@ -157,7 +157,16 @@ namespace udsdx
 
 		MeshBase::CreateBuffers<RiggedVertex>(vertices, indices);
 		BoundingBox::CreateFromPoints(m_bounds, vertices.size(), &vertices[0].position, sizeof(RiggedVertex));
+
+		// If the source model carries animations, embed an AnimationClip built from the same scene
+		// so the mesh can be animated without loading the animation as a separate resource.
+		if (scene->mNumAnimations > 0)
+		{
+			m_embeddedClip = std::make_unique<AnimationClip>(scene);
+		}
 	}
+
+	RiggedMesh::~RiggedMesh() = default;
 
 	void RiggedMesh::PopulateTransforms(std::vector<Matrix4x4>& out) const
 	{
@@ -199,5 +208,10 @@ namespace udsdx
 	const std::vector<int>& RiggedMesh::GetBoneParents() const
 	{
 		return m_boneParents;
+	}
+
+	const AnimationClip* RiggedMesh::GetAnimationClip() const
+	{
+		return m_embeddedClip.get();
 	}
 }

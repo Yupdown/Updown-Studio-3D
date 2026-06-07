@@ -47,6 +47,22 @@ namespace udsdx
 			return;
 		}
 
+		Build(scene);
+	}
+
+	AnimationClip::AnimationClip(const aiScene* scene)
+	{
+		if (scene == nullptr || scene->mRootNode == nullptr)
+		{
+			DebugConsole::LogError("Failed to build animation clip from a null scene.");
+			return;
+		}
+
+		Build(scene);
+	}
+
+	void AnimationClip::Build(const aiScene* scene)
+	{
 		m_bones.clear();
 		m_boneParents.clear();
 		m_boneIndexMap.clear();

@@ -12,6 +12,7 @@
 #include "rigged_mesh.h"
 #include "camera.h"
 #include "core.h"
+#include "debug_console.h"
 
 namespace udsdx
 {
@@ -246,6 +247,12 @@ namespace udsdx
 			}
 		}
 		m_boneConstantsCache.resize(numSubmeshes);
+
+		// If the mesh carries an embedded animation clip, start its first animation looping.
+		if (m_riggedMesh->GetAnimationClip() != nullptr)
+		{
+			SetAnimation(true);
+		}
 	}
 
 	void RiggedMeshRenderer::SetAnimation(const AnimationClip* animationClip, bool loop, bool forcePlay)
@@ -256,6 +263,38 @@ namespace udsdx
 	void RiggedMeshRenderer::SetAnimation(const AnimationClip* animationClip, std::string_view animationName, bool loop, bool forcePlay)
 	{
 		SetAnimation(&animationClip->GetAnimation(animationName), loop, forcePlay);
+	}
+
+	void RiggedMeshRenderer::SetAnimation(std::string_view animationName, bool loop, bool forcePlay)
+	{
+		if (m_riggedMesh == nullptr)
+		{
+			DebugConsole::LogError("SetAnimation called before SetMesh.");
+			return;
+		}
+		const AnimationClip* clip = m_riggedMesh->GetAnimationClip();
+		if (clip == nullptr)
+		{
+			DebugConsole::LogError("RiggedMesh has no embedded animation clip.");
+			return;
+		}
+		SetAnimation(clip, animationName, loop, forcePlay);
+	}
+
+	void RiggedMeshRenderer::SetAnimation(bool loop, bool forcePlay)
+	{
+		if (m_riggedMesh == nullptr)
+		{
+			DebugConsole::LogError("SetAnimation called before SetMesh.");
+			return;
+		}
+		const AnimationClip* clip = m_riggedMesh->GetAnimationClip();
+		if (clip == nullptr)
+		{
+			DebugConsole::LogError("RiggedMesh has no embedded animation clip.");
+			return;
+		}
+		SetAnimation(clip, loop, forcePlay);
 	}
 
 	void RiggedMeshRenderer::SetAnimation(const Animation* animation, bool loop, bool forcePlay)

@@ -4,6 +4,7 @@
 #include "resource_object.h"
 
 struct aiAnimation;
+struct aiScene;
 
 namespace udsdx
 {
@@ -48,6 +49,7 @@ namespace udsdx
 	{
 	public:
 		AnimationClip(const std::filesystem::path& resourcePath);
+		AnimationClip(const aiScene* scene);
 
 	public:
 		void PopulateBoneMap(const std::vector<std::string>& boneNames, std::vector<int>& out) const;
@@ -59,6 +61,8 @@ namespace udsdx
 		UINT GetBoneCount() const;
 
 	protected:
+		void Build(const aiScene* scene);
+
 		std::unordered_map<std::string, Animation> m_animations;
 
 		std::vector<Bone> m_bones;
