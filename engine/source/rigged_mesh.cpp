@@ -73,6 +73,8 @@ namespace udsdx
 			auto nodeIter = m_boneIndexMap.find(submesh.Name);
 			submesh.NodeID = nodeIter == m_boneIndexMap.end() ? -1 : nodeIter->second;
 
+			ExtractSubmeshTextures(scene, mesh->mMaterialIndex, submesh);
+
 			for (unsigned int i = 0; i < mesh->mNumVertices; ++i)
 			{
 				RiggedVertex vertex{};

@@ -210,12 +210,14 @@ namespace udsdx
 			{
 				std::unique_ptr<MeshBase> mesh = std::make_unique<Mesh>(pathString);
 				mesh->UploadBuffers(m_device, m_commandList);
+				mesh->ResolveEmbeddedTextures(m_device, m_commandList);
 				ret = std::move(mesh);
 			}
 			else if (*requestedType == typeid(RiggedMesh))
 			{
 				std::unique_ptr<MeshBase> mesh = std::make_unique<RiggedMesh>(pathString);
 				mesh->UploadBuffers(m_device, m_commandList);
+				mesh->ResolveEmbeddedTextures(m_device, m_commandList);
 				ret = std::move(mesh);
 			}
 			else if (*requestedType == typeid(AnimationClip))

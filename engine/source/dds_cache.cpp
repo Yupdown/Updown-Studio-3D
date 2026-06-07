@@ -7,6 +7,19 @@ namespace udsdx
 {
 	namespace
 	{
+		// Renders a 64-bit FNV-1a accumulator as 16 lowercase hex digits.
+		std::wstring HashToHex(uint64_t hash)
+		{
+			static const wchar_t* const digits = L"0123456789abcdef";
+			std::wstring name(16, L'0');
+			for (int i = 15; i >= 0; --i)
+			{
+				name[i] = digits[hash & 0xFULL];
+				hash >>= 4;
+			}
+			return name;
+		}
+
 		// Deterministic 64-bit FNV-1a over the raw bytes of a file, rendered as 16 lowercase hex
 		// digits. Returns an empty string if the file cannot be opened. A fixed algorithm (not
 		// std::hash, whose values are not guaranteed stable across runs or toolchains) so the cache
@@ -32,14 +45,22 @@ namespace udsdx
 				}
 			}
 
-			static const wchar_t* const digits = L"0123456789abcdef";
-			std::wstring name(16, L'0');
-			for (int i = 15; i >= 0; --i)
+			return HashToHex(hash);
+		}
+
+		// Same FNV-1a as HashFileContent, but over an in-memory buffer, so an embedded image and an
+		// identical loose file produce the same cache name.
+		std::wstring HashMemory(const void* data, size_t size)
+		{
+			uint64_t hash = 0xcbf29ce484222325ULL; // FNV-1a 64-bit offset basis
+			const unsigned char* bytes = static_cast<const unsigned char*>(data);
+			for (size_t i = 0; i < size; ++i)
 			{
-				name[i] = digits[hash & 0xFULL];
-				hash >>= 4;
+				hash ^= static_cast<uint64_t>(bytes[i]);
+				hash *= 0x100000001b3ULL; // FNV-1a 64-bit prime
 			}
-			return name;
+
+			return HashToHex(hash);
 		}
 	}
 
@@ -81,6 +102,54 @@ namespace udsdx
 		{
 			RunTexconv(source, ddsPath, name, isHdr);
 			DebugConsole::Log("\tTexture compressed and cached: " + ddsPath.string());
+		}
+
+		return ddsPath;
+	}
+
+	std::filesystem::path DDSCache::GetCompressedTexture(const void* data, size_t size, std::wstring_view formatHint, bool isHdr)
+	{
+		if (!std::filesystem::exists(m_texconvPath))
+		{
+			throw std::runtime_error("texconv.exe was not found next to the executable. Rebuild the demo target so the post-build step copies it into the executable directory.");
+		}
+
+		if (data == nullptr || size == 0)
+		{
+			throw std::runtime_error("Embedded texture has no data to compress.");
+		}
+
+		std::wstring name = HashMemory(data, size);
+		std::filesystem::path ddsPath = m_cacheDir / (name + L".dds");
+
+		if (!std::filesystem::exists(ddsPath))
+		{
+			// texconv only reads files, so stage the embedded bytes to a temporary source whose
+			// extension matches the encoded format, then run the identical compression path.
+			std::wstring extension = formatHint.empty() ? L"png" : std::wstring(formatHint);
+			std::filesystem::path tempSource = m_cacheDir / (name + L"." + extension);
+
+			std::error_code ec;
+			{
+				std::ofstream out(tempSource, std::ios::binary | std::ios::trunc);
+				if (!out.is_open())
+				{
+					throw std::runtime_error("Failed to stage embedded texture for compression: " + tempSource.string());
+				}
+				out.write(static_cast<const char*>(data), static_cast<std::streamsize>(size));
+			}
+
+			try
+			{
+				RunTexconv(tempSource, ddsPath, name, isHdr);
+			}
+			catch (...)
+			{
+				std::filesystem::remove(tempSource, ec);
+				throw;
+			}
+			std::filesystem::remove(tempSource, ec);
+			DebugConsole::Log("\tEmbedded texture compressed and cached: " + ddsPath.string());
 		}
 
 		return ddsPath;

@@ -18,6 +18,7 @@ std::array<float, 100> rotations;
 std::shared_ptr<SceneObject> cameraObject;
 std::shared_ptr<SceneObject> lightObject;
 std::shared_ptr<SceneObject> environmentObject;
+std::shared_ptr<SceneObject> riggedObject;
 
 std::shared_ptr<udsdx::Material> materialTile;
 
@@ -120,6 +121,24 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         objects[i]->GetTransform()->SetLocalScale(Vector3::One * 0.001f);
 		scene->AddObject(objects[i]);
 	}
+
+    // Rigged character loaded from a GLB. If the file embeds an animation clip, the
+    // RiggedMeshRenderer starts playing it automatically on SetMesh.
+    auto riggedMesh = INSTANCE(Resource)->Load<udsdx::RiggedMesh>(L"resource\\model\\character.glb");
+
+    riggedObject = SceneObject::MakeShared();
+    auto riggedRenderer = riggedObject->AddComponent<RiggedMeshRenderer>();
+    riggedRenderer->SetMesh(riggedMesh);
+    // Give every submesh its own material built from the texture embedded in the GLB for that
+    // submesh. The renderer draws one submesh per material slot, so all submeshes must be set.
+    const auto& riggedSubmeshes = riggedMesh->GetSubmeshes();
+    for (size_t i = 0; i < riggedSubmeshes.size(); ++i)
+    {
+        udsdx::Material riggedMaterial = udsdx::Material(pipelineStateTexture, riggedMesh->GetSubmeshDiffuseTexture(i));
+        riggedRenderer->SetMaterial(riggedMaterial, static_cast<int>(i));
+    }
+    riggedObject->GetTransform()->SetLocalPosition(Vector3(0.0f, 16.0f, -4.0f));
+    scene->AddObject(riggedObject);
 
     cameraObject = SceneObject::MakeShared();
     auto camera = cameraObject->AddComponent<CameraPerspective>();

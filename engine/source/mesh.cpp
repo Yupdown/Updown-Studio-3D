@@ -94,19 +94,7 @@ namespace udsdx
 				submesh.StartIndexLocation = static_cast<UINT>(indices.size());
 				submesh.BaseVertexLocation = static_cast<UINT>(vertices.size());
 
-				aiMaterial* material = scene->mMaterials[materialIndex];
-				if (material != nullptr)
-				{
-					aiString texturePath;
-					if (material->GetTexture(aiTextureType_DIFFUSE, 0, &texturePath) == AI_SUCCESS)
-					{
-						submesh.DiffuseTexturePath = std::filesystem::path(texturePath.C_Str()).filename().string();
-					}
-					if (material->GetTexture(aiTextureType_NORMALS, 0, &texturePath) == AI_SUCCESS)
-					{
-						submesh.NormalTexturePath = std::filesystem::path(texturePath.C_Str()).filename().string();
-					}
-				}
+				ExtractSubmeshTextures(scene, materialIndex, submesh);
 			}
 			else
 			{

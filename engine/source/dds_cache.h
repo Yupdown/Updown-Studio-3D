@@ -27,6 +27,14 @@ namespace udsdx
 		// missing, or compression fails.
 		std::filesystem::path GetCompressedTexture(std::wstring_view sourcePath, bool isHdr);
 
+		// Same as above but for an in-memory compressed image (e.g. a texture embedded inside a
+		// model file). 'data'/'size' point at the encoded bytes (PNG/JPG/etc.), 'formatHint' is the
+		// image extension without a dot (e.g. L"png") used to name the temporary source texconv
+		// reads. The cache name is the content hash of the bytes, so identical embedded and on-disk
+		// images share a single cache entry. Throws std::runtime_error when texconv.exe is missing or
+		// compression fails.
+		std::filesystem::path GetCompressedTexture(const void* data, size_t size, std::wstring_view formatHint, bool isHdr);
+
 	private:
 		// Runs texconv to compress 'source' into 'ddsPath' (via a per-call temp directory named
 		// after 'name' so concurrent compressions of different textures never collide).
