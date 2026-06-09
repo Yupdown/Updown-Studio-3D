@@ -273,8 +273,13 @@ namespace udsdx
 		cbvHeapDesc.NodeMask = 0;
 		ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&cbvHeapDesc, IID_PPV_ARGS(m_cbvHeap.GetAddressOf())));
 
+		// Reserve headroom beyond the textures registered at init for SRVs allocated afterwards via
+		// EnsureTextureShaderResourceView: environment maps and, notably, the embedded/external
+		// textures every loaded ModelAsset resolves on demand. A multi-material model can need many, so
+		// this is comfortably larger than the per-frame post-process descriptors.
+		static constexpr UINT kPostInitSrvReserve = 256;
 		D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc;
-		srvHeapDesc.NumDescriptors = static_cast<UINT>(textures.size() + 64);
+		srvHeapDesc.NumDescriptors = static_cast<UINT>(textures.size() + kPostInitSrvReserve);
 		srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 		srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 		srvHeapDesc.NodeMask = 0;

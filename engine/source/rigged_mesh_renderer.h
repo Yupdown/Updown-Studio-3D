@@ -7,7 +7,6 @@ namespace udsdx
 {
 	class RiggedMesh;
 	class AnimationClip;
-	class Animation;
 
 	class RiggedMeshRenderer : public RendererBase
 	{
@@ -26,13 +25,8 @@ namespace udsdx
 	public:
 		RiggedMesh* GetMesh() const;
 		void SetMesh(RiggedMesh* mesh);
+		// Plays the given clip (owned by the ModelAsset); pass nullptr semantics are not supported.
 		void SetAnimation(const AnimationClip* animationClip, bool loop = false, bool forcePlay = false);
-		void SetAnimation(const AnimationClip* animationClip, std::string_view animationName, bool loop = false, bool forcePlay = false);
-		void SetAnimation(const Animation* animation, bool loop = false, bool forcePlay = false);
-		// Plays an animation from the mesh's embedded clip (requires SetMesh to be called first).
-		void SetAnimation(std::string_view animationName, bool loop = false, bool forcePlay = false);
-		// Plays the first/default animation from the mesh's embedded clip.
-		void SetAnimation(bool loop = false, bool forcePlay = false);
 		void SetTransitionFactor(float factor);
 		void SetBoneModifier(std::string_view boneName, const Matrix4x4& transform);
 		const Matrix4x4& GetBoneTransform(std::string_view boneName) const;
@@ -43,8 +37,8 @@ namespace udsdx
 	protected:
 		RiggedMesh* m_riggedMesh = nullptr;
 
-		const Animation* m_animation = nullptr;
-		const Animation* m_prevAnimation = nullptr;
+		const AnimationClip* m_animation = nullptr;
+		const AnimationClip* m_prevAnimation = nullptr;
 
 		// Stores bone indices for AnimationClip.
 		// indexed by bone index of RiggedMesh.

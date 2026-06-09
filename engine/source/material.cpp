@@ -4,12 +4,12 @@
 
 namespace udsdx
 {
+	Material::Material() : m_shader(nullptr)
+	{
+	}
+
 	Material::Material(Shader* shader) : m_shader(shader)
 	{
-		if (shader == nullptr)
-		{
-			throw std::invalid_argument("Shader cannot be null");
-		}
 	}
 
 	Material::Material(Shader* shader, Texture* texture) : Material(shader)
@@ -19,11 +19,6 @@ namespace udsdx
 
 	void Material::SetShader(Shader* shader)
 	{
-		if (shader == nullptr)
-		{
-			throw std::invalid_argument("Shader cannot be null");
-		}
-
 		m_shader = shader;
 	}
 

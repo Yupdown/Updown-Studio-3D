@@ -1,35 +1,15 @@
 #include "pch.h"
 #include "rigged_mesh.h"
-#include "animation_clip.h"
 #include "debug_console.h"
 #include "mesh.h"
-#include <assimp/Importer.hpp>
-#include <assimp/postprocess.h>
 #include <assimp/scene.h>
 
 namespace udsdx
 {
-	RiggedMesh::RiggedMesh(const std::filesystem::path& resourcePath) : MeshBase()
+	RiggedMesh::RiggedMesh(const aiScene* scene) : MeshBase()
 	{
 		std::vector<RiggedVertex> vertices;
 		std::vector<UINT> indices;
-		Assimp::Importer importer;
-		importer.SetPropertyBool(AI_CONFIG_IMPORT_FBX_PRESERVE_PIVOTS, false);
-		const aiScene* scene = importer.ReadFile(
-			resourcePath.string(),
-			aiProcess_ConvertToLeftHanded |
-			aiProcess_Triangulate |
-			aiProcess_GenNormals |
-			aiProcess_CalcTangentSpace |
-			aiProcess_LimitBoneWeights |
-			aiProcess_OptimizeMeshes |
-			aiProcess_RemoveRedundantMaterials
-		);
-		if (scene == nullptr || scene->mRootNode == nullptr)
-		{
-			DebugConsole::LogError("Failed to load rigged mesh with assimp: " + resourcePath.string());
-			return;
-		}
 
 		m_bones.clear();
 		m_boneParents.clear();
@@ -73,7 +53,7 @@ namespace udsdx
 			auto nodeIter = m_boneIndexMap.find(submesh.Name);
 			submesh.NodeID = nodeIter == m_boneIndexMap.end() ? -1 : nodeIter->second;
 
-			ExtractSubmeshTextures(scene, mesh->mMaterialIndex, submesh);
+			m_submeshMaterialIndices.push_back(mesh->mMaterialIndex);
 
 			for (unsigned int i = 0; i < mesh->mNumVertices; ++i)
 			{
@@ -153,19 +133,12 @@ namespace udsdx
 
 		if (vertices.empty() || indices.empty())
 		{
-			DebugConsole::LogError("No rigged mesh data loaded from file: " + resourcePath.string());
+			DebugConsole::LogError("No rigged mesh data loaded from the source scene.");
 			return;
 		}
 
 		MeshBase::CreateBuffers<RiggedVertex>(vertices, indices);
 		BoundingBox::CreateFromPoints(m_bounds, vertices.size(), &vertices[0].position, sizeof(RiggedVertex));
-
-		// If the source model carries animations, embed an AnimationClip built from the same scene
-		// so the mesh can be animated without loading the animation as a separate resource.
-		if (scene->mNumAnimations > 0)
-		{
-			m_embeddedClip = std::make_unique<AnimationClip>(scene);
-		}
 	}
 
 	RiggedMesh::~RiggedMesh() = default;
@@ -212,8 +185,8 @@ namespace udsdx
 		return m_boneParents;
 	}
 
-	const AnimationClip* RiggedMesh::GetAnimationClip() const
+	const std::vector<unsigned int>& RiggedMesh::GetSubmeshMaterialIndices() const
 	{
-		return m_embeddedClip.get();
+		return m_submeshMaterialIndices;
 	}
 }

@@ -5,6 +5,7 @@
 #include "resource_load.h"
 #include "resource_object.h"
 #include "material.h"
+#include "model_asset.h"
 #include "mesh.h"
 #include "rigged_mesh.h"
 #include "texture.h"

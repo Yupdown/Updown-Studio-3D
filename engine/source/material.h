@@ -17,7 +17,9 @@ namespace udsdx
 	struct Material
 	{
 	public:
-		Material() = delete;
+		// A shader-less material is valid as a template (e.g. one built by ModelAsset); a shader must be
+		// injected via SetShader before it is used for rendering.
+		Material();
 		Material(Shader* shader);
 		Material(Shader* shader, Texture* texture);
 

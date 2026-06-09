@@ -1,14 +1,15 @@
 #include "pch.h"
 #include "resource_load.h"
 #include "texture.h"
-#include "mesh.h"
-#include "rigged_mesh.h"
-#include "animation_clip.h"
+#include "model_asset.h"
 #include "shader.h"
 #include "debug_console.h"
 #include "audio_system.h"
 #include "audio_clip.h"
 #include "font.h"
+#include <assimp/Importer.hpp>
+#include <assimp/postprocess.h>
+#include <assimp/scene.h>
 
 namespace udsdx
 {
@@ -201,32 +202,35 @@ namespace udsdx
 
 	std::unique_ptr<ResourceObject> ModelLoader::Load(std::wstring_view path, const std::type_info* requestedType)
 	{ ZoneScoped;
-		std::filesystem::path pathString(path);
-
-		std::unique_ptr<ResourceObject> ret;
-		if (requestedType != nullptr)
+		// A model file always loads as a ModelAsset (a glTF-style scene graph of meshes/materials/textures).
+		if (requestedType != nullptr && *requestedType != typeid(ModelAsset))
 		{
-			if (*requestedType == typeid(Mesh))
-			{
-				std::unique_ptr<MeshBase> mesh = std::make_unique<Mesh>(pathString);
-				mesh->UploadBuffers(m_device, m_commandList);
-				mesh->ResolveEmbeddedTextures(m_device, m_commandList);
-				ret = std::move(mesh);
-			}
-			else if (*requestedType == typeid(RiggedMesh))
-			{
-				std::unique_ptr<MeshBase> mesh = std::make_unique<RiggedMesh>(pathString);
-				mesh->UploadBuffers(m_device, m_commandList);
-				mesh->ResolveEmbeddedTextures(m_device, m_commandList);
-				ret = std::move(mesh);
-			}
-			else if (*requestedType == typeid(AnimationClip))
-			{
-				ret = std::make_unique<AnimationClip>(pathString);
-			}
+			return nullptr;
 		}
 
-		return ret;
+		std::filesystem::path pathString(path);
+
+		Assimp::Importer importer;
+		importer.SetPropertyBool(AI_CONFIG_IMPORT_FBX_PRESERVE_PIVOTS, false);
+		const aiScene* scene = importer.ReadFile(
+			pathString.string(),
+			aiProcess_ConvertToLeftHanded |
+			aiProcess_Triangulate |
+			aiProcess_GenNormals |
+			aiProcess_CalcTangentSpace |
+			aiProcess_LimitBoneWeights |
+			aiProcess_OptimizeMeshes |
+			aiProcess_RemoveRedundantMaterials
+		);
+		if (scene == nullptr || scene->mRootNode == nullptr)
+		{
+			DebugConsole::LogError("Failed to load model with assimp: " + pathString.string());
+			return nullptr;
+		}
+
+		// The local importer owns 'scene' and outlives this call; ModelAsset copies everything it
+		// needs (geometry to the GPU, embedded textures staged, node data) and retains no aiScene pointer.
+		return std::make_unique<ModelAsset>(scene, pathString, m_device, m_commandList);
 	}
 
 	ShaderLoader::ShaderLoader(ID3D12Device* device, ID3D12GraphicsCommandList* commandList, ID3D12RootSignature* rootSignature) : ResourceLoader(device, commandList), m_rootSignature(rootSignature)

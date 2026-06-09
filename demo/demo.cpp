@@ -44,9 +44,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     UpdownStudio::RegisterUpdateCallback(Update);
 
     std::shared_ptr<Scene> scene = std::make_shared<Scene>();
-    auto mesh = INSTANCE(Resource)->Load<udsdx::Mesh>(L"resource\\model\\maxwell.obj");
+    auto maxwellAsset = INSTANCE(Resource)->Load<udsdx::ModelAsset>(L"resource\\model\\maxwell.obj");
     auto pipelineState = INSTANCE(Resource)->Load<Shader>(L"resource\\shader\\color.hlsl");
     auto pipelineStateTexture = INSTANCE(Resource)->Load<Shader>(L"resource\\shader\\color.hlsl");
+    // maxwell.obj's texture lives in resource/texture/ (not beside the model), so override the
+    // instantiated materials with it explicitly.
     udsdx::Material material = udsdx::Material(pipelineStateTexture, INSTANCE(Resource)->Load<udsdx::Texture>(L"resource\\texture\\dingus_nowhiskers.jpg"));
     udsdx::Material materialTile = udsdx::Material(pipelineState, INSTANCE(Resource)->Load<udsdx::Texture>(L"resource\\texture\\tile.png"));
     materialTile.SetSamplerMode(udsdx::MaterialSamplerMode::Nearest);
@@ -113,30 +115,25 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
     for (int i = 0; i < objects.size(); i++)
     {
+		// Wrap the instantiated asset under a placement object so the demo's position/scale layer on
+		// top of the asset's own internal node transforms instead of overwriting them.
 		objects[i] = SceneObject::MakeShared();
-		auto renderer = objects[i]->AddComponent<MeshRenderer>();
-		renderer->SetMesh(mesh);
-        renderer->SetMaterial(material);
+		auto instance = maxwellAsset->Instantiate(pipelineStateTexture);
+		for (auto* renderer : instance->GetComponentsInChildren<MeshRenderer>())
+		{
+			renderer->SetMaterial(material);
+		}
+		objects[i]->AddChild(instance);
 		objects[i]->GetTransform()->SetLocalPosition(Vector3(static_cast<float>(i % 10) * 3, 16.0f, static_cast<float>(i / 10) * 3));
         objects[i]->GetTransform()->SetLocalScale(Vector3::One * 0.001f);
 		scene->AddObject(objects[i]);
 	}
 
-    // Rigged character loaded from a GLB. If the file embeds an animation clip, the
-    // RiggedMeshRenderer starts playing it automatically on SetMesh.
-    auto riggedMesh = INSTANCE(Resource)->Load<udsdx::RiggedMesh>(L"resource\\model\\character.glb");
+    // Rigged character loaded from a GLB. The asset's embedded textures are already on its
+    // materials, and the RiggedMeshRenderer starts the embedded animation automatically on SetMesh.
+    auto characterAsset = INSTANCE(Resource)->Load<udsdx::ModelAsset>(L"resource\\model\\character.glb");
 
-    riggedObject = SceneObject::MakeShared();
-    auto riggedRenderer = riggedObject->AddComponent<RiggedMeshRenderer>();
-    riggedRenderer->SetMesh(riggedMesh);
-    // Give every submesh its own material built from the texture embedded in the GLB for that
-    // submesh. The renderer draws one submesh per material slot, so all submeshes must be set.
-    const auto& riggedSubmeshes = riggedMesh->GetSubmeshes();
-    for (size_t i = 0; i < riggedSubmeshes.size(); ++i)
-    {
-        udsdx::Material riggedMaterial = udsdx::Material(pipelineStateTexture, riggedMesh->GetSubmeshDiffuseTexture(i));
-        riggedRenderer->SetMaterial(riggedMaterial, static_cast<int>(i));
-    }
+    riggedObject = characterAsset->Instantiate(pipelineStateTexture);
     riggedObject->GetTransform()->SetLocalPosition(Vector3(0.0f, 16.0f, -4.0f));
     scene->AddObject(riggedObject);
 

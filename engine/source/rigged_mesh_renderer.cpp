@@ -25,10 +25,15 @@ namespace udsdx
 		int submeshCount = m_riggedMesh ? static_cast<int>(std::min(m_riggedMesh->GetSubmeshes().size(), m_materials.size())) : 0;
 		for (int i = 0; i < submeshCount; ++i)
 		{
-			scene.EnqueueRenderObject(this, m_renderGroup, m_materials[i].GetShader()->RiggedPipelineState(), m_materials[i].GetShader()->DeferredPipelineState(), i);
+			Shader* shader = m_materials[i].GetShader();
+			if (shader == nullptr)
+			{
+				continue;
+			}
+			scene.EnqueueRenderObject(this, m_renderGroup, shader->RiggedPipelineState(), shader->DeferredPipelineState(), i);
 			if (m_castShadow == true)
 			{
-				scene.EnqueueRenderShadowObject(this, m_materials[i].GetShader()->RiggedShadowPipelineState(), i);
+				scene.EnqueueRenderShadowObject(this, shader->RiggedShadowPipelineState(), i);
 			}
 		}
 	}
@@ -219,11 +224,11 @@ namespace udsdx
 
 		if (m_animation != nullptr)
 		{
-			m_animation->GetAnimationClip()->PopulateBoneMap(m_riggedMesh->GetBoneNames(), m_boneMapCache);
+			m_animation->PopulateBoneMap(m_riggedMesh->GetBoneNames(), m_boneMapCache);
 		}
 		if (m_prevAnimation != nullptr)
 		{
-			m_prevAnimation->GetAnimationClip()->PopulateBoneMap(m_riggedMesh->GetBoneNames(), m_prevBoneMapCache);
+			m_prevAnimation->PopulateBoneMap(m_riggedMesh->GetBoneNames(), m_prevBoneMapCache);
 		}
 
 		for (size_t index = 0; index < numSubmeshes; ++index)
@@ -247,59 +252,11 @@ namespace udsdx
 			}
 		}
 		m_boneConstantsCache.resize(numSubmeshes);
-
-		// If the mesh carries an embedded animation clip, start its first animation looping.
-		if (m_riggedMesh->GetAnimationClip() != nullptr)
-		{
-			SetAnimation(true);
-		}
 	}
 
 	void RiggedMeshRenderer::SetAnimation(const AnimationClip* animationClip, bool loop, bool forcePlay)
 	{
-		SetAnimation(&animationClip->GetAnimation(), loop, forcePlay);
-	}
-
-	void RiggedMeshRenderer::SetAnimation(const AnimationClip* animationClip, std::string_view animationName, bool loop, bool forcePlay)
-	{
-		SetAnimation(&animationClip->GetAnimation(animationName), loop, forcePlay);
-	}
-
-	void RiggedMeshRenderer::SetAnimation(std::string_view animationName, bool loop, bool forcePlay)
-	{
-		if (m_riggedMesh == nullptr)
-		{
-			DebugConsole::LogError("SetAnimation called before SetMesh.");
-			return;
-		}
-		const AnimationClip* clip = m_riggedMesh->GetAnimationClip();
-		if (clip == nullptr)
-		{
-			DebugConsole::LogError("RiggedMesh has no embedded animation clip.");
-			return;
-		}
-		SetAnimation(clip, animationName, loop, forcePlay);
-	}
-
-	void RiggedMeshRenderer::SetAnimation(bool loop, bool forcePlay)
-	{
-		if (m_riggedMesh == nullptr)
-		{
-			DebugConsole::LogError("SetAnimation called before SetMesh.");
-			return;
-		}
-		const AnimationClip* clip = m_riggedMesh->GetAnimationClip();
-		if (clip == nullptr)
-		{
-			DebugConsole::LogError("RiggedMesh has no embedded animation clip.");
-			return;
-		}
-		SetAnimation(clip, loop, forcePlay);
-	}
-
-	void RiggedMeshRenderer::SetAnimation(const Animation* animation, bool loop, bool forcePlay)
-	{
-		if (!forcePlay && m_animation == animation)
+		if (!forcePlay && m_animation == animationClip)
 		{
 			return;
 		}
@@ -312,10 +269,10 @@ namespace udsdx
 			m_animationTime = 0.0f;
 			m_transitionFactor = 0.0f;
 			m_prevBoneMapCache = m_boneMapCache;
-			animation->GetAnimationClip()->PopulateBoneMap(m_riggedMesh->GetBoneNames(), m_boneMapCache);
+			animationClip->PopulateBoneMap(m_riggedMesh->GetBoneNames(), m_boneMapCache);
 		}
 		// If the animation is blending, but the new animation is previous one
-		else if (animation == m_prevAnimation)
+		else if (animationClip == m_prevAnimation)
 		{
 			m_prevAnimation = m_animation;
 			m_transitionFactor = 1.0f - m_transitionFactor;
@@ -326,10 +283,10 @@ namespace udsdx
 		else
 		{
 			m_animationTime = 0.0f;
-			animation->GetAnimationClip()->PopulateBoneMap(m_riggedMesh->GetBoneNames(), m_boneMapCache);
+			animationClip->PopulateBoneMap(m_riggedMesh->GetBoneNames(), m_boneMapCache);
 		}
 
-		m_animation = animation;
+		m_animation = animationClip;
 		m_loop = loop;
 	}
 

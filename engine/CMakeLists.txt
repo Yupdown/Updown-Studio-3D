@@ -24,6 +24,7 @@ set(ENGINE_SOURCES
     source/material.cpp
     source/mesh.cpp
     source/mesh_base.cpp
+    source/model_asset.cpp
     source/mesh_renderer.cpp
     source/mono_upload_buffer.cpp
     source/motion_blur.cpp

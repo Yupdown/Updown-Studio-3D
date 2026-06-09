@@ -3,6 +3,8 @@
 #include "pch.h"
 #include "mesh_base.h"
 
+struct aiScene;
+
 namespace udsdx
 {
 	struct Bone
@@ -11,12 +13,12 @@ namespace udsdx
 		Matrix4x4 Transform{};
 	};
 
-	class AnimationClip;
-
 	class RiggedMesh : public MeshBase
 	{
 	public:
-		RiggedMesh(const std::filesystem::path& resourcePath);
+		// One rigged mesh built from a whole Assimp scene: it owns the shared skeleton and all
+		// skinned submeshes. Animation clips are owned by the ModelAsset, not the mesh.
+		RiggedMesh(const aiScene* scene);
 		~RiggedMesh();
 
 		// Matrices for default pose (no animation)
@@ -25,15 +27,15 @@ namespace udsdx
 		UINT GetBoneCount() const;
 		std::vector<std::string> GetBoneNames() const;
 		const std::vector<int>& GetBoneParents() const;
-		// Animation clip embedded in the source model file, or nullptr if the file has no animations.
-		const AnimationClip* GetAnimationClip() const;
+		// Source material index of each submesh, in submesh order. Used by the owning ModelAsset to map
+		// submeshes to materials.
+		const std::vector<unsigned int>& GetSubmeshMaterialIndices() const;
 
 	protected:
 		std::vector<Bone> m_bones;
 		std::vector<int> m_boneParents;
 
 		std::unordered_map<std::string, int> m_boneIndexMap;
-
-		std::unique_ptr<AnimationClip> m_embeddedClip;
+		std::vector<unsigned int> m_submeshMaterialIndices;
 	};
 }
