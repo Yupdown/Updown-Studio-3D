@@ -2,6 +2,9 @@ include(FetchContent)
 
 set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL "Disable automatic dependency updates" FORCE)
 
+# Captured at include time so the patch script resolves relative to this file.
+set(UPDOWN_DEPS_PATCH_SCRIPT "${CMAKE_CURRENT_LIST_DIR}/patches/fix_compileshaders_cwd.cmake")
+
 function(updown_setup_dependencies)
     if(TARGET updown_deps_ready)
         return()
@@ -19,12 +22,14 @@ function(updown_setup_dependencies)
         GIT_REPOSITORY https://github.com/microsoft/DirectXTK12.git
         GIT_TAG mar2026
         GIT_SHALLOW TRUE
+        PATCH_COMMAND ${CMAKE_COMMAND} -P "${UPDOWN_DEPS_PATCH_SCRIPT}"
     )
     FetchContent_Declare(
         directxtex
         GIT_REPOSITORY https://github.com/microsoft/DirectXTex.git
         GIT_TAG mar2026
         GIT_SHALLOW TRUE
+        PATCH_COMMAND ${CMAKE_COMMAND} -P "${UPDOWN_DEPS_PATCH_SCRIPT}"
     )
     FetchContent_Declare(
         imgui
