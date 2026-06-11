@@ -6,8 +6,13 @@
 namespace udsdx
 {
 	class RiggedMesh;
-	class AnimationClip;
 
+	// Renders a RiggedMesh skinned by the SceneObject hierarchy: each RiggedMesh bone is resolved
+	// by name to a descendant SceneObject, whose world matrix is read directly in Render and goes
+	// into the bone constant buffer (as boneWorld * inverseBind, so the rigged shader path skips
+	// gWorld). World matrices are scene-validated before the render phase, so no per-renderer
+	// bone cache is kept. Animation is driven by an Animator component writing into those bone
+	// SceneObjects, not by this renderer.
 	class RiggedMeshRenderer : public RendererBase
 	{
 	public:
@@ -25,44 +30,27 @@ namespace udsdx
 	public:
 		RiggedMesh* GetMesh() const;
 		void SetMesh(RiggedMesh* mesh);
-		// Plays the given clip (owned by the ModelAsset); pass nullptr semantics are not supported.
-		void SetAnimation(const AnimationClip* animationClip, bool loop = false, bool forcePlay = false);
-		void SetTransitionFactor(float factor);
-		void SetBoneModifier(std::string_view boneName, const Matrix4x4& transform);
-		const Matrix4x4& GetBoneTransform(std::string_view boneName) const;
-		void ClearBoneModifiers();
-		void CacheBoneTransforms();
-		bool IsAnimationPlaying() const;
+		// Re-resolves RiggedMesh bone names to descendant SceneObjects.
+		// Call after re-parenting or renaming bone objects.
+		void RebindBones();
+		// World matrix of the bone's SceneObject (this object's own world matrix when the bone is
+		// unresolved). Read it during or after the render phase for this frame's value.
+		Matrix4x4 GetBoneTransform(std::string_view boneName) const;
 
 	protected:
 		RiggedMesh* m_riggedMesh = nullptr;
-
-		const AnimationClip* m_animation = nullptr;
-		const AnimationClip* m_prevAnimation = nullptr;
-
-		// Stores bone indices for AnimationClip.
-		// indexed by bone index of RiggedMesh.
-		// (Rigged Mesh Bone Index -> Animation Clip Bone Index)
-		std::vector<int> m_boneMapCache;
-		std::vector<int> m_prevBoneMapCache;
 
 		// Stores bone indices for each submesh.
 		// indexed by bone index of bones of RiggedMesh.
 		// (Submesh Bone Index -> Rigged Mesh Bone Index)
 		std::vector<std::vector<int>> m_submeshBoneMapCache;
 
-		// Stores temporal bone transforms (without offsets, not transposed). Can be updated by calling CacheBoneTransforms().
+		// SceneObject of each RiggedMesh bone (the root bone resolves to this renderer's own
+		// object), or nullptr when the bone is unresolved. Shared ownership keeps a bone alive
+		// even if it is detached from the hierarchy, until RebindBones() re-resolves.
 		// indexed by bone index of bones of RiggedMesh.
-		// (Rigged Mesh Bone Index -> Bone Transform)
-		std::vector<Matrix4x4> m_boneTransformCache;
-
-		float m_animationTime = 0.0f;
-		float m_prevAnimationTime = 0.0f;
-
-		std::map<std::string_view, Matrix4x4> m_boneModifiers;
-
-		bool m_loop = false;
-		float m_transitionFactor = 0.0f;
+		std::vector<std::shared_ptr<SceneObject>> m_boneBindings;
+		bool m_boneBindingAttempted = false;
 
 		std::array<std::vector<std::unique_ptr<UploadBuffer<BoneConstants>>>, FrameResourceCount> m_constantBuffers;
 		std::array<std::vector<std::unique_ptr<UploadBuffer<BoneConstants>>>, FrameResourceCount> m_prevConstantBuffers;

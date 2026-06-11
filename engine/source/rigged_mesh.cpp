@@ -11,36 +11,30 @@ namespace udsdx
 		std::vector<RiggedVertex> vertices;
 		std::vector<UINT> indices;
 
-		m_bones.clear();
-		m_boneParents.clear();
+		m_boneNames.clear();
 		m_boneIndexMap.clear();
 		m_submeshes.clear();
 
-		std::vector<std::pair<aiNode*, int>> nodeStack;
+		std::vector<aiNode*> nodeStack;
 		std::vector<std::pair<aiNode*, aiMesh*>> meshStack;
-		nodeStack.emplace_back(scene->mRootNode, -1);
+		nodeStack.emplace_back(scene->mRootNode);
 		while (!nodeStack.empty())
 		{
-			auto [node, parentIndex] = nodeStack.back();
+			aiNode* node = nodeStack.back();
 			nodeStack.pop_back();
-
-			Bone boneData{};
-			boneData.Name = node->mName.C_Str();
-			aiMatrix4x4 transposed = node->mTransformation.Transpose();
-			boneData.Transform = XMFLOAT4X4(reinterpret_cast<float*>(&transposed.a1));
 
 			for (unsigned int i = 0; i < node->mNumMeshes; ++i)
 			{
 				meshStack.emplace_back(node, scene->mMeshes[node->mMeshes[i]]);
 			}
 
-			m_boneIndexMap[boneData.Name] = static_cast<int>(m_bones.size());
-			m_bones.emplace_back(boneData);
-			m_boneParents.push_back(parentIndex);
+			std::string boneName = node->mName.C_Str();
+			m_boneIndexMap[boneName] = static_cast<int>(m_boneNames.size());
+			m_boneNames.emplace_back(std::move(boneName));
 
 			for (unsigned int i = 0; i < node->mNumChildren; ++i)
 			{
-				nodeStack.emplace_back(node->mChildren[i], static_cast<int>(m_bones.size()) - 1);
+				nodeStack.emplace_back(node->mChildren[i]);
 			}
 		}
 
@@ -50,8 +44,6 @@ namespace udsdx
 			submesh.Name = node->mName.C_Str();
 			submesh.StartIndexLocation = static_cast<unsigned int>(indices.size());
 			submesh.BaseVertexLocation = static_cast<unsigned int>(vertices.size());
-			auto nodeIter = m_boneIndexMap.find(submesh.Name);
-			submesh.NodeID = nodeIter == m_boneIndexMap.end() ? -1 : nodeIter->second;
 
 			m_submeshMaterialIndices.push_back(mesh->mMaterialIndex);
 
@@ -143,19 +135,6 @@ namespace udsdx
 
 	RiggedMesh::~RiggedMesh() = default;
 
-	void RiggedMesh::PopulateTransforms(std::vector<Matrix4x4>& out) const
-	{
-		out.resize(m_bones.size());
-
-		for (UINT i = 0; i < out.size(); ++i)
-		{
-			const Bone& bone = m_bones[i];
-			XMMATRIX tParent = m_boneParents[i] < 0 ? XMMatrixIdentity() : XMLoadFloat4x4(&out[m_boneParents[i]]);
-			XMMATRIX tLocal = XMLoadFloat4x4(&bone.Transform);
-			XMStoreFloat4x4(&out[i], XMMatrixMultiply(tLocal, tParent));
-		}
-	}
-
 	int RiggedMesh::GetBoneIndex(std::string_view boneName) const
 	{
 		auto iter = m_boneIndexMap.find(boneName.data());
@@ -166,23 +145,7 @@ namespace udsdx
 
 	UINT RiggedMesh::GetBoneCount() const
 	{
-		return static_cast<UINT>(m_bones.size());
-	}
-
-	std::vector<std::string> RiggedMesh::GetBoneNames() const
-	{
-		std::vector<std::string> boneNames;
-		boneNames.reserve(m_bones.size());
-		for (const auto& bone : m_bones)
-		{
-			boneNames.emplace_back(bone.Name);
-		}
-		return boneNames;
-	}
-
-	const std::vector<int>& RiggedMesh::GetBoneParents() const
-	{
-		return m_boneParents;
+		return static_cast<UINT>(m_boneNames.size());
 	}
 
 	const std::vector<unsigned int>& RiggedMesh::GetSubmeshMaterialIndices() const

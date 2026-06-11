@@ -1,6 +1,5 @@
 #include "pch.h"
 #include "rigged_mesh_renderer.h"
-#include "animation_clip.h"
 #include "renderer_base.h"
 #include "frame_resource.h"
 #include "scene_object.h"
@@ -20,8 +19,6 @@ namespace udsdx
 	{
 		RendererBase::PostUpdate(time, scene);
 
-		CacheBoneTransforms();
-
 		int submeshCount = m_riggedMesh ? static_cast<int>(std::min(m_riggedMesh->GetSubmeshes().size(), m_materials.size())) : 0;
 		for (int i = 0; i < submeshCount; ++i)
 		{
@@ -40,56 +37,71 @@ namespace udsdx
 
 	void RiggedMeshRenderer::Update(const Time& time, Scene& scene)
 	{
-		m_animationTime += time.deltaTime;
-		m_prevAnimationTime += time.deltaTime;
-		m_transitionFactor += time.deltaTime / 0.2f;
+		// Bone SceneObjects can be moved by anything at any time, so re-upload every frame.
 		m_constantBuffersDirty = true;
 
 		RendererBase::Update(time, scene);
 	}
 
 	void RiggedMeshRenderer::OnDrawGizmos(const Camera* target)
-	{	
-		ImVec2 screenSize = ImGui::GetIO().DisplaySize;
-		float screenRatio = screenSize.x / screenSize.y;
-		
-		// Perform frustum culling
-		BoundingBox boundsWorld;
-		m_riggedMesh->GetBounds().Transform(boundsWorld, m_transformCache);
-		if (nullptr == m_animation || target->GetViewFrustumWorld(screenRatio)->Contains(boundsWorld) == ContainmentType::DISJOINT)
+	{
+		if (m_riggedMesh == nullptr)
 		{
 			return;
 		}
 
-		const auto& boneParents = m_riggedMesh->GetBoneParents();
-		std::vector<ImVec2> boneScreenPositions(m_boneTransformCache.size());
+		ImVec2 screenSize = ImGui::GetIO().DisplaySize;
+		float screenRatio = screenSize.x / screenSize.y;
 
-		for (size_t index = 0; index < m_boneTransformCache.size(); ++index)
+		// Perform frustum culling
+		BoundingBox boundsWorld;
+		m_riggedMesh->GetBounds().Transform(boundsWorld, m_transformCache);
+		if (target->GetViewFrustumWorld(screenRatio)->Contains(boundsWorld) == ContainmentType::DISJOINT)
 		{
-			const auto& bone = m_boneTransformCache[index];
+			return;
+		}
 
-			Vector3 worldPosition = Vector3::Transform(Vector3(bone.m[3][0], bone.m[3][1], bone.m[3][2]), m_transformCache);
+		std::vector<ImVec2> boneScreenPositions(m_boneBindings.size());
+		std::unordered_map<const SceneObject*, size_t> boneIndexMap;
+
+		for (size_t index = 0; index < m_boneBindings.size(); ++index)
+		{
+			if (m_boneBindings[index] == nullptr)
+			{
+				continue;
+			}
+			Matrix4x4 boneWorld = m_boneBindings[index]->GetTransform()->GetWorldSRTMatrix(false);
+			Vector3 worldPosition = Vector3(boneWorld.m[3][0], boneWorld.m[3][1], boneWorld.m[3][2]);
 			Vector2 screenPosition = target->ToScreenPosition(worldPosition);
 			boneScreenPositions[index] = ImVec2(screenPosition.x, screenPosition.y);
+			boneIndexMap.emplace(m_boneBindings[index].get(), index);
 		}
 
 		ImDrawList* drawList = ImGui::GetBackgroundDrawList();
 		for (size_t index = 0; index < boneScreenPositions.size(); ++index)
 		{
-			const auto& parentIndex = boneParents[index];
+			if (m_boneBindings[index] == nullptr)
+			{
+				continue;
+			}
 
-			ImDrawList* drawList = ImGui::GetBackgroundDrawList();
 			drawList->AddRectFilled(
 				ImVec2(boneScreenPositions[index].x - 2.0f, boneScreenPositions[index].y - 2.0f),
 				ImVec2(boneScreenPositions[index].x + 2.0f, boneScreenPositions[index].y + 2.0f),
 				IM_COL32(255, 255, 0, 255));
 
-			if (boneParents[index] >= 0)
+			// Connect to the nearest bone ancestor in the actual SceneObject hierarchy.
+			for (const SceneObject* parent = m_boneBindings[index]->GetParent(); parent != nullptr; parent = parent->GetParent())
 			{
-				drawList->AddLine(
-					boneScreenPositions[index],
-					boneScreenPositions[parentIndex],
-					IM_COL32(255, 255, 0, 255), 2.0f);
+				auto found = boneIndexMap.find(parent);
+				if (found != boneIndexMap.end())
+				{
+					drawList->AddLine(
+						boneScreenPositions[index],
+						boneScreenPositions[found->second],
+						IM_COL32(255, 255, 0, 255), 2.0f);
+					break;
+				}
 			}
 		}
 
@@ -174,13 +186,25 @@ namespace udsdx
 
 		if (m_constantBuffersDirty)
 		{
-			// Update bone constants
+			if (!m_boneBindingAttempted)
+			{
+				RebindBones();
+			}
+
+			// Unresolved bones collapse to this object's transform; the skeleton SceneObjects
+			// instantiated by ModelAsset always resolve.
+			Matrix4x4 ownWorld = GetSceneObject()->GetTransform()->GetWorldSRTMatrix(false);
+
+			// Update bone constants from the bone SceneObjects' world matrices, which are
+			// scene-validated before the render phase.
 			for (size_t index = 0; index < submeshes.size(); ++index)
 			{
 				std::vector<Matrix4x4> boneTransforms;
 				for (size_t boneIndex = 0; boneIndex < m_submeshBoneMapCache[index].size(); ++boneIndex)
 				{
-					Matrix4x4 boneTransform = m_boneTransformCache[m_submeshBoneMapCache[index][boneIndex]];
+					int meshBoneIndex = m_submeshBoneMapCache[index][boneIndex];
+					bool bound = meshBoneIndex >= 0 && static_cast<size_t>(meshBoneIndex) < m_boneBindings.size() && m_boneBindings[meshBoneIndex] != nullptr;
+					Matrix4x4 boneTransform = bound ? m_boneBindings[meshBoneIndex]->GetTransform()->GetWorldSRTMatrix(false) : ownWorld;
 					Matrix4x4 finalTransform = submeshes[index].BoneOffsets[boneIndex] * boneTransform;
 					boneTransforms.emplace_back(finalTransform.Transpose());
 				}
@@ -219,18 +243,13 @@ namespace udsdx
 	{
 		m_riggedMesh = mesh;
 
+		m_boneBindings.clear();
+		m_boneBindingAttempted = false;
+
 		const auto& submeshes = mesh->GetSubmeshes();
 		size_t numSubmeshes = mesh->GetSubmeshes().size();
 
-		if (m_animation != nullptr)
-		{
-			m_animation->PopulateBoneMap(m_riggedMesh->GetBoneNames(), m_boneMapCache);
-		}
-		if (m_prevAnimation != nullptr)
-		{
-			m_prevAnimation->PopulateBoneMap(m_riggedMesh->GetBoneNames(), m_prevBoneMapCache);
-		}
-
+		m_submeshBoneMapCache.clear();
 		for (size_t index = 0; index < numSubmeshes; ++index)
 		{
 			auto& cache = m_submeshBoneMapCache.emplace_back();
@@ -254,93 +273,42 @@ namespace udsdx
 		m_boneConstantsCache.resize(numSubmeshes);
 	}
 
-	void RiggedMeshRenderer::SetAnimation(const AnimationClip* animationClip, bool loop, bool forcePlay)
+	void RiggedMeshRenderer::RebindBones()
 	{
-		if (!forcePlay && m_animation == animationClip)
+		m_boneBindingAttempted = true;
+		const size_t boneCount = m_riggedMesh != nullptr ? m_riggedMesh->GetBoneCount() : 0;
+		m_boneBindings.assign(boneCount, nullptr);
+		if (m_riggedMesh == nullptr)
 		{
 			return;
 		}
 
-		// If the animation is not blending
-		if (m_transitionFactor >= 1.0f || forcePlay)
-		{
-			m_prevAnimation = m_animation;
-			m_prevAnimationTime = m_animationTime;
-			m_animationTime = 0.0f;
-			m_transitionFactor = 0.0f;
-			m_prevBoneMapCache = m_boneMapCache;
-			animationClip->PopulateBoneMap(m_riggedMesh->GetBoneNames(), m_boneMapCache);
-		}
-		// If the animation is blending, but the new animation is previous one
-		else if (animationClip == m_prevAnimation)
-		{
-			m_prevAnimation = m_animation;
-			m_transitionFactor = 1.0f - m_transitionFactor;
-			std::swap(m_animationTime, m_prevAnimationTime);
-			std::swap(m_boneMapCache, m_prevBoneMapCache);
-		}
-		// If the animation is blending, but the new animation is different from previous one
-		else
-		{
-			m_animationTime = 0.0f;
-			animationClip->PopulateBoneMap(m_riggedMesh->GetBoneNames(), m_boneMapCache);
-		}
-
-		m_animation = animationClip;
-		m_loop = loop;
-	}
-
-	void RiggedMeshRenderer::SetTransitionFactor(float factor)
-	{
-		m_transitionFactor = factor;
-	}
-
-	void RiggedMeshRenderer::SetBoneModifier(std::string_view boneName, const Matrix4x4& transform)
-	{
-		m_boneModifiers[boneName] = transform;
-	}
-
-	const Matrix4x4& RiggedMeshRenderer::GetBoneTransform(std::string_view boneName) const
-	{
-		int boneIndex = m_riggedMesh->GetBoneIndex(boneName);
-		if (boneIndex < 0 || boneIndex >= static_cast<int>(m_boneTransformCache.size()))
-		{
-			static Matrix4x4 identity;
-			return identity; // Return identity matrix if bone not found
-		}
-		return m_boneTransformCache[boneIndex];
-	}
-
-	void RiggedMeshRenderer::ClearBoneModifiers()
-	{
-		m_boneModifiers.clear();
-	}
-
-	void RiggedMeshRenderer::CacheBoneTransforms()
-	{
-		if (m_animation == nullptr)
-		{
-			m_riggedMesh->PopulateTransforms(m_boneTransformCache);
-		}
-		else
-		{
-			float animationTime = m_loop ? fmodf(m_animationTime, m_animation->GetAnimationDuration()) : m_animationTime;
-			m_animation->PopulateTransforms(animationTime, m_boneMapCache, m_boneTransformCache, m_boneModifiers);
-		}
-		if (m_transitionFactor < 1.0f && m_prevAnimation != nullptr)
-		{
-			std::vector<Matrix4x4> prevTransforms;
-			m_prevAnimation->PopulateTransforms(m_prevAnimationTime, m_prevBoneMapCache, prevTransforms, m_boneModifiers);
-			float t = SmoothStep(std::clamp(m_transitionFactor, 0.0f, 1.0f));
-			for (size_t i = 0; i < m_boneTransformCache.size(); ++i)
+		std::unordered_map<std::string, std::shared_ptr<SceneObject>> objectMap;
+		SceneObject::Enumerate(GetSceneObject(), [&objectMap](const std::shared_ptr<SceneObject>& node) {
+			if (!node->GetName().empty())
 			{
-				m_boneTransformCache[i] = Matrix4x4::Lerp(prevTransforms[i], m_boneTransformCache[i], t);
+				objectMap.emplace(node->GetName(), node);
+			}
+		}, false);
+
+		const auto& boneNames = m_riggedMesh->GetBoneNames();
+		for (size_t i = 0; i < boneCount; ++i)
+		{
+			auto found = objectMap.find(boneNames[i]);
+			if (found != objectMap.end())
+			{
+				m_boneBindings[i] = found->second;
 			}
 		}
 	}
 
-	bool RiggedMeshRenderer::IsAnimationPlaying() const
+	Matrix4x4 RiggedMeshRenderer::GetBoneTransform(std::string_view boneName) const
 	{
-		return m_animation != nullptr && (m_loop || m_animationTime < m_animation->GetAnimationDuration());
+		int boneIndex = m_riggedMesh != nullptr ? m_riggedMesh->GetBoneIndex(boneName) : -1;
+		if (boneIndex >= 0 && static_cast<size_t>(boneIndex) < m_boneBindings.size() && m_boneBindings[boneIndex] != nullptr)
+		{
+			return m_boneBindings[boneIndex]->GetTransform()->GetWorldSRTMatrix(false);
+		}
+		return GetSceneObject()->GetTransform()->GetWorldSRTMatrix(false);
 	}
 }

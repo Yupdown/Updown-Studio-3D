@@ -174,7 +174,7 @@ namespace udsdx
 
 		ImVec2 cursorPos = ImGui::GetCursorScreenPos();
 		std::string nodeID = std::to_string(reinterpret_cast<unsigned long long>(this));
-		if (ImGui::TreeNode(nodeID.c_str(), "Scene Object (%zu Components) (%.1f, %.1f, %.1f)", m_components.size(), worldPosition.x, worldPosition.y, worldPosition.z))
+		if (ImGui::TreeNode(nodeID.c_str(), "%s (%zu Components) (%.1f, %.1f, %.1f)", m_name.c_str(), m_components.size(), worldPosition.x, worldPosition.y, worldPosition.z))
 		{
 			// Draw position text
 			Vector3 localPosition = m_transform.GetLocalPosition();

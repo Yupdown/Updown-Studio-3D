@@ -1,6 +1,7 @@
 set(ENGINE_SOURCES
     source/allocation.cpp
     source/animation_clip.cpp
+    source/animator.cpp
     source/audio_system.cpp
     source/audio_clip.cpp
     source/camera.cpp

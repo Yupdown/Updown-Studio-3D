@@ -130,7 +130,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	}
 
     // Rigged character loaded from a GLB. The asset's embedded textures are already on its
-    // materials, and the RiggedMeshRenderer starts the embedded animation automatically on SetMesh.
+    // materials; Instantiate spawns the skeleton as named child SceneObjects and an Animator on
+    // the root that auto-plays the first clip looped.
     auto characterAsset = INSTANCE(Resource)->Load<udsdx::ModelAsset>(L"resource\\model\\character.glb");
 
     riggedObject = characterAsset->Instantiate(pipelineStateTexture);

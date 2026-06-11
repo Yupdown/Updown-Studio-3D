@@ -36,10 +36,13 @@ namespace udsdx
 		ModelAsset(const aiScene* scene, const std::filesystem::path& resourcePath, ID3D12Device* device, ID3D12GraphicsCommandList* commandList);
 		~ModelAsset();
 
-		// Builds a SceneObject hierarchy mirroring the node graph; attaches a MeshRenderer (static)
-		// or RiggedMeshRenderer (rigged) to nodes that reference meshes, assigning the asset's
-		// materials with 'shader' injected. Returns the root SceneObject (the caller adds it to a
-		// Scene), or nullptr if the asset is empty.
+		// Builds a SceneObject hierarchy mirroring the node graph, each object named after its node.
+		// Static assets attach a MeshRenderer to nodes that reference meshes. Rigged assets spawn
+		// the skeleton as those named SceneObjects and attach to the root a RiggedMeshRenderer
+		// (skinning from the bone objects' Transforms) plus, when the asset has animations, an
+		// Animator registered with every clip, auto-playing the first one looped. Materials get
+		// 'shader' injected. Returns the root SceneObject (the caller adds it to a Scene), or
+		// nullptr if the asset is empty.
 		std::shared_ptr<SceneObject> Instantiate(Shader* shader) const;
 
 		bool IsRigged() const { return m_isRigged; }

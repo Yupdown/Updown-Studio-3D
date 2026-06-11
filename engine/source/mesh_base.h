@@ -14,7 +14,6 @@ namespace udsdx
 		UINT BaseVertexLocation = 0;
 
 		// For Rigged Mesh
-		UINT NodeID = 0;
 		std::vector<std::string> BoneNodeIDs;
 		std::vector<Matrix4x4> BoneOffsets;
 	};

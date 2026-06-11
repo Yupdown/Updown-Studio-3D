@@ -18,9 +18,11 @@ namespace udsdx
 
 	void RiggedPropRenderer::UpdateTransformCache()
 	{
+		// The bone transform is the bone SceneObject's world matrix (scene-validated before the
+		// render phase), so the prop needs no further parent composition.
 		Matrix4x4 boneMatrix = m_targetCache->GetBoneTransform(m_boneName);
 		m_prevTransformCache = std::move(m_transformCache);
-		m_transformCache = m_propLocalTransform * boneMatrix * GetSceneObject()->GetTransform()->GetWorldSRTMatrix(false);
+		m_transformCache = m_propLocalTransform * boneMatrix;
 	}
 
 	std::string_view RiggedPropRenderer::GetBoneName() const

@@ -47,6 +47,10 @@ namespace udsdx
 		~SceneObject();
 
 	public:
+		const std::string& GetName() const { return m_name; }
+		void SetName(std::string_view name) { m_name = name; }
+
+	public:
 		Transform* GetTransform();
 		void Update(const Time& time, Scene& scene);
 		void PostUpdate(const Time& time, Scene& scene);
@@ -148,6 +152,7 @@ namespace udsdx
 		void RemoveAllComponents();
 
 	protected:
+		std::string m_name = "Scene Object";
 		bool m_active = true;
 		// Only has an instance for the root SceneObject of a Scene
 		Scene* m_sceneRoot = nullptr;

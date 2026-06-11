@@ -1,6 +1,5 @@
 #include "pch.h"
 #include "animation_clip.h"
-#include "rigged_mesh.h"
 #include "debug_console.h"
 #include <assimp/scene.h>
 
@@ -34,6 +33,22 @@ namespace udsdx
 		}
 
 		BuildSkeleton(scene);
+
+		// Precompute each bone's bind-pose TRS so channel-less bones can still be sampled.
+		m_bindPoses.resize(m_bones.size());
+		for (size_t i = 0; i < m_bones.size(); ++i)
+		{
+			Matrix4x4 bindTransform = m_bones[i].Transform;
+			Vector3 scale;
+			Quaternion rotation;
+			Vector3 translation;
+			if (bindTransform.Decompose(scale, rotation, translation))
+			{
+				m_bindPoses[i].Position = translation;
+				m_bindPoses[i].Rotation = rotation;
+				m_bindPoses[i].Scale = scale;
+			}
+		}
 
 		m_name = animationSrc->mName.C_Str();
 		m_ticksPerSecond = static_cast<float>(animationSrc->mTicksPerSecond != 0.0 ? animationSrc->mTicksPerSecond : 1.0);
@@ -102,15 +117,6 @@ namespace udsdx
 		}
 	}
 
-	void AnimationClip::PopulateBoneMap(const std::vector<std::string>& boneNames, std::vector<int>& out) const
-	{
-		out.resize(boneNames.size());
-		for (UINT i = 0; i < out.size(); ++i)
-		{
-			out[i] = GetBoneIndex(boneNames[i]);
-		}
-	}
-
 	int AnimationClip::GetBoneIndex(std::string_view boneName) const
 	{
 		auto it = m_boneIndexMap.find(boneName.data());
@@ -126,77 +132,39 @@ namespace udsdx
 		return static_cast<UINT>(m_bones.size());
 	}
 
-	void AnimationClip::PopulateTransforms(float animationTime, std::vector<Matrix4x4>& out) const
+	bool AnimationClip::SampleLocalPose(int boneIndex, float animationTime, BoneLocalPose& out) const
 	{
-		std::vector<int> boneMap;
-
-		boneMap.reserve(GetBoneCount());
-
-		int index = 0;
-		for (const Bone& bone : m_bones)
+		if (boneIndex < 0 || boneIndex >= static_cast<int>(m_channels.size()))
 		{
-			boneMap.push_back(index++);
+			out = BoneLocalPose{};
+			return false;
 		}
 
-		PopulateTransforms(animationTime, boneMap, out);
-	}
-
-	void AnimationClip::PopulateTransforms(float animationTime, const std::vector<int>& boneMap, std::vector<Matrix4x4>& out, const std::map<std::string_view, Matrix4x4>& modifiers) const
-	{
-		UINT boneCount = static_cast<UINT>(GetBoneCount());
+		const Channel& channel = m_channels[boneIndex];
+		if (channel.Name.empty())
+		{
+			out = m_bindPoses[boneIndex];
+			return false;
+		}
 
 		float animationTicks = animationTime * m_ticksPerSecond;
-		std::vector<Matrix4x4> in(boneCount);
 
-		for (UINT i = 0; i < boneCount; ++i)
-		{
-			const Bone& bone = m_bones.at(i);
-			const Channel& channel = m_channels[i];
+		auto [ps1, ps2, pf] = ToTimeFraction(channel.PositionTimestamps, animationTicks);
+		auto [rs1, rs2, rf] = ToTimeFraction(channel.RotationTimestamps, animationTicks);
+		auto [ss1, ss2, sf] = ToTimeFraction(channel.ScaleTimestamps, animationTicks);
 
-			XMMATRIX tParent = XMMatrixIdentity();
-			if (m_boneParents.at(i) != -1)
-			{
-				tParent = XMLoadFloat4x4(&in[m_boneParents.at(i)]);
-			}
+		XMVECTOR p0 = XMLoadFloat3(&channel.Positions[ps1]);
+		XMVECTOR p1 = XMLoadFloat3(&channel.Positions[ps2]);
+		XMStoreFloat3(&out.Position, XMVectorLerp(p0, p1, pf));
 
-			XMMATRIX tLocal;
-			if (channel.Name.empty())
-				tLocal = XMLoadFloat4x4(&bone.Transform);
-			else
-			{
-				auto [ps1, ps2, pf] = ToTimeFraction(channel.PositionTimestamps, animationTicks);
-				auto [rs1, rs2, rf] = ToTimeFraction(channel.RotationTimestamps, animationTicks);
-				auto [ss1, ss2, sf] = ToTimeFraction(channel.ScaleTimestamps, animationTicks);
+		XMVECTOR q0 = XMLoadFloat4(&channel.Rotations[rs1]);
+		XMVECTOR q1 = XMLoadFloat4(&channel.Rotations[rs2]);
+		XMStoreFloat4(&out.Rotation, XMQuaternionSlerp(q0, q1, rf));
 
-				XMVECTOR p0 = XMLoadFloat3(&channel.Positions[ps1]);
-				XMVECTOR p1 = XMLoadFloat3(&channel.Positions[ps2]);
-				XMVECTOR p = XMVectorLerp(p0, p1, pf);
+		XMVECTOR s0 = XMLoadFloat3(&channel.Scales[ss1]);
+		XMVECTOR s1 = XMLoadFloat3(&channel.Scales[ss2]);
+		XMStoreFloat3(&out.Scale, XMVectorLerp(s0, s1, sf));
 
-				XMVECTOR q0 = XMLoadFloat4(&channel.Rotations[rs1]);
-				XMVECTOR q1 = XMLoadFloat4(&channel.Rotations[rs2]);
-				XMVECTOR q = XMQuaternionSlerp(q0, q1, rf);
-
-				XMVECTOR s0 = XMLoadFloat3(&channel.Scales[ss1]);
-				XMVECTOR s1 = XMLoadFloat3(&channel.Scales[ss2]);
-				XMVECTOR s = XMVectorLerp(s0, s1, sf);
-
-				tLocal = XMMatrixAffineTransformation(s, XMVectorZero(), q, p);
-				if (modifiers.find(bone.Name) != modifiers.end())
-				{
-					XMMATRIX modifier = XMLoadFloat4x4(&modifiers.at(bone.Name));
-					tLocal = tLocal * modifier;
-				}
-			}
-
-			XMStoreFloat4x4(&in[i], tLocal * tParent);
-		}
-
-		out.resize(boneMap.size());
-		for (UINT i = 0; i < out.size(); ++i)
-		{
-			int boneID = boneMap[i];
-			XMMATRIX boneTransform = boneID >= 0 ? XMLoadFloat4x4(&in[boneID]) : XMMatrixIdentity();
-			XMStoreFloat4x4(&out[i], boneTransform);
-		}
+		return true;
 	}
 }

@@ -150,8 +150,15 @@ inline float4 PrevRigTransform(float4 posL, uint indices, float4 weights)
 
 #endif
 
+#ifdef RIGGED
+// Bone matrices already contain boneWorld * inverseBind, so skinning outputs world-space
+// positions directly; gWorld / gPrevWorld are not applied on the rigged path.
+#define ObjectToWorldPos(pos) (pos)
+#define ObjectToWorldNormal(normal) float4(normalize(normal.xyz), 0.0f)
+#else
 #define ObjectToWorldPos(pos) mul(pos, gWorld)
 #define ObjectToWorldNormal(normal) float4(LocalToWorldNormal(normal.xyz), 0.0f)
+#endif
 
 #define WorldToClipPos(pos, vin) mul(mul(pos, gView), gProj)
 #define ObjectToClipPos(pos) WorldToClipPos(ObjectToWorldPos(pos))
@@ -167,7 +174,7 @@ inline float3 LocalToWorldNormal(float3 normalL)
 
 #else
 #ifdef RIGGED
-#define ConstructPrevPosH(vin, vout) vout.PrevPosH = mul(mul(PrevRigTransform(float4(vin.PosL, 1.0f), vin.BoneIndices, vin.BoneWeights), gPrevWorld), gPrevViewProj)
+#define ConstructPrevPosH(vin, vout) vout.PrevPosH = mul(PrevRigTransform(float4(vin.PosL, 1.0f), vin.BoneIndices, vin.BoneWeights), gPrevViewProj)
 #else
 #define ConstructPrevPosH(vin, vout) vout.PrevPosH = mul(mul(float4(vin.PosL, 1.0f), gPrevWorld), gPrevViewProj)
 #endif

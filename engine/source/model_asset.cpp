@@ -9,6 +9,7 @@
 #include "mesh_renderer.h"
 #include "rigged_mesh_renderer.h"
 #include "animation_clip.h"
+#include "animator.h"
 #include "core.h"
 #include "resource_load.h"
 #include "debug_console.h"
@@ -162,14 +163,14 @@ namespace udsdx
 		m_meshSubmeshMaterials.push_back(std::move(submeshMaterials));
 		m_meshes.push_back(std::move(rigged));
 
-		// The skeleton lives inside the RiggedMesh, so the scene graph collapses to a single root
-		// node that the RiggedMeshRenderer is attached to.
-		Node root;
-		root.Name = scene->mRootNode->mName.C_Str();
-		root.LocalTransform = Matrix4x4::Identity;
-		root.MeshIndices.push_back(0);
-		m_nodes.push_back(std::move(root));
-		m_rootNodes.push_back(0);
+		m_rootNodes.push_back(BuildNodeGraph(scene, scene->mRootNode, -1));
+
+		// Node MeshIndices reference source-scene meshes, which do not exist for the merged
+		// RiggedMesh; the renderer attaches to the root at Instantiate time instead.
+		for (Node& node : m_nodes)
+		{
+			node.MeshIndices.clear();
+		}
 	}
 
 	void ModelAsset::BuildAnimations(const aiScene* scene)
@@ -324,17 +325,48 @@ namespace udsdx
 		{
 			return nullptr;
 		}
+
+		std::shared_ptr<SceneObject> root;
 		if (m_rootNodes.size() == 1)
 		{
-			return InstantiateNode(m_rootNodes[0], shader);
+			root = InstantiateNode(m_rootNodes[0], shader);
+		}
+		else
+		{
+			// Multiple roots: wrap them under a single empty parent so the caller gets one object.
+			root = SceneObject::MakeShared();
+			for (int rootNode : m_rootNodes)
+			{
+				root->AddChild(InstantiateNode(rootNode, shader));
+			}
 		}
 
-		// Multiple roots: wrap them under a single empty parent so the caller gets one object.
-		auto root = SceneObject::MakeShared();
-		for (int rootNode : m_rootNodes)
+		// The skeleton now exists as the named child SceneObjects built above, so the renderer can
+		// resolve its bones; the Animator drives them by writing local transforms each frame.
+		if (m_isRigged && !m_meshes.empty())
 		{
-			root->AddChild(InstantiateNode(rootNode, shader));
+			auto renderer = root->AddComponent<RiggedMeshRenderer>();
+			renderer->SetMesh(static_cast<RiggedMesh*>(m_meshes[0].get()));
+			const std::vector<int>& submeshMaterials = m_meshSubmeshMaterials[0];
+			for (size_t submeshIndex = 0; submeshIndex < submeshMaterials.size(); ++submeshIndex)
+			{
+				renderer->SetMaterial(MakeMaterial(submeshMaterials[submeshIndex], shader), static_cast<int>(submeshIndex));
+			}
+			renderer->RebindBones();
+
+			// Auto-play the first animation (looping) so a rigged asset animates out of the box;
+			// the caller can switch via animator->Play(key, ...).
+			if (!m_animationClips.empty())
+			{
+				auto animator = root->AddComponent<Animator>();
+				for (const auto& clip : m_animationClips)
+				{
+					animator->AddClip(clip.get());
+				}
+				animator->Play(m_animationClips.front().get(), true);
+			}
 		}
+
 		return root;
 	}
 
@@ -342,6 +374,7 @@ namespace udsdx
 	{
 		const Node& node = m_nodes[nodeIndex];
 		auto object = SceneObject::MakeShared();
+		object->SetName(node.Name);
 
 		// Transform has no set-from-matrix path; decompose the node's local matrix into TRS.
 		Vector3 scale;
@@ -353,32 +386,18 @@ namespace udsdx
 		object->GetTransform()->SetLocalRotation(rotation);
 		object->GetTransform()->SetLocalScale(scale);
 
-		for (int meshIndex : node.MeshIndices)
+		// Rigged nodes carry no MeshIndices: the merged RiggedMesh renders from the root object,
+		// attached by Instantiate() once the whole hierarchy exists.
+		if (!m_isRigged)
 		{
-			if (meshIndex < 0 || static_cast<size_t>(meshIndex) >= m_meshes.size())
+			for (int meshIndex : node.MeshIndices)
 			{
-				continue;
-			}
-			const std::vector<int>& submeshMaterials = m_meshSubmeshMaterials[meshIndex];
-
-			if (m_isRigged)
-			{
-				auto renderer = object->AddComponent<RiggedMeshRenderer>();
-				renderer->SetMesh(static_cast<RiggedMesh*>(m_meshes[meshIndex].get()));
-				for (size_t submeshIndex = 0; submeshIndex < submeshMaterials.size(); ++submeshIndex)
+				if (meshIndex < 0 || static_cast<size_t>(meshIndex) >= m_meshes.size())
 				{
-					renderer->SetMaterial(MakeMaterial(submeshMaterials[submeshIndex], shader), static_cast<int>(submeshIndex));
+					continue;
 				}
+				const std::vector<int>& submeshMaterials = m_meshSubmeshMaterials[meshIndex];
 
-				// Auto-play the first animation (looping) so a rigged asset animates out of the box;
-				// the caller can switch via SetAnimation(GetAnimationClip(key), ...).
-				if (!m_animationClips.empty())
-				{
-					renderer->SetAnimation(m_animationClips.front().get(), true);
-				}
-			}
-			else
-			{
 				auto renderer = object->AddComponent<MeshRenderer>();
 				renderer->SetMesh(static_cast<Mesh*>(m_meshes[meshIndex].get()));
 				const int materialIndex = submeshMaterials.empty() ? -1 : submeshMaterials[0];
