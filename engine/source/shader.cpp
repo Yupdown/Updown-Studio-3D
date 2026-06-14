@@ -51,12 +51,10 @@ namespace udsdx
 		};
 
 		// if HS and DS shaders exist, compile and set them
-		ComPtr<IDxcBlob> hsByteCode = nullptr;
-		ComPtr<IDxcBlob> dsByteCode = nullptr;
-		try
+		if (udsdx::ShaderHasEntryPoint(m_path, {}, L"HS") && udsdx::ShaderHasEntryPoint(m_path, {}, L"DS"))
 		{
-			hsByteCode = udsdx::CompileShader(m_path, {}, L"HS", L"hs_6_0");
-			dsByteCode = udsdx::CompileShader(m_path, {}, L"DS", L"ds_6_0");
+			auto hsByteCode = udsdx::CompileShader(m_path, {}, L"HS", L"hs_6_0");
+			auto dsByteCode = udsdx::CompileShader(m_path, {}, L"DS", L"ds_6_0");
 
 			psoDesc.HS =
 			{
@@ -70,7 +68,6 @@ namespace udsdx
 			};
 			psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH;
 		}
-		catch (const DxException&) {}
 
 		{
 			auto m_vsByteCode = udsdx::CompileShader(m_path, {}, L"VS", L"vs_6_0");
@@ -82,10 +79,9 @@ namespace udsdx
 				m_vsByteCode->GetBufferSize()
 			};
 
-			ComPtr<IDxcBlob> gsByteCode = nullptr;
-			try
+			if (udsdx::ShaderHasEntryPoint(m_path, {}, L"GS"))
 			{
-				gsByteCode = udsdx::CompileShader(m_path, {}, L"GS", L"gs_6_0");
+				auto gsByteCode = udsdx::CompileShader(m_path, {}, L"GS", L"gs_6_0");
 				psoDesc.GS =
 				{
 					reinterpret_cast<BYTE*>(gsByteCode->GetBufferPointer()),
@@ -93,7 +89,6 @@ namespace udsdx
 				};
 				psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_POINT;
 			}
-			catch (const DxException&) {}
 
 			ThrowIfFailed(pDevice->CreateGraphicsPipelineState(
 				&psoDesc,
@@ -162,10 +157,9 @@ namespace udsdx
 			};
 			psoDesc.GS = {};
 
-			ComPtr<IDxcBlob> gsByteCode = nullptr;
-			try
+			if (udsdx::ShaderHasEntryPoint(m_path, defines, L"GS"))
 			{
-				gsByteCode = udsdx::CompileShader(m_path, defines, L"GS", L"gs_6_0");
+				auto gsByteCode = udsdx::CompileShader(m_path, defines, L"GS", L"gs_6_0");
 				psoDesc.GS =
 				{
 					reinterpret_cast<BYTE*>(gsByteCode->GetBufferPointer()),
@@ -173,15 +167,12 @@ namespace udsdx
 				};
 				psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_POINT;
 			}
-			catch (const DxException&) {}
 
 			// if HS and DS shaders exist, compile and set them
-			ComPtr<IDxcBlob> hsByteCode = nullptr;
-			ComPtr<IDxcBlob> dsByteCode = nullptr;
-			try
+			if (udsdx::ShaderHasEntryPoint(m_path, defines, L"HS") && udsdx::ShaderHasEntryPoint(m_path, defines, L"DS"))
 			{
-				hsByteCode = udsdx::CompileShader(m_path, defines, L"HS", L"hs_6_0");
-				dsByteCode = udsdx::CompileShader(m_path, defines, L"DS", L"ds_6_0");
+				auto hsByteCode = udsdx::CompileShader(m_path, defines, L"HS", L"hs_6_0");
+				auto dsByteCode = udsdx::CompileShader(m_path, defines, L"DS", L"ds_6_0");
 
 				psoDesc.HS =
 				{
@@ -195,7 +186,6 @@ namespace udsdx
 				};
 				psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH;
 			}
-			catch (const DxException&) {}
 
 			ThrowIfFailed(pDevice->CreateGraphicsPipelineState(
 				&psoDesc,
@@ -230,12 +220,10 @@ namespace udsdx
 			psoDesc.GS = {};
 
 			// if HS and DS shaders exist, compile and set them
-			ComPtr<IDxcBlob> hsByteCode = nullptr;
-			ComPtr<IDxcBlob> dsByteCode = nullptr;
-			try
+			if (udsdx::ShaderHasEntryPoint(m_path, defines, L"HS") && udsdx::ShaderHasEntryPoint(m_path, defines, L"DS"))
 			{
-				hsByteCode = udsdx::CompileShader(m_path, defines, L"HS", L"hs_6_0");
-				dsByteCode = udsdx::CompileShader(m_path, defines, L"DS", L"ds_6_0");
+				auto hsByteCode = udsdx::CompileShader(m_path, defines, L"HS", L"hs_6_0");
+				auto dsByteCode = udsdx::CompileShader(m_path, defines, L"DS", L"ds_6_0");
 
 				psoDesc.HS =
 				{
@@ -249,7 +237,6 @@ namespace udsdx
 				};
 				psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH;
 			}
-			catch (const DxException&) {}
 
 			ThrowIfFailed(pDevice->CreateGraphicsPipelineState(
 				&psoDesc,

@@ -8,6 +8,33 @@ namespace udsdx
     static ComPtr<IDxcUtils> g_pUtils;
     static ComPtr<IDxcCompiler3> g_pCompiler;
 
+    // Scans preprocessed HLSL for a definition/declaration of `name`, i.e. an occurrence of the
+    // identifier on a token boundary immediately followed (modulo whitespace) by '('. Good enough
+    // to detect entry-point functions, whose names are unique tokens in our shaders.
+    static bool SourceDefinesFunction(std::string_view src, std::string_view name)
+    {
+        auto isWord = [](char c) {
+            return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+        };
+        for (size_t pos = 0; (pos = src.find(name, pos)) != std::string_view::npos; pos += name.size())
+        {
+            if (pos > 0 && isWord(src[pos - 1]))
+            {
+                continue; // part of a longer identifier
+            }
+            size_t j = pos + name.size();
+            while (j < src.size() && (src[j] == ' ' || src[j] == '\t' || src[j] == '\r' || src[j] == '\n'))
+            {
+                ++j;
+            }
+            if (j < src.size() && src[j] == '(')
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     ShaderIncludeHandler::ShaderIncludeHandler(const std::wstring& shaderDirectory) : m_shaderDirectory(shaderDirectory)
     {
     }
@@ -110,6 +137,56 @@ namespace udsdx
         ComPtr<IDxcBlob> pObject;
         ThrowIfFailed(pResult->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&pObject), nullptr));
         return pObject;
+    }
+
+    bool ShaderHasEntryPoint(const std::wstring& filename, const std::span<std::wstring>& defines, const std::wstring& entrypoint)
+    {
+        if (!g_pUtils) {
+            ThrowIfFailed(DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&g_pUtils)));
+            ThrowIfFailed(DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&g_pCompiler)));
+        }
+
+        ComPtr<IDxcIncludeHandler> pIncludeHandler{
+            new ShaderIncludeHandler(filename.substr(0, filename.find_last_of(L"\\/") + 1))
+        };
+
+        ComPtr<IDxcBlobEncoding> pBlob;
+        ThrowIfFailed(g_pUtils->LoadFile(filename.c_str(), nullptr, &pBlob));
+
+        DxcBuffer source;
+        source.Ptr = pBlob->GetBufferPointer();
+        source.Size = pBlob->GetBufferSize();
+        source.Encoding = DXC_CP_ACP;
+
+        // Preprocess only (-P): expands #include and resolves #ifdef under the same defines, without
+        // requiring an entry point, so no "entry point not found" diagnostic is ever produced.
+        std::vector<LPCWSTR> args{ L"-P" };
+        for (const auto& define : defines) {
+            args.push_back(L"-D");
+            args.push_back(define.c_str());
+        }
+
+        ComPtr<IDxcResult> pResult;
+        ThrowIfFailed(g_pCompiler->Compile(&source, args.data(), static_cast<UINT32>(args.size()), pIncludeHandler.Get(), IID_PPV_ARGS(&pResult)));
+
+        HRESULT hrStatus;
+        ThrowIfFailed(pResult->GetStatus(&hrStatus));
+        ThrowIfFailed(hrStatus);
+
+        ComPtr<IDxcBlobUtf8> pHlsl;
+        ThrowIfFailed(pResult->GetOutput(DXC_OUT_HLSL, IID_PPV_ARGS(&pHlsl), nullptr));
+        if (!pHlsl || pHlsl->GetStringLength() == 0) {
+            return false;
+        }
+
+        std::string_view preprocessed((char*)pHlsl->GetBufferPointer(), pHlsl->GetStringLength());
+
+        std::string name; // entry-point names are ASCII; narrow explicitly to avoid a conversion warning
+        name.reserve(entrypoint.size());
+        for (wchar_t c : entrypoint) {
+            name.push_back(static_cast<char>(c));
+        }
+        return SourceDefinesFunction(preprocessed, name);
     }
 
     ComPtr<IDxcBlob> CompileShaderFromMemory(const std::string& data, const std::span<std::wstring>& defines, const std::wstring& entrypoint, const std::wstring& target)

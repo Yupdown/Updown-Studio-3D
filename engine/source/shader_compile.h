@@ -21,4 +21,9 @@ namespace udsdx
 
 	ComPtr<IDxcBlob> CompileShader(const std::wstring& filename, const std::span<std::wstring>& defines, const std::wstring& entrypoint, const std::wstring& target);
 	ComPtr<IDxcBlob> CompileShaderFromMemory(const std::string& data, const std::span<std::wstring>& defines, const std::wstring& entrypoint, const std::wstring& target);
+
+	// Returns whether the shader, once preprocessed with the given defines, defines the named entry
+	// point. Lets callers skip compiling absent optional stages (GS/HS/DS) without provoking a
+	// "entry point not found" compile error. Honors #ifdef and #include because it preprocesses.
+	bool ShaderHasEntryPoint(const std::wstring& filename, const std::span<std::wstring>& defines, const std::wstring& entrypoint);
 }
