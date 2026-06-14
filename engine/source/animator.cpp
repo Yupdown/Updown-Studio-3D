@@ -132,6 +132,15 @@ namespace udsdx
 		m_loop = loop;
 	}
 
+	void Animator::Stop()
+	{
+		m_clip = nullptr;
+		m_prevClip = nullptr;
+		m_time = 0.0f;
+		m_prevTime = 0.0f;
+		m_transitionFactor = 1.0f;
+	}
+
 	bool Animator::IsPlaying() const
 	{
 		return m_clip != nullptr && (m_loop || m_time < m_clip->GetAnimationDuration());

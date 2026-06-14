@@ -19,6 +19,7 @@
 #include "deferred_renderer.h"
 #include "shader_compile.h"
 #include "animation_clip.h"
+#include "animator.h"
 #include "gui_image.h"
 #include "gui_text.h"
 #include "gui_button.h"

@@ -24,6 +24,10 @@ namespace udsdx
 
 		void Play(std::string_view name, bool loop = false, bool forcePlay = false);
 		void Play(const AnimationClip* clip, bool loop = false, bool forcePlay = false);
+		// Stops playback and clears the current/blended clips. Update then leaves the bone
+		// Transforms untouched, so they hold whatever pose they currently have (e.g. the
+		// instantiated bind pose if Stop is called before the first Update).
+		void Stop();
 		bool IsPlaying() const;
 		const AnimationClip* GetCurrentClip() const { return m_clip; }
 		void SetTransitionFactor(float factor);

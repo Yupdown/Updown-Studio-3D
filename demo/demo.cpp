@@ -19,6 +19,7 @@ std::shared_ptr<SceneObject> cameraObject;
 std::shared_ptr<SceneObject> lightObject;
 std::shared_ptr<SceneObject> environmentObject;
 std::shared_ptr<SceneObject> riggedObject;
+const udsdx::AnimationClip* characterClip = nullptr;
 
 std::shared_ptr<udsdx::Material> materialTile;
 
@@ -138,6 +139,14 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     riggedObject->GetTransform()->SetLocalPosition(Vector3(0.0f, 16.0f, -4.0f));
     scene->AddObject(riggedObject);
 
+    // Instantiate auto-plays the first clip; stop it so the character stands in its bind pose.
+    // Pressing Enter (handled in Update) plays the animation.
+    if (auto animator = riggedObject->GetComponent<Animator>())
+    {
+        characterClip = animator->GetCurrentClip();
+        animator->SetTransitionFactor(0.25f);
+    }
+
     cameraObject = SceneObject::MakeShared();
     auto camera = cameraObject->AddComponent<CameraPerspective>();
     camera->SetClearColor(Color(1.0f, 1.0f, 1.0f, 1.0f));
@@ -175,6 +184,15 @@ void Update(const Time& time)
     {
 		UpdownStudio::Quit();
 	}
+
+    // Enter plays the rigged character's animation (looping).
+    if (INSTANCE(Input)->GetKeyDown(Keyboard::Enter) && characterClip != nullptr)
+    {
+        if (auto animator = riggedObject->GetComponent<Animator>())
+        {
+            animator->Play(characterClip, true, true);
+        }
+    }
 
     // Camera Rotation
     if (INSTANCE(Input)->GetMouseLeftButtonDown())
