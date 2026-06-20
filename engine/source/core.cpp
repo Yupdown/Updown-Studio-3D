@@ -371,21 +371,21 @@ namespace udsdx
 
 	void Core::BuildRootSignature()
 	{ ZoneScoped;
-		CD3DX12_ROOT_PARAMETER slotRootParameter[22];
+		CD3DX12_ROOT_PARAMETER slotRootParameter[8];
 
 		slotRootParameter[RootParam::PerObjectCBV].InitAsConstants(sizeof(ObjectConstants) / 4, 0);
-		slotRootParameter[RootParam::PerCameraCBV].InitAsConstantBufferView(1);
-		slotRootParameter[RootParam::BonesCBV].InitAsConstantBufferView(2, 0);
-		slotRootParameter[RootParam::PrevBonesCBV].InitAsConstantBufferView(2, 1);
-		slotRootParameter[RootParam::PerShadowCBV].InitAsConstantBufferView(3);
-		slotRootParameter[RootParam::PerFrameCBV].InitAsConstantBufferView(4);
+		slotRootParameter[RootParam::PerMaterialCBV].InitAsConstants(sizeof(MaterialConstants) / 4, 1);
+		slotRootParameter[RootParam::PerCameraCBV].InitAsConstantBufferView(2);
+		slotRootParameter[RootParam::BonesCBV].InitAsConstantBufferView(3, 0);
+		slotRootParameter[RootParam::PrevBonesCBV].InitAsConstantBufferView(3, 1);
+		slotRootParameter[RootParam::PerShadowCBV].InitAsConstantBufferView(4);
+		slotRootParameter[RootParam::PerFrameCBV].InitAsConstantBufferView(5);
 
-		CD3DX12_DESCRIPTOR_RANGE texRange[NumTextureSlots]{};
-		for (int i = 0; i < NumTextureSlots; ++i)
-		{
-			texRange[i].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, i, 0);
-			slotRootParameter[RootParam::SrcTexSRV_0 + i].InitAsDescriptorTable(1, &texRange[i]);
-		}
+		// Single unbounded SRV table spanning the whole SRV heap (bindless). Shaders index it by the
+		// texture's heap index. Requires Resource Binding Tier 2+.
+		CD3DX12_DESCRIPTOR_RANGE texTable;
+		texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, UINT_MAX, 0, 0);
+		slotRootParameter[RootParam::SrcTexTable].InitAsDescriptorTable(1, &texTable, D3D12_SHADER_VISIBILITY_PIXEL);
 
 		CD3DX12_STATIC_SAMPLER_DESC samplerDesc[] = {
 			CD3DX12_STATIC_SAMPLER_DESC(
@@ -1316,6 +1316,7 @@ namespace udsdx
 			.DsvCpuHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_dsvHeap->GetCPUDescriptorHandleForHeapStart(), m_dsvHeapSize, m_dsvDescriptorSize),
 			.CbvGpuHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_cbvHeap->GetGPUDescriptorHandleForHeapStart(), m_cbvHeapSize, m_cbvSrvUavDescriptorSize),
 			.SrvGpuHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_srvHeap->GetGPUDescriptorHandleForHeapStart(), m_srvHeapSize, m_cbvSrvUavDescriptorSize),
+			.SrvHeapStart = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_srvHeap->GetGPUDescriptorHandleForHeapStart()),
 			.CbvSrvUavDescriptorSize = m_cbvSrvUavDescriptorSize,
 			.RtvDescriptorSize = m_rtvDescriptorSize,
 			.DsvDescriptorSize = m_dsvDescriptorSize

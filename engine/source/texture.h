@@ -30,6 +30,9 @@ namespace udsdx
 
 		D3D12_CPU_DESCRIPTOR_HANDLE GetSrvCpu() const;
 		D3D12_GPU_DESCRIPTOR_HANDLE GetSrvGpu() const;
+		// Absolute index of this texture's SRV within the shader-visible SRV heap, used as the
+		// bindless lookup index by shaders. InvalidSrvIndex until CreateShaderResourceView runs.
+		UINT GetSrvIndex() const { return m_srvIndex; }
 		bool HasShaderResourceView() const { return m_hasShaderResourceView; }
 
 		Vector2Int GetSize() const { return m_size; }
@@ -43,6 +46,7 @@ namespace udsdx
 
 		D3D12_CPU_DESCRIPTOR_HANDLE m_srvCpu{};
 		D3D12_GPU_DESCRIPTOR_HANDLE m_srvGpu{};
+		UINT m_srvIndex = InvalidSrvIndex;
 		bool m_hasShaderResourceView = false;
 
 		Vector2Int m_size = Vector2Int(0, 0);

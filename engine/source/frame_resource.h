@@ -8,8 +8,13 @@ namespace udsdx
 	{
 		Matrix4x4 World = Matrix4x4::Identity;
 		Matrix4x4 PrevWorld = Matrix4x4::Identity;
+	};
+
+	// Per-material root constants (passed directly in the root signature, not a CBV).
+	struct MaterialConstants
+	{
 		UINT SamplerMode = 2;
-		Vector3 Padding = Vector3::Zero;
+		UINT MainTexIndex = 0; // bindless SRV heap index of the main texture
 	};
 
 	struct CameraConstants

@@ -174,9 +174,13 @@ namespace udsdx
 		ObjectConstants objectConstants;
 		objectConstants.World = m_transformCache.Transpose();
 		objectConstants.PrevWorld = m_prevTransformCache.Transpose();
-		objectConstants.SamplerMode = static_cast<UINT>(m_materials[parameter].GetSamplerMode());
+
+		MaterialConstants materialConstants;
+		materialConstants.SamplerMode = static_cast<UINT>(m_materials[parameter].GetSamplerMode());
+		materialConstants.MainTexIndex = m_materials[parameter].GetSourceTextureIndex(0);
 
 		param.CommandList->SetGraphicsRoot32BitConstants(RootParam::PerObjectCBV, sizeof(ObjectConstants) / 4, &objectConstants, 0);
+		param.CommandList->SetGraphicsRoot32BitConstants(RootParam::PerMaterialCBV, sizeof(MaterialConstants) / 4, &materialConstants, 0);
 		param.CommandList->IASetVertexBuffers(0, 1, &m_riggedMesh->VertexBufferView());
 		param.CommandList->IASetIndexBuffer(&m_riggedMesh->IndexBufferView());
 		param.CommandList->IASetPrimitiveTopology(m_topology);
@@ -220,15 +224,6 @@ namespace udsdx
 
 		param.CommandList->SetGraphicsRootConstantBufferView(RootParam::BonesCBV, uploaders[parameter]->Resource()->GetGPUVirtualAddress());
 		param.CommandList->SetGraphicsRootConstantBufferView(RootParam::PrevBonesCBV, prevUploaders[parameter]->Resource()->GetGPUVirtualAddress());
-
-		for (UINT textureSrcIndex = 0; textureSrcIndex < m_materials[parameter].GetTextureCount(); ++textureSrcIndex)
-		{
-			const Texture* texture = m_materials[parameter].GetSourceTexture(textureSrcIndex);
-			if (texture != nullptr)
-			{
-				param.CommandList->SetGraphicsRootDescriptorTable(RootParam::SrcTexSRV_0 + textureSrcIndex, texture->GetSrvGpu());
-			}
-		}
 
 		const auto& submesh = submeshes[parameter];
 		param.CommandList->DrawIndexedInstanced(submesh.IndexCount, 1, submesh.StartIndexLocation, submesh.BaseVertexLocation, 0);

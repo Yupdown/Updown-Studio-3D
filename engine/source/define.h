@@ -102,6 +102,11 @@ namespace udsdx
 		CD3DX12_GPU_DESCRIPTOR_HANDLE CbvGpuHandle;
 		CD3DX12_GPU_DESCRIPTOR_HANDLE SrvGpuHandle;
 
+		// GPU handle for the first descriptor of the SRV heap. Lets a Texture compute its own
+		// absolute heap index from the current SrvGpuHandle, regardless of how many descriptors
+		// other passes advanced past beforehand.
+		CD3DX12_GPU_DESCRIPTOR_HANDLE SrvHeapStart;
+
 		UINT CbvSrvUavDescriptorSize;
 		UINT RtvDescriptorSize;
 		UINT DsvDescriptorSize;
@@ -110,27 +115,13 @@ namespace udsdx
 	enum RootParam : UINT
 	{
 		PerObjectCBV,
+		PerMaterialCBV,
 		PerCameraCBV,
 		BonesCBV,
 		PrevBonesCBV,
 		PerShadowCBV,
 		PerFrameCBV,
-		SrcTexSRV_0,
-		SrcTexSRV_1,
-		SrcTexSRV_2,
-		SrcTexSRV_3,
-		SrcTexSRV_4,
-		SrcTexSRV_5,
-		SrcTexSRV_6,
-		SrcTexSRV_7,
-		SrcTexSRV_8,
-		SrcTexSRV_9,
-		SrcTexSRV_10,
-		SrcTexSRV_11,
-		SrcTexSRV_12,
-		SrcTexSRV_13,
-		SrcTexSRV_14,
-		SrcTexSRV_15,
+		SrcTexTable,
 	};
 
 	enum RenderGroup : UINT
@@ -142,4 +133,7 @@ namespace udsdx
 	static constexpr int FrameResourceCount = 2;
 	static constexpr int SwapChainBufferCount = 2;
 	static constexpr int NumTextureSlots = 16;
+
+	// Sentinel for a texture without a registered SRV (no bindless heap index assigned).
+	static constexpr UINT InvalidSrvIndex = 0xFFFFFFFFu;
 }

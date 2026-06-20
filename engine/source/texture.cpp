@@ -94,6 +94,9 @@ namespace udsdx
 		m_srvCpu = descriptorParam.SrvCpuHandle;
 		m_srvGpu = descriptorParam.SrvGpuHandle;
 
+		// Record the absolute heap index (bindless lookup index) before advancing the handle.
+		m_srvIndex = static_cast<UINT>((descriptorParam.SrvGpuHandle.ptr - descriptorParam.SrvHeapStart.ptr) / descriptorParam.CbvSrvUavDescriptorSize);
+
 		descriptorParam.SrvCpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
 		descriptorParam.SrvGpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
 

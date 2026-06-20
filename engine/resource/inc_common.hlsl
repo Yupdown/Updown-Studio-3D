@@ -15,11 +15,15 @@ cbuffer cbPerObject : register(b0)
 {
     float4x4 gWorld;
     float4x4 gPrevWorld;
-    uint gSamplerMode;
-    float3 gPerObjectPadding;
 };
 
-cbuffer cbPerCamera : register(b1)
+cbuffer cbPerMaterial : register(b1)
+{
+    uint gSamplerMode;
+    uint gMainTexIndex;
+};
+
+cbuffer cbPerCamera : register(b2)
 {
     float4x4 gView;
     float4x4 gProj;
@@ -35,10 +39,10 @@ cbuffer cbPerCamera : register(b1)
 }
 
 struct BoneData { float4x4 m[MAX_BONES]; };
-ConstantBuffer<BoneData> gBoneTransforms : register(b2, space0);
-ConstantBuffer<BoneData> gPrevBoneTransforms : register(b2, space1);
+ConstantBuffer<BoneData> gBoneTransforms : register(b3, space0);
+ConstantBuffer<BoneData> gPrevBoneTransforms : register(b3, space1);
 
-cbuffer cbPerShadow : register(b3)
+cbuffer cbPerShadow : register(b4)
 {
     float4x4 gLightViewProj[NUM_CASCADES];
 	float4 gLightPosW[NUM_CASCADES];
@@ -46,7 +50,7 @@ cbuffer cbPerShadow : register(b3)
     float3 gDirLight;
 };
 
-cbuffer cbPerFrame : register(b4)
+cbuffer cbPerFrame : register(b5)
 {
     float gTime;
     float gDeltaTime;
@@ -71,7 +75,9 @@ static const float Bayer8x8[64] =
     0.6562, 0.4062, 0.5938, 0.3438, 0.6406, 0.3906, 0.5781, 0.3281
 };
 
-Texture2D gMainTex : register(t0);
+// Bindless: a single unbounded SRV table spanning the whole SRV heap. Textures are addressed by
+// their heap index (gMainTexIndex) rather than a fixed register slot.
+Texture2D gTextures[] : register(t0, space0);
 
 SamplerState gSamplerNearest : register(s0);
 SamplerState gSamplerLinear : register(s1);
@@ -79,6 +85,7 @@ SamplerState gSamplerAnisotropic : register(s2);
 
 float4 SampleMainTex(float2 uv)
 {
+    Texture2D gMainTex = gTextures[gMainTexIndex];
     switch (gSamplerMode)
     {
     case 0:

@@ -171,6 +171,7 @@ namespace udsdx
 		m_taaFrameIndex++;
 
 		param.CommandList->SetGraphicsRootSignature(param.RootSignature);
+		param.CommandList->SetGraphicsRootDescriptorTable(RootParam::SrcTexTable, param.SRVDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 
 		if (!m_renderCameraQueue.empty())
 		{
@@ -322,6 +323,7 @@ namespace udsdx
 		param.Renderer->PassBufferPreparation(param);
 
 		pCommandList->SetGraphicsRootSignature(param.RootSignature);
+		pCommandList->SetGraphicsRootDescriptorTable(RootParam::SrcTexTable, param.SRVDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 		pCommandList->OMSetRenderTargets(1, &param.Renderer->GetRenderTargetRTVView(), true, &param.Renderer->GetDepthBufferDsv());
 
 		pCommandList->RSSetViewports(1, &param.Viewport);

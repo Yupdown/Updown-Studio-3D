@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "shader.h"
 #include "material.h"
+#include "texture.h"
 
 namespace udsdx
 {
@@ -40,6 +41,11 @@ namespace udsdx
 	Texture* Material::GetSourceTexture(UINT index) const
 	{
 		return m_mainTex[index];
+	}
+
+	UINT Material::GetSourceTextureIndex(UINT index) const
+	{
+		return m_mainTex[index] != nullptr ? m_mainTex[index]->GetSrvIndex() : InvalidSrvIndex;
 	}
 
 	UINT Material::GetTextureCount() const

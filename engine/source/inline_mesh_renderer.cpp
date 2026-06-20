@@ -24,10 +24,13 @@ namespace udsdx
 		ObjectConstants objectConstants;
 		objectConstants.World = m_transformCache.Transpose();
 		objectConstants.PrevWorld = m_prevTransformCache.Transpose();
-		objectConstants.SamplerMode = static_cast<UINT>(m_materials[0].GetSamplerMode());
+
+		MaterialConstants materialConstants;
+		materialConstants.SamplerMode = static_cast<UINT>(m_materials[0].GetSamplerMode());
+		materialConstants.MainTexIndex = m_materials[0].GetSourceTextureIndex(0);
 
 		param.CommandList->SetGraphicsRoot32BitConstants(RootParam::PerObjectCBV, sizeof(ObjectConstants) / 4, &objectConstants, 0);
-		param.CommandList->SetGraphicsRootDescriptorTable(RootParam::SrcTexSRV_0, m_materials[0].GetSourceTexture()->GetSrvGpu());
+		param.CommandList->SetGraphicsRoot32BitConstants(RootParam::PerMaterialCBV, sizeof(MaterialConstants) / 4, &materialConstants, 0);
 
 		param.CommandList->IASetVertexBuffers(0, 0, nullptr);
 		param.CommandList->IASetIndexBuffer(nullptr);

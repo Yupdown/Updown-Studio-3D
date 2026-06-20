@@ -31,6 +31,8 @@ namespace udsdx
 		Shader* GetShader() const;
 		UINT GetTextureCount() const;
 		Texture* GetSourceTexture(UINT index = 0) const;
+		// Bindless SRV heap index of the texture in the given slot, or InvalidSrvIndex when empty.
+		UINT GetSourceTextureIndex(UINT index = 0) const;
 		MaterialSamplerMode GetSamplerMode() const;
 
 	private:

@@ -432,6 +432,7 @@ namespace udsdx
 		pCommandList->ResourceBarrier(static_cast<UINT>(m_gBufferBeginRenderTransitions.size()), m_gBufferBeginRenderTransitions.data());
 
 		pCommandList->SetGraphicsRootSignature(renderParam.RootSignature);
+		pCommandList->SetGraphicsRootDescriptorTable(RootParam::SrcTexTable, renderParam.SRVDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 		pCommandList->OMSetRenderTargets(NUM_GBUFFERS, m_gBuffersCpuRtv.data(), true, &m_depthBufferCpuDsv);
 
 		pCommandList->RSSetViewports(1, &renderParam.Viewport);
