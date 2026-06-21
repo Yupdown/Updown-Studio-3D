@@ -33,9 +33,6 @@ namespace udsdx
 		// Called when the component needs to draw ImGUI primitives
 		virtual void OnDrawGizmos();
 
-		// Called when the scene needs to draw primitives. The command list already called Reset() and is ready to use.
-		virtual void Render(RenderParam& param);
-
 		// Called when the scene is detached from the core
 		virtual void OnDetach();
 
@@ -57,11 +54,20 @@ namespace udsdx
 		void RenderSceneObjects(RenderParam& param, RenderGroup group, int instances = 1);
 		void RenderGUIObjects(RenderParam& param, int instances = 1);
 
-	private:
-		void PassRenderShadow(RenderParam& param, Camera* camera, LightDirectional* light);
-		void PassRenderSSAO(RenderParam& param, Camera* camera);
-		void PassRenderMain(RenderParam& param, Camera* camera, D3D12_GPU_VIRTUAL_ADDRESS cameraCbv);
-		void PassRenderHUD(RenderParam& param);
+	public:
+		// Render-queue accessors used by the DeferredRenderer to construct the render passes.
+		const std::vector<Camera*>& GetRenderCameras() const { return m_renderCameraQueue; }
+		const std::vector<LightDirectional*>& GetRenderLights() const { return m_renderLightQueue; }
+		const std::vector<EnvironmentMap*>& GetRenderEnvironmentMaps() const { return m_renderEnvironmentMapQueue; }
+
+		// Collects the distinct deferred (lighting-composition) pipeline states enqueued this frame.
+		std::vector<ID3D12PipelineState*> CollectDeferredPipelineStates() const;
+
+		// Per-frame camera constant-buffer / TAA jitter preparation. Returns each camera's CBV GPU address.
+		std::vector<D3D12_GPU_VIRTUAL_ADDRESS> PrepareCameraConstants(RenderParam& param);
+
+		// Native UI (HUD / GUI) rendering. Called by the Core after DeferredRenderer::Render.
+		void RenderUI(RenderParam& param);
 
 	protected:
 		std::shared_ptr<SceneObject> m_rootObject;

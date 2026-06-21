@@ -150,7 +150,7 @@ namespace udsdx
 		ImGui::End();
 	}
 
-	void Scene::Render(RenderParam& param)
+	std::vector<D3D12_GPU_VIRTUAL_ADDRESS> Scene::PrepareCameraConstants(RenderParam& param)
 	{ ZoneScoped;
 		const bool enableTAAJitter = param.RenderOptions->DrawTAA;
 		const float viewportWidth = std::max(param.Viewport.Width, 1.0f);
@@ -170,30 +170,23 @@ namespace udsdx
 		}
 		m_taaFrameIndex++;
 
-		param.CommandList->SetGraphicsRootSignature(param.RootSignature);
-		param.CommandList->SetGraphicsRootDescriptorTable(RootParam::SrcTexTable, param.SRVDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
-
 		if (!m_renderCameraQueue.empty())
 		{
 			Transform* listenerTransform = m_renderCameraQueue[0]->GetTransform();
 			INSTANCE(AudioSystem)->UpdateAudioListener(listenerTransform->GetWorldPosition(), listenerTransform->GetWorldRotation());
 		}
 
-		// Shadow map rendering pass
-		if (!m_renderLightQueue.empty() && !m_renderCameraQueue.empty())
-		{
-			param.CommandList->SetGraphicsRootConstantBufferView(RootParam::PerCameraCBV, cameraCbvs[0]);
-			PassRenderShadow(param, m_renderCameraQueue.front(), m_renderLightQueue[0]);
-		}
+		return cameraCbvs;
+	}
 
-		for (size_t i = 0; i < m_renderCameraQueue.size(); ++i)
+	std::vector<ID3D12PipelineState*> Scene::CollectDeferredPipelineStates() const
+	{
+		std::vector<ID3D12PipelineState*> defferedPipelineStates;
+		for (const auto& [defferedPipelineState, objectGroups] : m_renderObjectQueues[RenderGroup::Deferred])
 		{
-			param.TargetCamera = m_renderCameraQueue[i];
-			param.CommandList->SetGraphicsRootConstantBufferView(RootParam::PerCameraCBV, cameraCbvs[i]);
-			PassRenderMain(param, m_renderCameraQueue[i], cameraCbvs[i]);
+			defferedPipelineStates.push_back(defferedPipelineState);
 		}
-
-		PassRenderHUD(param);
+		return defferedPipelineStates;
 	}
 
 	void Scene::OnDetach()
@@ -271,96 +264,12 @@ namespace udsdx
 		m_renderGUIObjectQueue.emplace_back(object);
 	}
 
-	void Scene::PassRenderShadow(RenderParam& param, Camera* camera, LightDirectional* light)
-	{
-		ZoneScopedN("Shadow Render Pass");
-		TracyD3D12Zone(*param.TracyQueueContext, param.CommandList, "Shadow Render Pass");
-		param.RenderShadowMap->Pass(param, this, camera, light);
-	}
+	void Scene::RenderUI(RenderParam& param)
+	{ ZoneScoped;
+		// Bind the final output (back buffer) as the render target before drawing the HUD on top of it.
+		D3D12_CPU_DESCRIPTOR_HANDLE renderTargetView = param.RenderTargetView;
+		param.CommandList->OMSetRenderTargets(1, &renderTargetView, true, nullptr);
 
-	void Scene::PassRenderSSAO(RenderParam& param, Camera* camera)
-	{
-		ZoneScopedN("SSAO Render Pass");
-		TracyD3D12Zone(*param.TracyQueueContext, param.CommandList, "SSAO Render Pass");
-		if (param.RenderOptions->DrawSSAO)
-		{
-			param.RenderScreenSpaceAO->UpdateSSAOConstants(param, camera);
-			param.RenderScreenSpaceAO->PassSSAO(param);
-			param.RenderScreenSpaceAO->PassBlur(param);
-		}
-	}
-
-	void Scene::PassRenderMain(RenderParam& param, Camera* camera, D3D12_GPU_VIRTUAL_ADDRESS cameraCbv)
-	{
-		ZoneScopedN("Main Pass");
-		TracyD3D12Zone(*param.TracyQueueContext, param.CommandList, "Main Pass");
-
-		auto pCommandList = param.CommandList;
-
-		std::vector<ID3D12PipelineState*> defferedPipelineStates;
-		for (const auto& [defferedPipelineState, objectGroups] : m_renderObjectQueues[RenderGroup::Deferred])
-		{
-			defferedPipelineStates.push_back(defferedPipelineState);
-		}
-
-		// Deferred rendering pass
-		param.Renderer->PassBufferPreparation(param);
-		param.Renderer->ClearRenderTargets(pCommandList);
-
-		std::unique_ptr<BoundingCamera> boundingCamera = camera->GetViewFrustumWorld(param.AspectRatio);
-		param.ViewFrustumWorld = boundingCamera.get();
-
-		RenderSceneObjects(param, RenderGroup::Deferred, 1);
-
-		param.Renderer->PassBufferPostProcess(param);
-
-		PassRenderSSAO(param, camera);
-
-		param.RenderEnvironmentMap = m_renderEnvironmentMapQueue.empty() ? nullptr : m_renderEnvironmentMapQueue.front();
-		param.Renderer->PassRender(param, cameraCbv, defferedPipelineStates);
-
-		// Forward rendering pass
-		param.Renderer->PassBufferPreparation(param);
-
-		pCommandList->SetGraphicsRootSignature(param.RootSignature);
-		pCommandList->SetGraphicsRootDescriptorTable(RootParam::SrcTexTable, param.SRVDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
-		pCommandList->OMSetRenderTargets(1, &param.Renderer->GetRenderTargetRTVView(), true, &param.Renderer->GetDepthBufferDsv());
-
-		pCommandList->RSSetViewports(1, &param.Viewport);
-		pCommandList->RSSetScissorRects(1, &param.ScissorRect);
-
-		pCommandList->SetGraphicsRootConstantBufferView(RootParam::PerCameraCBV, cameraCbv);
-		RenderSceneObjects(param, RenderGroup::Forward, 1);
-
-		param.Renderer->PassBufferPostProcess(param);
-
-		// Bloom pass
-		if (param.RenderOptions->DrawBloom)
-		{
-			param.RenderPostProcessBloom->Pass(param);
-		}
-
-		// Motion blur pass
-		if (param.RenderOptions->DrawMotionBlur)
-		{
-			param.RenderMotionBlur->Pass(param, cameraCbv);
-		}
-
-		// TAA pass
-		if (param.RenderOptions->DrawTAA)
-		{
-			param.RenderPostProcessTAA->Pass(param);
-		}
-
-		// Post-process outline pass
-		if (param.RenderOptions->DrawOutline)
-		{
-			param.RenderPostProcessOutline->Pass(param);
-		}
-	}
-
-	void Scene::PassRenderHUD(RenderParam& param)
-	{
 		param.SpriteBatchNonPremultipliedAlpha->SetViewport(param.Viewport);
 		param.SpriteBatchPreMultipliedAlpha->SetViewport(param.Viewport);
 		param.SpriteBatchNonPremultipliedAlpha->Begin(param.CommandList);

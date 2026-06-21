@@ -75,7 +75,7 @@ namespace udsdx
 		m_graphicsMemory = std::make_unique<GraphicsMemory>(m_d3dDevice.Get());
 
 		INSTANCE(Input)->Initialize(m_hMainWnd);
-		resource->Initialize(m_d3dDevice.Get(), m_commandQueue.Get(), m_commandList.Get(), m_rootSignature.Get());
+		resource->Initialize(m_d3dDevice.Get(), m_commandQueue.Get(), m_commandList.Get(), m_deferredRenderer->GetObjectRootSignature());
 
 		CreateDescriptorHeaps();
 		RegisterDescriptorsToHeaps();
@@ -160,27 +160,10 @@ namespace udsdx
 
 		CreateCommandObjects();
 		CreateSwapChain();
-		BuildRootSignature();
-		
-		// Create Deferred Renderer
-		m_deferredRenderer = std::make_unique<DeferredRenderer>(m_d3dDevice.Get());
 
-		// Create Shadow Map
-		m_shadowMap = std::make_unique<ShadowMap>(m_renderOptions.ShadowMapSize, m_renderOptions.ShadowMapSize, m_d3dDevice.Get());
-
-		// Create Screen Space Ambient Occlusion
-		m_screenSpaceAO = std::make_unique<ScreenSpaceAO>(m_d3dDevice.Get(), m_commandList.Get(), 1.0f);
-		m_screenSpaceAO->BuildPipelineState(m_d3dDevice.Get(), m_rootSignature.Get());
-
-		// Create Motion Blur
-		m_motionBlur = std::make_unique<MotionBlur>(m_d3dDevice.Get(), m_commandList.Get());
-		m_motionBlur->BuildPipelineState();
-		m_postProcessBloom = std::make_unique<PostProcessBloom>(m_d3dDevice.Get(), m_commandList.Get());
-		m_postProcessBloom->BuildPipelineState();
-		m_postProcessTAA = std::make_unique<PostProcessTAA>(m_d3dDevice.Get(), m_commandList.Get());
-		m_postProcessTAA->BuildPipelineState();
-		m_postProcessOutline = std::make_unique<PostProcessOutline>(m_d3dDevice.Get(), m_commandList.Get());
-		m_postProcessOutline->BuildPipelineState();
+		// Create Deferred Renderer. It owns the object/deferred root signatures and every render pass
+		// (shadow map, SSAO, bloom, motion blur, TAA, outline).
+		m_deferredRenderer = std::make_unique<DeferredRenderer>(m_d3dDevice.Get(), m_commandList.Get());
 
 		const char tracyQueueName[] = "D3D12 Graphics Queue";
 		m_tracyQueueCtx = TracyD3D12Context(m_d3dDevice.Get(), m_commandQueue.Get());
@@ -327,13 +310,7 @@ namespace udsdx
 	{ ZoneScoped;
 		DescriptorParam descriptorParam = GetDescriptorParameters();
 
-		m_deferredRenderer->BuildDescriptors(descriptorParam);
-		m_shadowMap->BuildDescriptors(descriptorParam, m_d3dDevice.Get());
-		m_screenSpaceAO->BuildDescriptors(descriptorParam, m_depthStencilBuffer.Get());
-		m_motionBlur->BuildDescriptors(descriptorParam);
-		m_postProcessBloom->BuildDescriptors(descriptorParam);
-		m_postProcessTAA->BuildDescriptors(descriptorParam);
-		m_postProcessOutline->BuildDescriptors(descriptorParam);
+		m_deferredRenderer->BuildAllDescriptors(descriptorParam);
 
 		for (auto texture : INSTANCE(Resource)->LoadAll<Texture>())
 		{
@@ -367,72 +344,6 @@ namespace udsdx
 
 			m_d3dDevice->CreateConstantBufferView(&cbvDesc, handle);
 		}
-	}
-
-	void Core::BuildRootSignature()
-	{ ZoneScoped;
-		CD3DX12_ROOT_PARAMETER slotRootParameter[8];
-
-		slotRootParameter[RootParam::PerObjectCBV].InitAsConstants(sizeof(ObjectConstants) / 4, 0);
-		slotRootParameter[RootParam::PerMaterialCBV].InitAsConstants(sizeof(MaterialConstants) / 4, 1);
-		slotRootParameter[RootParam::PerCameraCBV].InitAsConstantBufferView(2);
-		slotRootParameter[RootParam::BonesCBV].InitAsConstantBufferView(3, 0);
-		slotRootParameter[RootParam::PrevBonesCBV].InitAsConstantBufferView(3, 1);
-		slotRootParameter[RootParam::PerShadowCBV].InitAsConstantBufferView(4);
-		slotRootParameter[RootParam::PerFrameCBV].InitAsConstantBufferView(5);
-
-		// Single unbounded SRV table spanning the whole SRV heap (bindless). Shaders index it by the
-		// texture's heap index. Requires Resource Binding Tier 2+.
-		CD3DX12_DESCRIPTOR_RANGE texTable;
-		texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, UINT_MAX, 0, 0);
-		slotRootParameter[RootParam::SrcTexTable].InitAsDescriptorTable(1, &texTable, D3D12_SHADER_VISIBILITY_PIXEL);
-
-		CD3DX12_STATIC_SAMPLER_DESC samplerDesc[] = {
-			CD3DX12_STATIC_SAMPLER_DESC(
-				0,
-				D3D12_FILTER_MIN_MAG_MIP_POINT,
-				D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-				D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-				D3D12_TEXTURE_ADDRESS_MODE_WRAP),
-			CD3DX12_STATIC_SAMPLER_DESC(
-				1,
-				D3D12_FILTER_MIN_MAG_MIP_LINEAR,
-				D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-				D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-				D3D12_TEXTURE_ADDRESS_MODE_WRAP),
-			CD3DX12_STATIC_SAMPLER_DESC(
-				2,
-				D3D12_FILTER_ANISOTROPIC,
-				D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-				D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-				D3D12_TEXTURE_ADDRESS_MODE_WRAP)
-		};
-
-		CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(_countof(slotRootParameter), slotRootParameter, _countof(samplerDesc), samplerDesc,
-			D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
-		);
-
-		ComPtr<ID3DBlob> serializedRootSig = nullptr;
-		ComPtr<ID3DBlob> errorBlob = nullptr;
-		HRESULT hr = D3D12SerializeRootSignature(
-			&rootSigDesc,
-			D3D_ROOT_SIGNATURE_VERSION_1,
-			serializedRootSig.GetAddressOf(),
-			errorBlob.GetAddressOf()
-		);
-
-		if (errorBlob != nullptr)
-		{
-			::OutputDebugStringA((char*)errorBlob->GetBufferPointer());
-		}
-		ThrowIfFailed(hr);
-
-		ThrowIfFailed(m_d3dDevice->CreateRootSignature(
-			0,
-			serializedRootSig->GetBufferPointer(),
-			serializedRootSig->GetBufferSize(),
-			IID_PPV_ARGS(m_rootSignature.GetAddressOf())
-		));
 	}
 
 	void Core::LogAdapterInfo()
@@ -644,11 +555,11 @@ namespace udsdx
 		RenderParam param{
 			.Device = m_d3dDevice.Get(),
 			.CommandList = m_commandList.Get(),
-			.RootSignature = m_rootSignature.Get(),
+			.RootSignature = m_deferredRenderer->GetObjectRootSignature(),
 			.SRVDescriptorHeap = m_srvHeap.Get(),
 
 			.Renderer = m_deferredRenderer.get(),
-			.RenderOptions = &m_renderOptions,
+			.RenderOptions = &m_deferredRenderer->GetRenderOptionsRef(),
 
 			.AspectRatio = GetAspectRatio(),
 			.FrameResourceIndex = m_currFrameResourceIndex,
@@ -661,21 +572,13 @@ namespace udsdx
 			.UseFrustumCulling = true,
 
 			.ConstantBufferView = objectCB->Resource()->GetGPUVirtualAddress(),
-			.DepthStencilView = DepthStencilView(),
 			.RenderTargetView = CurrentBackBufferView(),
 
 			.RenderTargetResource = CurrentBackBuffer(),
-			.DepthStencilResource = m_depthStencilBuffer.Get(),
 
 			.SpriteBatchNonPremultipliedAlpha = m_hudSpriteBatch.get(),
 			.SpriteBatchPreMultipliedAlpha = m_hudSpriteBatchPremultipliedAlpha.get(),
 
-			.RenderShadowMap = m_shadowMap.get(),
-			.RenderScreenSpaceAO = m_screenSpaceAO.get(),
-			.RenderMotionBlur = m_motionBlur.get(),
-			.RenderPostProcessBloom = m_postProcessBloom.get(),
-			.RenderPostProcessTAA = m_postProcessTAA.get(),
-			.RenderPostProcessOutline = m_postProcessOutline.get(),
 			.RenderEnvironmentMap = nullptr,
 
 			.TracyQueueContext = &m_tracyQueueCtx
@@ -704,8 +607,12 @@ namespace udsdx
 			D3D12_RESOURCE_STATE_RENDER_TARGET
 		));
 
-		// Draw the scene objects. 
-		m_scene->Render(param);
+		// The deferred renderer constructs all render passes and writes the final (post-processed) image
+		// into the back buffer (param.RenderTargetView).
+		m_deferredRenderer->Render(param, m_scene.get());
+
+		// Native UI (HUD / GUI) is drawn on top of the final image by the scene.
+		m_scene->RenderUI(param);
 
 		if (m_drawImGUIElements)
 		{
@@ -760,13 +667,13 @@ namespace udsdx
 		passConstants.DeltaTime = m_timeMeasure->GetTime().deltaTime;
 		// Shutter speed (in seconds) scales the per-frame motion delta into the fraction of the
 		// frame the shutter is open, linearly interpolating the blur instead of using the raw delta.
-		passConstants.MotionBlurFactor = m_renderOptions.MotionBlurShutterSpeed / m_timeMeasure->GetTime().deltaTime;
+		passConstants.MotionBlurFactor = m_deferredRenderer->GetRenderOptionsRef().MotionBlurShutterSpeed / m_timeMeasure->GetTime().deltaTime;
 		passConstants.MotionBlurRadius = static_cast<float>(MotionBlur::MaxBlurRadius);
-		passConstants.FogColor = m_renderOptions.FogColor;
-		passConstants.FogSunColor = m_renderOptions.FogSunColor;
-		passConstants.FogDensity = m_renderOptions.FogDensity;
-		passConstants.FogHeightFalloff = m_renderOptions.FogHeightFalloff;
-		passConstants.FogDistanceStart = m_renderOptions.FogDistanceStart;
+		passConstants.FogColor = m_deferredRenderer->GetRenderOptionsRef().FogColor;
+		passConstants.FogSunColor = m_deferredRenderer->GetRenderOptionsRef().FogSunColor;
+		passConstants.FogDensity = m_deferredRenderer->GetRenderOptionsRef().FogDensity;
+		passConstants.FogHeightFalloff = m_deferredRenderer->GetRenderOptionsRef().FogHeightFalloff;
+		passConstants.FogDistanceStart = m_deferredRenderer->GetRenderOptionsRef().FogDistanceStart;
 
 		auto frameResource = CurrentFrameResource();
 		frameResource->GetObjectCB()->CopyData(0, passConstants);
@@ -930,7 +837,6 @@ namespace udsdx
 		{
 			m_swapChainBuffers[i].Reset();
 		}
-		m_depthStencilBuffer.Reset();
 
 		// Get the description of the swap chain.
 		DXGI_SWAP_CHAIN_DESC swapChainDesc;
@@ -955,67 +861,8 @@ namespace udsdx
 			rtvHeapHandle.Offset(1, m_rtvDescriptorSize);
 		}
 
-		// Create the depth/stencil buffer and view.
-		D3D12_RESOURCE_DESC depthStencilDesc;
-		depthStencilDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-		depthStencilDesc.Alignment = 0;			// alignment size of the resource. 0 means use default alignment.
-		depthStencilDesc.Width = width;			// size of the width.
-		depthStencilDesc.Height = height;		// size of the height.
-		depthStencilDesc.DepthOrArraySize = 1;	// size of the depth.
-		depthStencilDesc.MipLevels = 1;			// number of mip levels.
-
-		// Correction 11/12/2016: SSAO chapter requires an SRV to the depth buffer to read from 
-		// the depth buffer.  Therefore, because we need to create two views to the same resource:
-		//   1. SRV format: DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS
-		//   2. DSV Format: DXGI_FORMAT_D32_FLOAT_S8X24_UINT
-		// we need to create the depth buffer resource with a typeless format.
-		depthStencilDesc.Format = DXGI_FORMAT_R32G8X24_TYPELESS;
-
-		depthStencilDesc.SampleDesc.Count = m_4xMsaaState ? 4 : 1;
-		depthStencilDesc.SampleDesc.Quality = m_4xMsaaState ? (m_4xMsaaQuality - 1) : 0;
-		depthStencilDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;				// layout of the texture to be used in the pipeline.
-		depthStencilDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;	// resource is used as a depth-stencil buffer.
-
-		D3D12_CLEAR_VALUE optClear;
-		optClear.Format = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
-		optClear.DepthStencil.Depth = 0.0f;
-		optClear.DepthStencil.Stencil = 0;
-		ThrowIfFailed(m_d3dDevice->CreateCommittedResource(
-			&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
-			D3D12_HEAP_FLAG_NONE,
-			&depthStencilDesc,
-			D3D12_RESOURCE_STATE_COMMON,
-			&optClear,
-			IID_PPV_ARGS(&m_depthStencilBuffer)
-		));
-
-		// Create descriptor to mip level 0 of entire resource using the format of the resource.
-		D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc;
-		dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
-		dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-		dsvDesc.Format = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
-		dsvDesc.Texture2D.MipSlice = 0;
-		m_d3dDevice->CreateDepthStencilView(m_depthStencilBuffer.Get(), &dsvDesc, m_dsvHeap->GetCPUDescriptorHandleForHeapStart());
-
-		// Transition the resource from its initial state to be used as a depth buffer.
-		m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
-			m_depthStencilBuffer.Get(),
-			D3D12_RESOURCE_STATE_COMMON,
-			D3D12_RESOURCE_STATE_DEPTH_WRITE
-		));
-
+		// The deferred renderer owns the depth buffer and every render pass; it recreates them all.
 		m_deferredRenderer->OnResize(width, height);
-		m_deferredRenderer->RebuildDescriptors();
-		m_screenSpaceAO->OnResize(width, height, m_d3dDevice.Get());
-		m_screenSpaceAO->RebuildDescriptors(m_depthStencilBuffer.Get());
-		m_motionBlur->OnResize(width, height);
-		m_motionBlur->RebuildDescriptors();
-		m_postProcessBloom->OnResize(width, height);
-		m_postProcessBloom->RebuildDescriptors();
-		m_postProcessTAA->OnResize(width, height);
-		m_postProcessTAA->RebuildDescriptors();
-		m_postProcessOutline->OnResize(width, height);
-		m_postProcessOutline->RebuildDescriptors();
 
 		ExecuteAndFlushDirectCommandList();
 
@@ -1129,50 +976,51 @@ namespace udsdx
 		ImGui::PopStyleColor(2);
 
 
-		ImGui::Checkbox("Draw Shadow Map", &m_renderOptions.DrawShadowMap);
-		bool changeSSAO = ImGui::Checkbox("Draw SSAO", &m_renderOptions.DrawSSAO);
-		ImGui::Checkbox("Draw Motion Blur", &m_renderOptions.DrawMotionBlur);
-		ImGui::SliderFloat("Motion Blur Shutter Speed", &m_renderOptions.MotionBlurShutterSpeed, 0.0f, 0.1f, "%.4f", ImGuiSliderFlags_AlwaysClamp);
-		ImGui::Checkbox("Draw Post Process Bloom", &m_renderOptions.DrawBloom);
-		ImGui::Checkbox("Draw Post Process TAA", &m_renderOptions.DrawTAA);
-		ImGui::Checkbox("Draw Post Process Outline", &m_renderOptions.DrawOutline);
+		ImGui::Checkbox("Draw Shadow Map", &m_deferredRenderer->GetRenderOptionsRef().DrawShadowMap);
+		bool changeSSAO = ImGui::Checkbox("Draw SSAO", &m_deferredRenderer->GetRenderOptionsRef().DrawSSAO);
+		ImGui::Checkbox("Draw Motion Blur", &m_deferredRenderer->GetRenderOptionsRef().DrawMotionBlur);
+		ImGui::SliderFloat("Motion Blur Shutter Speed", &m_deferredRenderer->GetRenderOptionsRef().MotionBlurShutterSpeed, 0.0f, 0.1f, "%.4f", ImGuiSliderFlags_AlwaysClamp);
+		ImGui::Checkbox("Draw Post Process Bloom", &m_deferredRenderer->GetRenderOptionsRef().DrawBloom);
+		ImGui::Checkbox("Draw Post Process TAA", &m_deferredRenderer->GetRenderOptionsRef().DrawTAA);
+		ImGui::Checkbox("Draw Post Process Outline", &m_deferredRenderer->GetRenderOptionsRef().DrawOutline);
 
-		static float exposure = m_postProcessBloom->GetExposure();
+		PostProcessBloom* postProcessBloom = m_deferredRenderer->GetPostProcessBloom();
+		static float exposure = postProcessBloom->GetExposure();
 		if (ImGui::SliderFloat("Exposure", &exposure, 0.0f, 10.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp))
 		{
-			m_postProcessBloom->SetExposure(exposure);
+			postProcessBloom->SetExposure(exposure);
 		}
-		
-		static float bloomStrength = m_postProcessBloom->GetBloomStrength();
+
+		static float bloomStrength = postProcessBloom->GetBloomStrength();
 		if (ImGui::SliderFloat("Bloom Strength", &bloomStrength, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp))
 		{
-			m_postProcessBloom->SetBloomStrength(bloomStrength);
+			postProcessBloom->SetBloomStrength(bloomStrength);
 		}
 		
 		// Draw combobox for shadow map resolution. the options are (256, 512, 1024, 2048, 4096, 8192).
 		static const char* shadowMapResolutions[] = { "256", "512", "1024", "2048", "4096", "8192" };
-		std::string currentShadowMapResolution = std::to_string(m_renderOptions.ShadowMapSize);
+		std::string currentShadowMapResolution = std::to_string(m_deferredRenderer->GetRenderOptionsRef().ShadowMapSize);
 		int selectedShadowMapResolution = static_cast<int>(std::distance(std::begin(shadowMapResolutions), std::find(std::begin(shadowMapResolutions), std::end(shadowMapResolutions), currentShadowMapResolution)));
 		if (ImGui::Combo("Shadow Map Resolution", &selectedShadowMapResolution, shadowMapResolutions, IM_ARRAYSIZE(shadowMapResolutions)))
 		{
 			FlushCommandQueue();
-			m_renderOptions.ShadowMapSize = static_cast<unsigned int>(std::stoi(shadowMapResolutions[selectedShadowMapResolution]));
-			m_shadowMap->OnResize(m_renderOptions.ShadowMapSize, m_renderOptions.ShadowMapSize, m_d3dDevice.Get());
-			m_shadowMap->RebuildDescriptors(m_d3dDevice.Get());
+			m_deferredRenderer->GetRenderOptionsRef().ShadowMapSize = static_cast<unsigned int>(std::stoi(shadowMapResolutions[selectedShadowMapResolution]));
+			m_deferredRenderer->GetShadowMap()->OnResize(m_deferredRenderer->GetRenderOptionsRef().ShadowMapSize, m_deferredRenderer->GetRenderOptionsRef().ShadowMapSize, m_d3dDevice.Get());
+			m_deferredRenderer->GetShadowMap()->RebuildDescriptors(m_d3dDevice.Get());
 		}
 
-		if (changeSSAO && !m_renderOptions.DrawSSAO)
+		if (changeSSAO && !m_deferredRenderer->GetRenderOptionsRef().DrawSSAO)
 		{
 			PrepareDirectCommandList();
-			m_screenSpaceAO->ClearSSAOMap(m_commandList.Get());
+			m_deferredRenderer->GetScreenSpaceAO()->ClearSSAOMap(m_commandList.Get());
 			ExecuteAndFlushDirectCommandList();
 		}
 
-		ImGui::ColorPicker4("Fog Color", reinterpret_cast<float*>(&m_renderOptions.FogColor), ImGuiColorEditFlags_Float | ImGuiColorEditFlags_AlphaOpaque | ImGuiColorEditFlags_HDR);
-		ImGui::ColorPicker4("Fog Sun Color", reinterpret_cast<float*>(&m_renderOptions.FogSunColor), ImGuiColorEditFlags_Float | ImGuiColorEditFlags_AlphaOpaque | ImGuiColorEditFlags_HDR);
-		ImGui::SliderFloat("Fog Density", &m_renderOptions.FogDensity, 0.0f, 10000.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_Logarithmic);
-		ImGui::SliderFloat("Fog Height Falloff", &m_renderOptions.FogHeightFalloff, 0.0f, 10000.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_Logarithmic);
-		ImGui::SliderFloat("Fog Distance Start", &m_renderOptions.FogDistanceStart, 0.0f, 100.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
+		ImGui::ColorPicker4("Fog Color", reinterpret_cast<float*>(&m_deferredRenderer->GetRenderOptionsRef().FogColor), ImGuiColorEditFlags_Float | ImGuiColorEditFlags_AlphaOpaque | ImGuiColorEditFlags_HDR);
+		ImGui::ColorPicker4("Fog Sun Color", reinterpret_cast<float*>(&m_deferredRenderer->GetRenderOptionsRef().FogSunColor), ImGuiColorEditFlags_Float | ImGuiColorEditFlags_AlphaOpaque | ImGuiColorEditFlags_HDR);
+		ImGui::SliderFloat("Fog Density", &m_deferredRenderer->GetRenderOptionsRef().FogDensity, 0.0f, 10000.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_Logarithmic);
+		ImGui::SliderFloat("Fog Height Falloff", &m_deferredRenderer->GetRenderOptionsRef().FogHeightFalloff, 0.0f, 10000.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_Logarithmic);
+		ImGui::SliderFloat("Fog Distance Start", &m_deferredRenderer->GetRenderOptionsRef().FogDistanceStart, 0.0f, 100.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
 
 		// Set window position to top left corner
 		ImGui::SetWindowPos(ImVec2(0, 0));
@@ -1235,22 +1083,17 @@ namespace udsdx
 
 	ShadowMap* Core::GetShadowMap() const
 	{
-		return m_shadowMap.get();
+		return m_deferredRenderer->GetShadowMap();
 	}
 
 	ScreenSpaceAO* Core::GetScreenSpaceAO() const
 	{
-		return m_screenSpaceAO.get();
+		return m_deferredRenderer->GetScreenSpaceAO();
 	}
 
 	MonoUploadBuffer* Core::GetMonoUploadBuffer() const
 	{
 		return m_monoUploadBuffer.get();
-	}
-
-	ID3D12RootSignature* Core::GetRootSignature() const
-	{
-		return m_rootSignature.Get();
 	}
 
 	ID3D12DescriptorHeap* Core::GetSrvDescriptorHeap() const
@@ -1290,21 +1133,6 @@ namespace udsdx
 	float Core::GetAspectRatio() const
 	{
 		return static_cast<float>(m_clientWidth) / m_clientHeight;
-	}
-
-	void Core::SetClearColor(const Color& clearColor)
-	{
-		m_clearColor = clearColor;
-	}
-	
-	void Core::SetClearColor(float r, float g, float b)
-	{
-		m_clearColor = Color(r, g, b, 1.0f);
-	}
-
-	D3D12_CPU_DESCRIPTOR_HANDLE Core::DepthStencilView() const
-	{
-		return m_dsvHeap->GetCPUDescriptorHandleForHeapStart();
 	}
 
 	DescriptorParam Core::GetDescriptorParameters() const
@@ -1347,7 +1175,7 @@ namespace udsdx
 
 	RenderOptions& Core::GetRenderOptionsRef()
 	{
-		return m_renderOptions;
+		return m_deferredRenderer->GetRenderOptionsRef();
 	}
 
 	int Core::GetClientPosX() const

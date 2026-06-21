@@ -32,7 +32,6 @@ namespace udsdx
 
 		void RegisterDescriptorsToHeaps();
 		void BuildConstantBuffers();
-		void BuildRootSignature();
 
 		void ExecuteCommandList();
 		void FlushCommandQueue();
@@ -63,7 +62,6 @@ namespace udsdx
 		ID3D12CommandQueue* GetCommandQueue() const;
 		ID3D12CommandAllocator* GetCommandAllocator() const;
 		ID3D12GraphicsCommandList* GetCommandList() const;
-		ID3D12RootSignature* GetRootSignature() const;
 		ID3D12DescriptorHeap* GetSrvDescriptorHeap() const;
 		DeferredRenderer* GetRenderer() const;
 		ShadowMap* GetShadowMap() const;
@@ -74,7 +72,6 @@ namespace udsdx
 		ID3D12Resource* CurrentBackBuffer() const;
 
 		D3D12_CPU_DESCRIPTOR_HANDLE CurrentBackBufferView() const;
-		D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilView() const;
 
 		DescriptorParam GetDescriptorParameters() const;
 		void ApplyDescriptorParameters(const DescriptorParam& param);
@@ -86,9 +83,6 @@ namespace udsdx
 		int GetClientWidth() const;
 		int GetClientHeight() const;
 		float GetAspectRatio() const;
-
-		void SetClearColor(const Color& clearColor);
-		void SetClearColor(float r, float g, float b);
 
 	protected:
 		// Initialize DXGI Factory, Direct3D 12 Device, etc.
@@ -138,15 +132,11 @@ namespace udsdx
 		bool		m_4xMsaaState = false;    // 4X MSAA enabled
 		UINT		m_4xMsaaQuality = 0;      // quality level of 4X MSAA
 
-		Color		m_clearColor = Color(0.0f, 0.0f, 0.0f, 1.0f);
-
 		bool		m_drawImGUIElements = false; // Draw ImGui elements on the screen
 
 		// Current Scene to render with
 		std::shared_ptr<Scene> m_scene;
 		std::function<void(const Time&)> m_updateCallback = nullptr;
-
-		RenderOptions m_renderOptions;
 
 	protected:
 		TimeMeasure* m_timeMeasure;
@@ -199,16 +189,8 @@ namespace udsdx
 		std::array<ComPtr<ID3D12Resource>, SwapChainBufferCount> m_swapChainBuffers;
 		int m_currBackBuffer = 0;
 
-		// Intermediate Render Target whose format is R11G11B10_FLOAT
-		ComPtr<ID3D12Resource> m_intermediateRenderTarget;
-
-		// Intermediate Render Target View
-
-		// Deferred Renderer
+		// Deferred Renderer (owns the render passes, depth buffer, render options, and root signatures)
 		std::unique_ptr<DeferredRenderer> m_deferredRenderer;
-
-		// Depth/Stencil Buffer
-		ComPtr<ID3D12Resource> m_depthStencilBuffer;
 
 		// Descriptor Heap
 		// A continuous block of memory containing descriptors which describe resources
@@ -224,10 +206,6 @@ namespace udsdx
 		// Shader Resource View Descriptor Heap
 		ComPtr<ID3D12DescriptorHeap> m_srvHeap;
 
-		// Root Signature:
-		// used to define the data that the shaders will access
-		ComPtr<ID3D12RootSignature> m_rootSignature;
-
 		D3D12_VIEWPORT m_screenViewport;
 		D3D12_RECT m_scissorRect;
 
@@ -238,20 +216,12 @@ namespace udsdx
 		UINT m_cbvHeapSize = 0;
 		UINT m_srvHeapSize = 0;
 		UINT m_rtvHeapSize = SwapChainBufferCount;
-		UINT m_dsvHeapSize = 1;
+		UINT m_dsvHeapSize = 0;
 
 		std::unique_ptr<FrameDebug> m_frameDebug;
 		TracyD3D12Ctx m_tracyQueueCtx;
 
-		std::unique_ptr<ShadowMap> m_shadowMap;
-		std::unique_ptr<ScreenSpaceAO> m_screenSpaceAO;
-		std::unique_ptr<PostProcessBloom> m_postProcessBloom;
-		std::unique_ptr<MotionBlur> m_motionBlur;
-		std::unique_ptr<PostProcessTAA> m_postProcessTAA;
-		std::unique_ptr<PostProcessOutline> m_postProcessOutline;
-
 		std::unique_ptr<GraphicsMemory> m_graphicsMemory;
-
 		std::unique_ptr<MonoUploadBuffer> m_monoUploadBuffer;
 
 		// DirectXTK Sprite Batch for HUD rendering

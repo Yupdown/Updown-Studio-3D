@@ -7,36 +7,60 @@ namespace udsdx
 {
 	class Scene;
 	class Texture;
+	class Camera;
+	class LightDirectional;
+	class ShadowMap;
+	class ScreenSpaceAO;
+	class PostProcessBloom;
+	class MotionBlur;
+	class PostProcessTAA;
+	class PostProcessOutline;
 
 	class DeferredRenderer
 	{
 	public:
-		DeferredRenderer(ID3D12Device* device);
+		DeferredRenderer(ID3D12Device* device, ID3D12GraphicsCommandList* commandList);
 		~DeferredRenderer();
 
 		void OnResize(UINT newWidth, UINT newHeight);
 		void BuildDescriptors(DescriptorParam& descriptorParam);
-		void BuildRootSignature();
+		void BuildAllDescriptors(DescriptorParam& descriptorParam);
+		void BuildObjectRootSignature();
+		void BuildDeferredRootSignature();
 		void RebuildDescriptors();
 		void BuildResources();
 		void BuildSkyboxPipelineState();
 
 	public:
-		void ClearRenderTargets(ID3D12GraphicsCommandList* commandList);
-		void SetRenderTargets(ID3D12GraphicsCommandList* commandList);
-		void PassBufferPreparation(RenderParam& renderParam);
-		void PassBufferPostProcess(RenderParam& renderParam);
+		// Top-level entry point. Constructs every render pass for the scene and writes the final
+		// (post-processed) image into renderParam.RenderTargetView (the swap chain back buffer).
+		void Render(RenderParam& renderParam, Scene* scene);
+
+	private:
 		void PassRender(RenderParam& renderParam, D3D12_GPU_VIRTUAL_ADDRESS cbvGpu, const std::vector<ID3D12PipelineState*>& pipelineStates);
+		void PassRenderShadow(RenderParam& renderParam, Scene* scene, Camera* camera, LightDirectional* light);
+		void PassRenderSSAO(RenderParam& renderParam, Camera* camera);
+		void PassRenderMain(RenderParam& renderParam, Scene* scene, Camera* camera, D3D12_GPU_VIRTUAL_ADDRESS cameraCbv);
 
 	public:
 		CD3DX12_GPU_DESCRIPTOR_HANDLE GetGBufferSrv(UINT index) const { return m_gBuffersGpuSrv[index]; }
 		CD3DX12_GPU_DESCRIPTOR_HANDLE GetDepthBufferSrv() const { return m_depthBufferGpuSrv; }
 		CD3DX12_GPU_DESCRIPTOR_HANDLE GetStencilBufferSrv() const { return m_stencilBufferGpuSrv; }
 		CD3DX12_CPU_DESCRIPTOR_HANDLE GetDepthBufferDsv() const { return m_depthBufferCpuDsv; }
+		CD3DX12_CPU_DESCRIPTOR_HANDLE GetDepthBufferReadOnlyDsv() const { return m_depthBufferReadOnlyCpuDsv; }
 		CD3DX12_CPU_DESCRIPTOR_HANDLE GetRenderTargetRTVView() const { return m_targetViewCpuRtv; }
 		CD3DX12_GPU_DESCRIPTOR_HANDLE GetRenderTargetSrv() const { return m_targetViewGpuSrv; }
 		ID3D12Resource*				  GetRenderTargetResource() const { return m_targetBuffer.Get(); }
-		ID3D12RootSignature*		  GetRootSignature() const { return m_renderRootSignature.Get(); }
+		ID3D12RootSignature*		  GetDeferredRootSignature() const { return m_deferredRootSignature.Get(); }
+		ID3D12RootSignature*		  GetObjectRootSignature() const { return m_objectRootSignature.Get(); }
+
+		RenderOptions&	GetRenderOptionsRef() { return m_renderOptions; }
+		ShadowMap*		GetShadowMap() const { return m_shadowMap.get(); }
+		ScreenSpaceAO*	GetScreenSpaceAO() const { return m_screenSpaceAO.get(); }
+		PostProcessBloom* GetPostProcessBloom() const { return m_postProcessBloom.get(); }
+
+		void SetClearColor(const Color& clearColor) { m_clearColor = clearColor; }
+		void SetClearColor(float r, float g, float b) { m_clearColor = Color(r, g, b, 1.0f); }
 
 	public:
 		static constexpr UINT NUM_GBUFFERS = 4;
@@ -58,14 +82,27 @@ namespace udsdx
 
 	private:
 		ID3D12Device* m_device;
+		ID3D12GraphicsCommandList* m_commandList;
 
 		UINT m_width = 0;
 		UINT m_height = 0;
 
-		ComPtr<ID3D12RootSignature> m_renderRootSignature;
+		Color m_clearColor = Color(0.0f, 0.0f, 0.0f, 1.0f);
+		RenderOptions m_renderOptions;
+
+		ComPtr<ID3D12RootSignature> m_objectRootSignature;
+		ComPtr<ID3D12RootSignature> m_deferredRootSignature;
 		ComPtr<ID3D12RootSignature> m_skyboxRootSignature;
 		ComPtr<ID3D12PipelineState> m_skyboxPipelineState;
 		ComPtr<ID3D12PipelineState> m_skyboxVelocityPipelineState;
+
+		// Render passes owned by the renderer.
+		std::unique_ptr<ShadowMap> m_shadowMap;
+		std::unique_ptr<ScreenSpaceAO> m_screenSpaceAO;
+		std::unique_ptr<PostProcessBloom> m_postProcessBloom;
+		std::unique_ptr<MotionBlur> m_motionBlur;
+		std::unique_ptr<PostProcessTAA> m_postProcessTAA;
+		std::unique_ptr<PostProcessOutline> m_postProcessOutline;
 
 		// Multiple Render Target (MRT) for deferred rendering
 		std::array<ComPtr<ID3D12Resource>, NUM_GBUFFERS> m_gBuffers;
@@ -73,7 +110,7 @@ namespace udsdx
 		std::array<CD3DX12_GPU_DESCRIPTOR_HANDLE, NUM_GBUFFERS> m_gBuffersGpuSrv;
 		std::array<CD3DX12_CPU_DESCRIPTOR_HANDLE, NUM_GBUFFERS> m_gBuffersCpuRtv;
 
-		// Depth buffer
+		// Intermediate target (R11G11B10_FLOAT) and the single depth buffer.
 		ComPtr<ID3D12Resource> m_targetBuffer;
 		ComPtr<ID3D12Resource> m_depthBuffer;
 
@@ -86,6 +123,9 @@ namespace udsdx
 		CD3DX12_CPU_DESCRIPTOR_HANDLE m_stencilBufferCpuSrv;
 		CD3DX12_GPU_DESCRIPTOR_HANDLE m_stencilBufferGpuSrv;
 		CD3DX12_CPU_DESCRIPTOR_HANDLE m_depthBufferCpuDsv;
+		// Read-only depth-stencil view: lets the lighting / skybox passes stencil/depth-test against the
+		// depth buffer while the same resource is simultaneously bound as an SRV.
+		CD3DX12_CPU_DESCRIPTOR_HANDLE m_depthBufferReadOnlyCpuDsv;
 
 		std::array<D3D12_RESOURCE_BARRIER, NUM_GBUFFERS + 1> m_gBufferBeginRenderTransitions;
 		std::array<D3D12_RESOURCE_BARRIER, NUM_GBUFFERS + 1> m_gBufferEndRenderTransitions;

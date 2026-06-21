@@ -72,11 +72,9 @@ namespace udsdx
 		bool UseFrustumCulling;
 
 		const D3D12_GPU_VIRTUAL_ADDRESS& ConstantBufferView;
-		const D3D12_CPU_DESCRIPTOR_HANDLE& DepthStencilView;
 		const D3D12_CPU_DESCRIPTOR_HANDLE& RenderTargetView;
 
 		ID3D12Resource* RenderTargetResource;
-		ID3D12Resource* DepthStencilResource;
 
 		SpriteBatch* SpriteBatchNonPremultipliedAlpha;
 		SpriteBatch* SpriteBatchPreMultipliedAlpha;

@@ -261,7 +261,7 @@ namespace udsdx
 
 		psoDesc.InputLayout.pInputElementDescs = nullptr;
 		psoDesc.InputLayout.NumElements = 0;
-		psoDesc.pRootSignature = INSTANCE(Core)->GetRenderer()->GetRootSignature();
+		psoDesc.pRootSignature = INSTANCE(Core)->GetRenderer()->GetDeferredRootSignature();
 		psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 		psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 		psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
