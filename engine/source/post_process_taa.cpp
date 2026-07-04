@@ -59,15 +59,20 @@ namespace udsdx
 		const float maxHistoryBlend = 0.95f;
 		const float rcpSpeedLimiter = 1.0f / 64.0f;
 		const float velocityScale = 1.0f;
+		// Shutter scaling matching PassConstants::MotionBlurFactor; lets the resolve hand
+		// motion-blurred pixels the un-antialiased current frame. Zero keeps full history.
+		const float motionBlurFactor = (param.RenderOptions->DrawMotionBlur && param.Time.deltaTime > 0.0f)
+			? param.RenderOptions->MotionBlurShutterSpeed / param.Time.deltaTime
+			: 0.0f;
 
 		const float taaParams[8] = {
 			1.0f / static_cast<float>(m_width),
 			1.0f / static_cast<float>(m_height),
 			m_historyValid ? 1.0f : 0.0f,
 			maxHistoryBlend,
-			rcpSpeedLimiter,
+			rcpSpeedLimiter, 
 			velocityScale,
-			0.0f,
+			motionBlurFactor,
 			0.0f
 		};
 		pCommandList->SetGraphicsRoot32BitConstants(0, 8, taaParams, 0);

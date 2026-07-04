@@ -3,7 +3,7 @@
 cbuffer cbTAA : register(b0)
 {
 	float4 gTAAParams0; // x: invWidth, y: invHeight, z: historyValid, w: maxBlendWeight
-	float4 gTAAParams1; // x: rcpSpeedLimiter, y: velocityScale, z: reserved, w: reserved
+	float4 gTAAParams1; // x: rcpSpeedLimiter, y: velocityScale, z: motionBlurFactor, w: reserved
 };
 
 Texture2D gSource : register(t0);
@@ -29,10 +29,10 @@ float3 ITM(float3 rgb)
 	return rgb / max(1.0f - LuminanceRec709(rgb), 1e-5f);
 }
 
-float3 ClipColor(float3 color, float3 boxMin, float3 boxMax, float dilation)
+float3 ClipColor(float3 color, float3 boxMin, float3 boxMax)
 {
 	const float3 boxCenter = 0.5f * (boxMax + boxMin);
-	const float3 halfDim = 0.5f * (boxMax - boxMin) * dilation + 0.001f;
+	const float3 halfDim = 0.5f * (boxMax - boxMin) + 0.001f;
 	const float3 displacement = color - boxCenter;
 	const float3 units = abs(displacement / halfDim);
 	const float maxUnit = max(max(units.x, units.y), max(units.z, 1.0f));
@@ -63,7 +63,7 @@ float4 SampleHistoryBicubic5(float2 historyUv, float2 texelSize)
 	const float4 C = gHistory.SampleLevel(gSamLinearClamp, float2(m0.x, m0.y), 0);
 	const float4 D = gHistory.SampleLevel(gSamLinearClamp, float2(tc3.x, m0.y), 0);
 	const float4 E = gHistory.SampleLevel(gSamLinearClamp, float2(m0.x, tc3.y), 0);
-	return (0.5f * (A + B) * w0.x + A * s0.x + 0.5f * (A + B) * w3.x) * w0.y
+	return (0.5f * (A + B) * w0.x + A * s0.x + 0.5f * (A + D) * w3.x) * w0.y
 		+ (B * w0.x + C * s0.x + D * w3.x) * s0.y
 		+ (0.5f * (B + E) * w0.x + E * s0.x + 0.5f * (D + E) * w3.x) * w3.y;
 }
@@ -74,22 +74,22 @@ float2 SelectClosestDepthVelocity(float2 uv, float2 texelSize)
 	float closestDepth = depthCenter;
 	float2 bestOffset = 0.0f.xx;
 
-	const float2 offsets[4] = {
-		float2(-1.0f, 0.0f),
-		float2(1.0f, 0.0f),
-		float2(0.0f, -1.0f),
-		float2(0.0f, 1.0f)
-	};
-
+	// Full 3x3 so dilation reach matches the clip box; a cross misses diagonal-only foreground
+	// neighbors, letting stale disoccluded history pass at silhouette staircase corners.
 	[unroll]
-	for (int i = 0; i < 4; ++i)
+	for (int y = -1; y <= 1; ++y)
 	{
-		const float2 sampleUv = saturate(uv + offsets[i] * texelSize);
-		const float depth = gDepth.SampleLevel(gSamPointClamp, sampleUv, 0).r;
-		if (depth < closestDepth)
+		[unroll]
+		for (int x = -1; x <= 1; ++x)
 		{
-			closestDepth = depth;
-			bestOffset = offsets[i];
+			const float2 sampleUv = saturate(uv + float2(x, y) * texelSize);
+			const float depth = gDepth.SampleLevel(gSamPointClamp, sampleUv, 0).r;
+			// Reversed-Z: greater depth = closer.
+			if (depth > closestDepth)
+			{
+				closestDepth = depth;
+				bestOffset = float2(x, y);
+			}
 		}
 	}
 
@@ -104,6 +104,7 @@ float4 PS(VertexOut pin) : SV_Target
 	const float maxBlendWeight = gTAAParams0.w;
 	const float rcpSpeedLimiter = gTAAParams1.x;
 	const float velocityScale = gTAAParams1.y;
+	const float motionBlurFactor = gTAAParams1.z;
 
 	const float2 uv = pin.TexC;
 	const float3 currentColor = gSource.Sample(gSamLinearClamp, uv).rgb;
@@ -124,8 +125,10 @@ float4 PS(VertexOut pin) : SV_Target
 	float3 historyColor = historySample.rgb;
 	float historyWeight = saturate(historySample.a);
 
-	float3 boxMin = currentColor;
-	float3 boxMax = currentColor;
+	// Variance clipping (Salvi): the mean/sigma box hugs the dominant neighborhood color, so
+	// disocclusions reject stale history while mixed-coverage edges keep their AA gradient.
+	float3 colorMoment1 = 0.0f.xxx;
+	float3 colorMoment2 = 0.0f.xxx;
 	[unroll]
 	for (int y = -1; y <= 1; ++y)
 	{
@@ -134,16 +137,32 @@ float4 PS(VertexOut pin) : SV_Target
 		{
 			const float2 sampleUv = saturate(uv + float2(x, y) * texelSize);
 			const float3 sampleColor = gSource.Sample(gSamLinearClamp, sampleUv).rgb;
-			boxMin = min(boxMin, sampleColor);
-			boxMax = max(boxMax, sampleColor);
+			colorMoment1 += sampleColor;
+			colorMoment2 += sampleColor * sampleColor;
 		}
 	}
+	const float3 colorMean = colorMoment1 / 9.0f;
+	const float3 colorSigma = sqrt(max(colorMoment2 / 9.0f - colorMean * colorMean, 0.0f.xxx));
 
 	const float2 velocityPixels = velocity / max(texelSize, float2(1e-6f, 1e-6f));
-	const float speedFactor = saturate(1.0f - length(velocityPixels) * rcpSpeedLimiter);
+	const float speedPixels = length(velocityPixels);
+	const float speedFactor = saturate(1.0f - speedPixels * rcpSpeedLimiter);
 	historyWeight *= speedFactor;
 
-	const float3 clippedHistory = ClipColor(historyColor, boxMin, boxMax, lerp(1.0f, 4.0f, speedFactor * speedFactor));
+	// The downstream motion blur classifies samples discretely by depth, so antialiased
+	// silhouettes would bleed across its boundary. Fade history out over the blur's activation
+	// range (0.5px early-out, shutter-scaled) so blurred pixels resolve to the raw current frame.
+	const float motionBlurPixels = speedPixels * motionBlurFactor;
+	const float motionBlurWeight = saturate((motionBlurPixels - 0.5f) / 1.5f);
+	historyWeight *= 1.0f - motionBlurWeight;
+
+	// speedFactor comes from the 3x3-dilated velocity, so the relaxed (anti-flicker) gamma only
+	// applies where nothing nearby moves; pixels bordering a mover get the tight box.
+	const float clipGamma = lerp(1.0f, 1.5f, speedFactor * speedFactor);
+	const float3 boxMin = colorMean - clipGamma * colorSigma;
+	const float3 boxMax = colorMean + clipGamma * colorSigma;
+
+	const float3 clippedHistory = ClipColor(historyColor, boxMin, boxMax);
 	const float blendWeight = min(historyWeight, maxBlendWeight);
 	const float3 resolvedColor = ITM(lerp(TM(currentColor), TM(clippedHistory), blendWeight));
 

@@ -753,16 +753,16 @@ namespace udsdx
 			m_postProcessBloom->Pass(renderParam);
 		}
 
-		// Motion blur pass
-		if (renderParam.RenderOptions->DrawMotionBlur)
-		{
-			m_motionBlur->Pass(renderParam, cameraCbv);
-		}
-
 		// TAA pass
 		if (renderParam.RenderOptions->DrawTAA)
 		{
 			m_postProcessTAA->Pass(renderParam);
+		}
+
+		// Motion blur pass
+		if (renderParam.RenderOptions->DrawMotionBlur)
+		{
+			m_motionBlur->Pass(renderParam, cameraCbv);
 		}
 
 		// Post-process outline pass
