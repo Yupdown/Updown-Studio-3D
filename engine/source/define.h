@@ -49,10 +49,13 @@ namespace udsdx
 		float FogDistanceStart = 20.0f;
 	};
 
+	// Number of cascaded shadow map levels; must match NUM_CASCADES in inc_common.hlsl.
+	static constexpr UINT NumShadowCascades = 4;
+
 	struct RenderParam
 	{
 		ID3D12Device* Device;
-		ID3D12GraphicsCommandList* CommandList;
+		ID3D12GraphicsCommandList2* CommandList;
 		ID3D12RootSignature* RootSignature;
 		ID3D12DescriptorHeap* SRVDescriptorHeap;
 
@@ -70,6 +73,11 @@ namespace udsdx
 		Camera* TargetCamera;
 		BoundingCamera* ViewFrustumWorld;
 		bool UseFrustumCulling;
+
+		// Shadow view-instancing: when ShadowCascadeCount > 0, renderers cull against all
+		// cascades and set the view instance mask per draw instead of using ViewFrustumWorld.
+		std::array<BoundingCamera*, NumShadowCascades> ShadowCascadeBounds{};
+		UINT ShadowCascadeCount = 0;
 
 		const D3D12_GPU_VIRTUAL_ADDRESS& ConstantBufferView;
 		const D3D12_CPU_DESCRIPTOR_HANDLE& RenderTargetView;

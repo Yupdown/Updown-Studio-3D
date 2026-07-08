@@ -31,8 +31,12 @@ namespace udsdx
 		void SetDrawShadow(bool draw) { m_drawShadow = draw; }
 
 	protected:
-		static constexpr unsigned int ShadowMapCount = 4;
+		static constexpr unsigned int ShadowMapCount = NumShadowCascades;
 		bool m_drawShadow = true;
+
+		// Render all cascades in one pass via view instancing; false falls back to the
+		// per-cascade loop. Must agree with how the shadow PSOs were built (see shader.cpp).
+		bool m_useViewInstancing = false;
 
 		DXGI_FORMAT m_shadowMapFormat = DXGI_FORMAT_R24G8_TYPELESS;
 
@@ -45,6 +49,8 @@ namespace udsdx
 		D3D12_RECT m_scissorRect;
 
 		std::array<D3D12_CPU_DESCRIPTOR_HANDLE, ShadowMapCount> m_dsvCpus;
+		// DSV covering all cascade slices at once, for the view-instanced single pass.
+		D3D12_CPU_DESCRIPTOR_HANDLE m_dsvCpuAll;
 		D3D12_CPU_DESCRIPTOR_HANDLE m_srvCpu;
 		D3D12_GPU_DESCRIPTOR_HANDLE m_srvGpu;
 

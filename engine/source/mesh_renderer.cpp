@@ -39,7 +39,25 @@ namespace udsdx
 			// Perform frustum culling
 			BoundingBox boundsWorld;
 			m_mesh->GetBounds().Transform(boundsWorld, m_transformCache);
-			if (param.ViewFrustumWorld->Contains(boundsWorld) == ContainmentType::DISJOINT)
+			if (param.ShadowCascadeCount > 0)
+			{
+				// View-instanced shadow pass: cull per cascade through the view instance mask.
+				// The mask persists on the command list, so it must be set for every draw.
+				UINT mask = 0;
+				for (UINT i = 0; i < param.ShadowCascadeCount; ++i)
+				{
+					if (param.ShadowCascadeBounds[i]->Contains(boundsWorld) != ContainmentType::DISJOINT)
+					{
+						mask |= 1u << i;
+					}
+				}
+				if (mask == 0)
+				{
+					return;
+				}
+				param.CommandList->SetViewInstanceMask(mask);
+			}
+			else if (param.ViewFrustumWorld->Contains(boundsWorld) == ContainmentType::DISJOINT)
 			{
 				return;
 			}

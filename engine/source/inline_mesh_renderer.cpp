@@ -21,6 +21,14 @@ namespace udsdx
 
 	void InlineMeshRenderer::Render(RenderParam& param, int parameter)
 	{
+		// No bounds to cull against: render into every cascade. This set is mandatory;
+		// the view instance mask persists on the command list, so a preceding object's
+		// partial mask would otherwise leak into this draw.
+		if (param.ShadowCascadeCount > 0)
+		{
+			param.CommandList->SetViewInstanceMask((1u << param.ShadowCascadeCount) - 1);
+		}
+
 		ObjectConstants objectConstants;
 		objectConstants.World = m_transformCache.Transpose();
 		objectConstants.PrevWorld = m_prevTransformCache.Transpose();

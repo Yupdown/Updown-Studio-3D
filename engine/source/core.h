@@ -59,9 +59,11 @@ namespace udsdx
 		HINSTANCE GetInstance() const;
 		HWND GetMainWindow() const;
 		ID3D12Device* GetDevice() const;
+		ID3D12Device2* GetDevice2() const;
 		ID3D12CommandQueue* GetCommandQueue() const;
 		ID3D12CommandAllocator* GetCommandAllocator() const;
-		ID3D12GraphicsCommandList* GetCommandList() const;
+		ID3D12GraphicsCommandList2* GetCommandList() const;
+		bool IsShadowViewInstancingSupported() const;
 		ID3D12DescriptorHeap* GetSrvDescriptorHeap() const;
 		DeferredRenderer* GetRenderer() const;
 		ShadowMap* GetShadowMap() const;
@@ -154,6 +156,13 @@ namespace udsdx
 
 		// Direct3D 12 Device
 		ComPtr<ID3D12Device> m_d3dDevice;
+		// Same device, queried to ID3D12Device2 for CreatePipelineState (pipeline state stream)
+		ComPtr<ID3D12Device2> m_d3dDevice2;
+
+		// View instancing support for the cascaded shadow map pass:
+		// requires OPTIONS3::ViewInstancingTier >= 1 and shader model 6.1 (SV_ViewID)
+		D3D12_VIEW_INSTANCING_TIER m_viewInstancingTier = D3D12_VIEW_INSTANCING_TIER_NOT_SUPPORTED;
+		bool m_shadowViewInstancingSupported = false;
 
 		// Swap Chain (front and back buffer, similar as double-buffering)
 		ComPtr<IDXGISwapChain4> m_swapChain;
@@ -175,7 +184,8 @@ namespace udsdx
 		ComPtr<ID3D12CommandAllocator> m_directCmdListAlloc;
 
 		// A collection of commands to be appended to a command queue
-		ComPtr<ID3D12GraphicsCommandList> m_commandList;
+		// (ID3D12GraphicsCommandList2 for SetViewInstanceMask)
+		ComPtr<ID3D12GraphicsCommandList2> m_commandList;
 
 		// Frame Resources for parameters of each frame
 		// Each frame resource contains a command allocator and

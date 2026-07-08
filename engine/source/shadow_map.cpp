@@ -6,11 +6,14 @@
 #include "scene_object.h"
 #include "transform.h"
 #include "scene.h"
+#include "core.h"
 
 namespace udsdx
 {
 	ShadowMap::ShadowMap(UINT mapWidth, UINT mapHeight, ID3D12Device* device)
 	{
+		m_useViewInstancing = INSTANCE(Core)->IsShadowViewInstancingSupported();
+
 		OnResize(mapWidth, mapHeight, device);
 
 		for (auto& buffer : m_constantBuffers)
@@ -80,6 +83,8 @@ namespace udsdx
 			m_dsvCpus[i] = descriptorParam.DsvCpuHandle;
 			descriptorParam.DsvCpuHandle.Offset(1, descriptorParam.DsvDescriptorSize);
 		}
+		m_dsvCpuAll = descriptorParam.DsvCpuHandle;
+		descriptorParam.DsvCpuHandle.Offset(1, descriptorParam.DsvDescriptorSize);
 
 		RebuildDescriptors(device);
 	}
@@ -111,6 +116,11 @@ namespace udsdx
 			dsvDesc.Texture2DArray.FirstArraySlice = i;
 			device->CreateDepthStencilView(m_shadowMap.Get(), &dsvDesc, m_dsvCpus[i]);
 		}
+
+		// DSV over the whole array, so the view-instanced pass clears and binds all cascades at once.
+		dsvDesc.Texture2DArray.FirstArraySlice = 0;
+		dsvDesc.Texture2DArray.ArraySize = ShadowMapCount;
+		device->CreateDepthStencilView(m_shadowMap.Get(), &dsvDesc, m_dsvCpuAll);
 	}
 
 	void ShadowMap::Pass(RenderParam& param, Scene* target, Camera* camera, LightDirectional* light)
@@ -146,11 +156,16 @@ namespace udsdx
 			XMStoreFloat4(&shadowConstants.LightPosition[i], XMVectorSet(lightPos.x, lightPos.y, lightPos.z, 0.0f));
 			shadowConstants.ShadowDistance[i] = f * 0.5f;
 
-			CameraConstants cameraConstants{};
-			XMStoreFloat4x4(&cameraConstants.View, XMMatrixTranspose(lightView));
-			XMStoreFloat4x4(&cameraConstants.Proj, XMMatrixTranspose(lightProj));
-			XMStoreFloat4x4(&cameraConstants.ViewProj, XMMatrixTranspose(lightViewProj));
-			m_lightCameraBuffers[param.FrameResourceIndex][i]->CopyData(0, cameraConstants);
+			// The view-instanced path reads gLightViewProj[SV_ViewID] directly; the per-cascade
+			// camera buffers are only needed by the fallback loop.
+			if (!m_useViewInstancing)
+			{
+				CameraConstants cameraConstants{};
+				XMStoreFloat4x4(&cameraConstants.View, XMMatrixTranspose(lightView));
+				XMStoreFloat4x4(&cameraConstants.Proj, XMMatrixTranspose(lightProj));
+				XMStoreFloat4x4(&cameraConstants.ViewProj, XMMatrixTranspose(lightViewProj));
+				m_lightCameraBuffers[param.FrameResourceIndex][i]->CopyData(0, cameraConstants);
+			}
 
 			Matrix4x4 mView;
 			XMStoreFloat4x4(&mView, lightView);
@@ -160,16 +175,40 @@ namespace udsdx
 		m_constantBuffers[param.FrameResourceIndex]->CopyData(0, shadowConstants);
 		param.CommandList->SetGraphicsRootConstantBufferView(RootParam::PerShadowCBV, m_constantBuffers[param.FrameResourceIndex]->Resource()->GetGPUVirtualAddress());
 
-		for (int i = 0; i < ShadowMapCount; ++i)
+		if (m_useViewInstancing)
 		{
-			pCommandList->ClearDepthStencilView(m_dsvCpus[i], D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
-			pCommandList->OMSetRenderTargets(0, nullptr, false, &m_dsvCpus[i]);
+			// Single view-instanced pass: one clear and one bind cover all cascade slices;
+			// per-cascade culling happens per draw through the view instance mask.
+			pCommandList->ClearDepthStencilView(m_dsvCpuAll, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+			pCommandList->OMSetRenderTargets(0, nullptr, false, &m_dsvCpuAll);
 
 			if (param.RenderOptions->DrawShadowMap)
 			{
-				param.ViewFrustumWorld = cameraBounds[i].get();
-				param.CommandList->SetGraphicsRootConstantBufferView(RootParam::PerCameraCBV, m_lightCameraBuffers[param.FrameResourceIndex][i]->Resource()->GetGPUVirtualAddress());
+				// The view instance mask defaults to 0b0001 after command list reset;
+				// establish all views as the pass default.
+				pCommandList->SetViewInstanceMask((1u << ShadowMapCount) - 1);
+				for (UINT i = 0; i < ShadowMapCount; ++i)
+				{
+					param.ShadowCascadeBounds[i] = cameraBounds[i].get();
+				}
+				param.ShadowCascadeCount = ShadowMapCount;
 				target->RenderShadowSceneObjects(param, 1);
+				param.ShadowCascadeCount = 0;
+			}
+		}
+		else
+		{
+			for (int i = 0; i < ShadowMapCount; ++i)
+			{
+				pCommandList->ClearDepthStencilView(m_dsvCpus[i], D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+				pCommandList->OMSetRenderTargets(0, nullptr, false, &m_dsvCpus[i]);
+
+				if (param.RenderOptions->DrawShadowMap)
+				{
+					param.ViewFrustumWorld = cameraBounds[i].get();
+					param.CommandList->SetGraphicsRootConstantBufferView(RootParam::PerCameraCBV, m_lightCameraBuffers[param.FrameResourceIndex][i]->Resource()->GetGPUVirtualAddress());
+					target->RenderShadowSceneObjects(param, 1);
+				}
 			}
 		}
 

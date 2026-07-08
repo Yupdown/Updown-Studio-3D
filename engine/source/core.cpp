@@ -131,6 +131,27 @@ namespace udsdx
 			ThrowIfFailed(::D3D12CreateDevice(dxgiAdapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&m_d3dDevice)));
 		}
 
+		// Query ID3D12Device2 for CreatePipelineState (pipeline state stream).
+		// The engine already requires Windows 10 1803+ (IDXGIFactory6), above the 1703 floor for Device2.
+		ThrowIfFailed(m_d3dDevice.As(&m_d3dDevice2));
+
+		// Check view instancing support for the cascaded shadow map pass.
+		// The tier and shader model 6.1 (SV_ViewID) are independent caps; both must pass.
+		D3D12_FEATURE_DATA_D3D12_OPTIONS3 options3 = {};
+		if (SUCCEEDED(m_d3dDevice->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS3, &options3, sizeof(options3))))
+		{
+			m_viewInstancingTier = options3.ViewInstancingTier;
+		}
+
+		D3D12_FEATURE_DATA_SHADER_MODEL shaderModel = { D3D_SHADER_MODEL_6_1 };
+		bool sm61Supported = SUCCEEDED(m_d3dDevice->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &shaderModel, sizeof(shaderModel)))
+			&& shaderModel.HighestShaderModel >= D3D_SHADER_MODEL_6_1;
+
+		m_shadowViewInstancingSupported = sm61Supported && m_viewInstancingTier >= D3D12_VIEW_INSTANCING_TIER_1;
+		DebugConsole::Log(std::string("Shadow view instancing: ") + (m_shadowViewInstancingSupported ?
+			"enabled (tier " + std::to_string(static_cast<int>(m_viewInstancingTier)) + ")" :
+			"unsupported, falling back to per-cascade rendering"));
+
 		// Check for tearing support
 		if (FAILED(m_dxgiFactory->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &m_tearingSupport, sizeof(m_tearingSupport))))
 		{
@@ -1061,6 +1082,11 @@ namespace udsdx
 		return m_d3dDevice.Get();
 	}
 
+	ID3D12Device2* Core::GetDevice2() const
+	{
+		return m_d3dDevice2.Get();
+	}
+
 	ID3D12CommandQueue* Core::GetCommandQueue() const
 	{
 		return m_commandQueue.Get();
@@ -1071,9 +1097,14 @@ namespace udsdx
 		return m_directCmdListAlloc.Get();
 	}
 
-	ID3D12GraphicsCommandList* Core::GetCommandList() const
+	ID3D12GraphicsCommandList2* Core::GetCommandList() const
 	{
 		return m_commandList.Get();
+	}
+
+	bool Core::IsShadowViewInstancingSupported() const
+	{
+		return m_shadowViewInstancingSupported;
 	}
 
 	DeferredRenderer* Core::GetRenderer() const

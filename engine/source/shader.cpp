@@ -8,6 +8,35 @@
 
 namespace udsdx
 {
+	// Shadow PSOs are created through the pipeline state stream API when view instancing is
+	// available, so all four cascades render in a single pass (one view per array slice).
+	// The classic desc path remains for hardware without view instancing support.
+	static ComPtr<ID3D12PipelineState> CreateShadowPipelineState(
+		ID3D12Device* pDevice, const D3D12_GRAPHICS_PIPELINE_STATE_DESC& psoDesc, bool useViewInstancing)
+	{
+		ComPtr<ID3D12PipelineState> pso;
+		if (useViewInstancing)
+		{
+			CD3DX12_PIPELINE_STATE_STREAM1 stream(psoDesc);
+
+			D3D12_VIEW_INSTANCE_LOCATION locations[NumShadowCascades];
+			for (UINT i = 0; i < NumShadowCascades; ++i)
+			{
+				locations[i] = { .ViewportArrayIndex = 0, .RenderTargetArrayIndex = i };
+			}
+			stream.ViewInstancingDesc = CD3DX12_VIEW_INSTANCING_DESC(
+				NumShadowCascades, locations, D3D12_VIEW_INSTANCING_FLAG_ENABLE_VIEW_INSTANCE_MASKING);
+
+			D3D12_PIPELINE_STATE_STREAM_DESC streamDesc{ sizeof(stream), &stream };
+			ThrowIfFailed(INSTANCE(Core)->GetDevice2()->CreatePipelineState(&streamDesc, IID_PPV_ARGS(&pso)));
+		}
+		else
+		{
+			ThrowIfFailed(pDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pso)));
+		}
+		return pso;
+	}
+
 	Shader::Shader(std::wstring_view path) : ResourceObject()
 	{
 		m_path = path;
@@ -135,13 +164,25 @@ namespace udsdx
 		psoDesc.RasterizerState.DepthBias = 1024;
 		psoDesc.RasterizerState.SlopeScaledDepthBias = 1.5f;
 
-		{	
-			std::wstring defines[] = {
+		// SV_ViewID requires shader model 6.1; the classic fallback path stays on 6.0.
+		const bool useViewInstancing = INSTANCE(Core)->IsShadowViewInstancingSupported();
+		const wchar_t* vsShadowTarget = useViewInstancing ? L"vs_6_1" : L"vs_6_0";
+		const wchar_t* psShadowTarget = useViewInstancing ? L"ps_6_1" : L"ps_6_0";
+		const wchar_t* gsShadowTarget = useViewInstancing ? L"gs_6_1" : L"gs_6_0";
+		const wchar_t* hsShadowTarget = useViewInstancing ? L"hs_6_1" : L"hs_6_0";
+		const wchar_t* dsShadowTarget = useViewInstancing ? L"ds_6_1" : L"ds_6_0";
+
+		{
+			std::vector<std::wstring> defines = {
 				L"GENERATE_SHADOWS"
 			};
+			if (useViewInstancing)
+			{
+				defines.push_back(L"VIEW_INSTANCING");
+			}
 
-			auto m_vsByteCode = udsdx::CompileShader(m_path, defines, L"VS", L"vs_6_0");
-			auto m_psByteCode = udsdx::CompileShader(m_path, defines, L"ShadowPS", L"ps_6_0");
+			auto m_vsByteCode = udsdx::CompileShader(m_path, defines, L"VS", vsShadowTarget);
+			auto m_psByteCode = udsdx::CompileShader(m_path, defines, L"ShadowPS", psShadowTarget);
 
 			psoDesc.InputLayout = { Vertex::DescriptionTable, Vertex::DescriptionTableSize };
 
@@ -157,9 +198,11 @@ namespace udsdx
 			};
 			psoDesc.GS = {};
 
+			// Note: under VIEW_INSTANCING a shadow GS must not export SV_RenderTargetArrayIndex;
+			// it would combine with the per-view instance location and corrupt slice routing.
 			if (udsdx::ShaderHasEntryPoint(m_path, defines, L"GS"))
 			{
-				auto gsByteCode = udsdx::CompileShader(m_path, defines, L"GS", L"gs_6_0");
+				auto gsByteCode = udsdx::CompileShader(m_path, defines, L"GS", gsShadowTarget);
 				psoDesc.GS =
 				{
 					reinterpret_cast<BYTE*>(gsByteCode->GetBufferPointer()),
@@ -171,8 +214,8 @@ namespace udsdx
 			// if HS and DS shaders exist, compile and set them
 			if (udsdx::ShaderHasEntryPoint(m_path, defines, L"HS") && udsdx::ShaderHasEntryPoint(m_path, defines, L"DS"))
 			{
-				auto hsByteCode = udsdx::CompileShader(m_path, defines, L"HS", L"hs_6_0");
-				auto dsByteCode = udsdx::CompileShader(m_path, defines, L"DS", L"ds_6_0");
+				auto hsByteCode = udsdx::CompileShader(m_path, defines, L"HS", hsShadowTarget);
+				auto dsByteCode = udsdx::CompileShader(m_path, defines, L"DS", dsShadowTarget);
 
 				psoDesc.HS =
 				{
@@ -187,10 +230,7 @@ namespace udsdx
 				psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH;
 			}
 
-			ThrowIfFailed(pDevice->CreateGraphicsPipelineState(
-				&psoDesc,
-				IID_PPV_ARGS(m_shadowPipelineState.GetAddressOf())
-			));
+			m_shadowPipelineState = CreateShadowPipelineState(pDevice, psoDesc, useViewInstancing);
 
 			m_shadowPipelineState->SetName((m_path + L" (Default Shadow)").c_str());
 			DebugConsole::Log("\tShadow shader compiled");
@@ -198,12 +238,16 @@ namespace udsdx
 
 		if (psoDesc.GS.BytecodeLength == 0)
 		{
-			std::wstring defines[] = {
+			std::vector<std::wstring> defines = {
 				L"RIGGED", L"GENERATE_SHADOWS"
 			};
+			if (useViewInstancing)
+			{
+				defines.push_back(L"VIEW_INSTANCING");
+			}
 
-			auto m_vsByteCode = udsdx::CompileShader(m_path, defines, L"VS", L"vs_6_0");
-			auto m_psByteCode = udsdx::CompileShader(m_path, defines, L"ShadowPS", L"ps_6_0");
+			auto m_vsByteCode = udsdx::CompileShader(m_path, defines, L"VS", vsShadowTarget);
+			auto m_psByteCode = udsdx::CompileShader(m_path, defines, L"ShadowPS", psShadowTarget);
 
 			psoDesc.InputLayout = { RiggedVertex::DescriptionTable, RiggedVertex::DescriptionTableSize };
 
@@ -222,8 +266,8 @@ namespace udsdx
 			// if HS and DS shaders exist, compile and set them
 			if (udsdx::ShaderHasEntryPoint(m_path, defines, L"HS") && udsdx::ShaderHasEntryPoint(m_path, defines, L"DS"))
 			{
-				auto hsByteCode = udsdx::CompileShader(m_path, defines, L"HS", L"hs_6_0");
-				auto dsByteCode = udsdx::CompileShader(m_path, defines, L"DS", L"ds_6_0");
+				auto hsByteCode = udsdx::CompileShader(m_path, defines, L"HS", hsShadowTarget);
+				auto dsByteCode = udsdx::CompileShader(m_path, defines, L"DS", dsShadowTarget);
 
 				psoDesc.HS =
 				{
@@ -238,10 +282,7 @@ namespace udsdx
 				psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH;
 			}
 
-			ThrowIfFailed(pDevice->CreateGraphicsPipelineState(
-				&psoDesc,
-				IID_PPV_ARGS(m_riggedShadowPipelineState.GetAddressOf())
-			));
+			m_riggedShadowPipelineState = CreateShadowPipelineState(pDevice, psoDesc, useViewInstancing);
 
 			m_riggedShadowPipelineState->SetName((m_path + L" (Rigged Shadow)").c_str());
 			DebugConsole::Log("\tRigged shadow shader compiled");

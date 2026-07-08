@@ -109,6 +109,10 @@ struct VertexIn
 	uint   BoneIndices  : BONEINDICES;
 	float4 BoneWeights  : BONEWEIGHTS;
 #endif
+#if defined(GENERATE_SHADOWS) && defined(VIEW_INSTANCING)
+    // System-value semantic; excluded from input layout signature matching.
+    uint ViewId         : SV_ViewID;
+#endif
 };
 
 struct VertexOut
@@ -167,7 +171,12 @@ inline float4 PrevRigTransform(float4 posL, uint indices, float4 weights)
 #define ObjectToWorldNormal(normal) float4(LocalToWorldNormal(normal.xyz), 0.0f)
 #endif
 
+#if defined(GENERATE_SHADOWS) && defined(VIEW_INSTANCING)
+// View-instanced shadow pass: each view renders one cascade with its own light matrix.
+#define WorldToClipPos(pos, vin) mul(pos, gLightViewProj[vin.ViewId])
+#else
 #define WorldToClipPos(pos, vin) mul(mul(pos, gView), gProj)
+#endif
 #define ObjectToClipPos(pos) WorldToClipPos(ObjectToWorldPos(pos))
 
 inline float3 LocalToWorldNormal(float3 normalL)
