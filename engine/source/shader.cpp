@@ -28,7 +28,7 @@ namespace udsdx
 				NumShadowCascades, locations, D3D12_VIEW_INSTANCING_FLAG_ENABLE_VIEW_INSTANCE_MASKING);
 
 			D3D12_PIPELINE_STATE_STREAM_DESC streamDesc{ sizeof(stream), &stream };
-			ThrowIfFailed(INSTANCE(Core)->GetDevice2()->CreatePipelineState(&streamDesc, IID_PPV_ARGS(&pso)));
+			ThrowIfFailed(INSTANCE(Core)->GetDevice()->CreatePipelineState(&streamDesc, IID_PPV_ARGS(&pso)));
 		}
 		else
 		{

@@ -58,8 +58,7 @@ namespace udsdx
 	public:
 		HINSTANCE GetInstance() const;
 		HWND GetMainWindow() const;
-		ID3D12Device* GetDevice() const;
-		ID3D12Device2* GetDevice2() const;
+		ID3D12Device2* GetDevice() const;
 		ID3D12CommandQueue* GetCommandQueue() const;
 		ID3D12CommandAllocator* GetCommandAllocator() const;
 		ID3D12GraphicsCommandList2* GetCommandList() const;
@@ -155,9 +154,9 @@ namespace udsdx
 		ComPtr<IDXGIFactory6> m_dxgiFactory;
 
 		// Direct3D 12 Device
-		ComPtr<ID3D12Device> m_d3dDevice;
-		// Same device, queried to ID3D12Device2 for CreatePipelineState (pipeline state stream)
-		ComPtr<ID3D12Device2> m_d3dDevice2;
+		// (ID3D12Device2 for CreatePipelineState / pipeline state stream; needs Windows 10 1703+,
+		// below the engine's existing 1803 floor from IDXGIFactory6)
+		ComPtr<ID3D12Device2> m_d3dDevice;
 
 		// View instancing support for the cascaded shadow map pass:
 		// requires OPTIONS3::ViewInstancingTier >= 1 and shader model 6.1 (SV_ViewID)
