@@ -66,7 +66,13 @@ namespace udsdx
 		// primary hit through both to produce a per-pixel motion vector for temporal reprojection.
 		Matrix4x4 ViewProj = Matrix4x4::Identity;
 		Matrix4x4 PrevViewProj = Matrix4x4::Identity;
+		// A fisheye has no projection matrix, so its ray generation and its forward projection both
+		// work from the view matrices plus an analytic angular mapping.
+		Matrix4x4 View = Matrix4x4::Identity;
+		Matrix4x4 PrevView = Matrix4x4::Identity;
+		Matrix4x4 ViewInverse = Matrix4x4::Identity;
 		Vector4 CameraPosition = Vector4::Zero;
+		Vector4 PrevCameraPosition = Vector4::Zero;
 		Vector2 RenderTargetSize = Vector2::Zero;
 		UINT HistoryValid = 0;
 		UINT SamplesPerPixel = 1;
@@ -93,6 +99,11 @@ namespace udsdx
 		float FogHeightFalloff = 0.0f;
 		float FogDistanceStart = 0.0f;
 		float FogPad = 0.0f;
+
+		UINT FisheyeEnabled = 0;
+		float FisheyeThetaMax = 0.0f; // half the fisheye field of view, in radians
+		float FisheyePad0 = 0.0f;
+		float FisheyePad1 = 0.0f;
 	};
 
 	// Mirrors cbAccumulate in cs_raytracing_accumulate.hlsl. Drives the temporal reprojection pass

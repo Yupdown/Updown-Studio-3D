@@ -1122,6 +1122,13 @@ namespace udsdx
 				ImGui::SliderFloat("Normal Tolerance (cos)", &options.RaytracingNormalThreshold, 0.5f, 0.999f, "%.3f");
 				ImGui::SliderFloat("Depth Tolerance", &options.RaytracingDepthThreshold, 0.001f, 0.5f, "%.4f", ImGuiSliderFlags_Logarithmic);
 
+				ImGui::SeparatorText("Fisheye");
+				ImGui::Checkbox("Fisheye Projection", &options.RaytracingFisheye);
+				ImGui::BeginDisabled(!options.RaytracingFisheye);
+				ImGui::SliderFloat("Fisheye FOV (deg)", &options.RaytracingFisheyeFov, 20.0f, 180.0f, "%.1f");
+				ImGui::EndDisabled();
+				ImGui::TextDisabled("Equidistant, full-frame. Raytracing only.");
+
 				ImGui::SeparatorText("Rays");
 				ImGui::SliderFloat("Ray Max Distance", &options.RaytracingRayMaxDistance, 10.0f, 20000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
 				ImGui::SliderFloat("Shadow Ray Offset", &options.RaytracingShadowRayOffset, 1e-4f, 0.1f, "%.5f", ImGuiSliderFlags_Logarithmic);

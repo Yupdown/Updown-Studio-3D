@@ -275,18 +275,31 @@ void RayGenMain()
     for (uint sample = 0u; sample < gSamplesPerPixel; ++sample)
     {
         float2 uv = (float2(pixel) + NextFloat2(rng)) / float2(dimensions);
-        float2 ndc = float2(uv.x * 2.0f - 1.0f, 1.0f - uv.y * 2.0f);
-
-        // Reverse-Z with an infinite far plane: NDC z == 1 is the NEAR plane and z == 0 is
-        // infinity (w == 0 there, so it cannot be unprojected).
-        float4 nearH = mul(float4(ndc, 1.0f, 1.0f), gViewProjInverse);
-        float3 nearW = nearH.xyz / nearH.w;
 
         RayDesc ray;
         ray.Origin = gEyePosW.xyz;
-        ray.Direction = normalize(nearW - ray.Origin);
         ray.TMin = 1e-3f;
         ray.TMax = gRayMaxDistance;
+
+        if (gFisheyeEnabled != 0u)
+        {
+            // A fisheye is generated, not warped: the ray direction comes straight from the
+            // angular mapping, so there is no perspective image to resample and no resolution
+            // lost toward the edges. Fields at or beyond 90 degrees off-axis cost nothing here,
+            // which a projection matrix cannot express at all.
+            float3 viewDirection = FisheyeUvToViewDirection(uv);
+            ray.Direction = normalize(mul(float4(viewDirection, 0.0f), gViewInverse).xyz);
+        }
+        else
+        {
+            float2 ndc = float2(uv.x * 2.0f - 1.0f, 1.0f - uv.y * 2.0f);
+
+            // Reverse-Z with an infinite far plane: NDC z == 1 is the NEAR plane and z == 0 is
+            // infinity (w == 0 there, so it cannot be unprojected).
+            float4 nearH = mul(float4(ndc, 1.0f, 1.0f), gViewProjInverse);
+            float3 nearW = nearH.xyz / nearH.w;
+            ray.Direction = normalize(nearW - ray.Origin);
+        }
 
         SurfacePayload samplePrimary;
         sum += TracePath(ray, rng, samplePrimary);
@@ -312,11 +325,12 @@ void RayGenMain()
     else
     {
         float3 currentWorld = primaryRay.Origin + primaryRay.Direction * primary.HitT;
-        float prevViewZ;
-        float2 motion = MotionFromWorld(currentWorld, primary.PrevWorldPos, prevViewZ);
+        float prevDistance;
+        float2 motion = MotionFromWorld(currentWorld, primary.PrevWorldPos, prevDistance);
 
-        gMotionOut[pixel] = float4(motion, prevViewZ, 0.0f);
-        gGuideOut[pixel] = float4(EncodeOctahedral(primary.Normal), ViewZFromWorld(currentWorld),
+        gMotionOut[pixel] = float4(motion, prevDistance, 0.0f);
+        gGuideOut[pixel] = float4(EncodeOctahedral(primary.Normal),
+                                  CameraDistance(currentWorld, gEyePosW.xyz),
                                   asfloat(primary.InstanceIdx));
     }
 }

@@ -36,7 +36,11 @@ cbuffer cbRaytracing : register(b0, space0)
     float4x4 gViewProjInverse;   // transposed on upload; row-vector convention, use mul(v, M)
     float4x4 gViewProj;          // unjittered; paired with gPrevViewProj for motion vectors
     float4x4 gPrevViewProj;
+    float4x4 gView;              // fisheye works from the view matrices: it has no projection matrix
+    float4x4 gPrevView;
+    float4x4 gViewInverse;
     float4   gEyePosW;
+    float4   gPrevEyePosW;
     float2   gRenderTargetSize;
     uint     gHistoryValid;
     uint     gSamplesPerPixel;
@@ -61,6 +65,11 @@ cbuffer cbRaytracing : register(b0, space0)
     float    gFogHeightFalloff;
     float    gFogDistanceStart;
     float    gFogPad;
+
+    uint     gFisheyeEnabled;
+    float    gFisheyeThetaMax;   // half the fisheye field of view, in radians
+    float    gFisheyePad0;
+    float    gFisheyePad1;
 };
 
 // Per-instance previous object-to-world, indexed by InstanceIndex(). Column-vector 3x4, matching
@@ -230,6 +239,68 @@ float4 SampleAlbedo(GeometryInfo info, float2 uv)
 }
 
 //------------------------------------------------------------------------------------------------
+// Equidistant fisheye projection
+//------------------------------------------------------------------------------------------------
+//
+// r = f * theta: the angle off the optical axis is linear in image radius. Full-frame framing, so
+// the image circle is fit to the screen DIAGONAL and the sides are cropped -- the corners sit at
+// exactly gFisheyeThetaMax and the edges see less.
+//
+// FisheyeUvToDirection and DirectionToFisheyeUv must stay exact inverses of each other. The
+// temporal accumulation pass reprojects by differencing the forward projection across two frames,
+// so any mismatch shows up as a nonzero velocity on a completely static camera, which would stop
+// the accumulator from ever reaching high sample counts.
+
+// Screen-space plane coordinates: aspect-corrected, y up, origin at the centre.
+float2 FisheyeScreenToPlane(float2 uv)
+{
+    float aspect = gRenderTargetSize.x / max(gRenderTargetSize.y, 1.0f);
+    float2 centered = uv * 2.0f - 1.0f;   // [-1, 1], y still down
+    return float2(centered.x * aspect, -centered.y);
+}
+
+float2 FisheyePlaneToScreen(float2 plane)
+{
+    float aspect = gRenderTargetSize.x / max(gRenderTargetSize.y, 1.0f);
+    float2 centered = float2(plane.x / aspect, -plane.y);
+    return centered * 0.5f + 0.5f;
+}
+
+// Plane radius that corresponds to gFisheyeThetaMax. Half the diagonal, which is what puts the
+// corners on the edge of the field under full-frame framing.
+float FisheyePlaneRadius()
+{
+    float aspect = gRenderTargetSize.x / max(gRenderTargetSize.y, 1.0f);
+    return sqrt(aspect * aspect + 1.0f);
+}
+
+// View-space direction for a pixel. The engine's cameras look down +Z.
+float3 FisheyeUvToViewDirection(float2 uv)
+{
+    float2 plane = FisheyeScreenToPlane(uv);
+    float radius = length(plane);
+    float theta = (radius / FisheyePlaneRadius()) * gFisheyeThetaMax;
+
+    // Dead centre: any azimuth works, so pick one rather than normalising a zero vector.
+    float2 azimuth = radius > 1e-8f ? plane / radius : float2(1.0f, 0.0f);
+
+    float sinTheta = sin(theta);
+    return float3(azimuth * sinTheta, cos(theta));
+}
+
+// Inverse of the above: view-space direction back to screen UV.
+float2 FisheyeViewDirectionToUv(float3 viewDirection)
+{
+    float3 d = normalize(viewDirection);
+    float theta = acos(clamp(d.z, -1.0f, 1.0f));
+
+    float2 azimuth = length(d.xy) > 1e-8f ? normalize(d.xy) : float2(1.0f, 0.0f);
+    float radius = (theta / max(gFisheyeThetaMax, 1e-6f)) * FisheyePlaneRadius();
+
+    return FisheyePlaneToScreen(azimuth * radius);
+}
+
+//------------------------------------------------------------------------------------------------
 // Motion vectors and the temporal guide
 //------------------------------------------------------------------------------------------------
 
@@ -246,29 +317,47 @@ float2 ClipToUV(float4 clipPos)
 // Engine convention: velocity is currentUV - previousUV, and consumers read history at
 // uv - velocity. Matches PackMotion in inc_common.hlsl.
 //
-// prevViewZ comes out for free: this projection has row 2 col 3 == 1 (camera.cpp's reverse-Z
-// infinite-far matrix), so clip.w IS the view-space Z. The accumulation pass needs it to compare
-// against the previous frame's stored depth -- comparing raw hit distances instead would falsely
-// reject history whenever the camera translates, since those are measured from different origins.
-float2 MotionFromWorld(float3 currentWorld, float3 prevWorld, out float prevViewZ)
+// Both projections route through here so the fisheye path stays consistent with the perspective
+// one. The fisheye branch cannot use a matrix: it has no projection matrix at all.
+float2 WorldToUv(float3 worldPos, float4x4 viewProj, float4x4 view)
 {
-    float4 prevClip = mul(float4(prevWorld, 1.0f), gPrevViewProj);
-    prevViewZ = prevClip.w;
-    return ClipToUV(mul(float4(currentWorld, 1.0f), gViewProj)) - ClipToUV(prevClip);
+    if (gFisheyeEnabled != 0u)
+    {
+        return FisheyeViewDirectionToUv(mul(float4(worldPos, 1.0f), view).xyz);
+    }
+    return ClipToUV(mul(float4(worldPos, 1.0f), viewProj));
 }
 
-float ViewZFromWorld(float3 worldPos)
+float2 DirectionToUv(float3 worldDirection, float4x4 viewProj, float4x4 view)
 {
-    return mul(float4(worldPos, 1.0f), gViewProj).w;
+    if (gFisheyeEnabled != 0u)
+    {
+        return FisheyeViewDirectionToUv(mul(float4(worldDirection, 0.0f), view).xyz);
+    }
+    return ClipToUV(mul(float4(worldDirection, 0.0f), viewProj));
+}
+
+// Depth proxy for temporal validation: distance from the camera rather than view-space Z. A
+// fisheye sees past 90 degrees off-axis, where view Z turns negative and stops ordering surfaces
+// at all. Distance stays positive and is directly comparable between the two frames' cameras,
+// which is what the validation needs -- as long as each frame measures from its own eye.
+float CameraDistance(float3 worldPos, float3 eyePos)
+{
+    return length(worldPos - eyePos);
+}
+
+float2 MotionFromWorld(float3 currentWorld, float3 prevWorld, out float prevDistance)
+{
+    prevDistance = CameraDistance(prevWorld, gPrevEyePosW.xyz);
+    return WorldToUv(currentWorld, gViewProj, gView) - WorldToUv(prevWorld, gPrevViewProj, gPrevView);
 }
 
 // Sky: project the ray direction with w = 0 so only camera rotation registers, never translation.
 // ps_skybox_velocity.hlsl does exactly this for the rasterized skybox.
 float2 MotionFromDirection(float3 worldDirection)
 {
-    float2 currentUv = ClipToUV(mul(float4(worldDirection, 0.0f), gViewProj));
-    float2 prevUv = ClipToUV(mul(float4(worldDirection, 0.0f), gPrevViewProj));
-    return currentUv - prevUv;
+    return DirectionToUv(worldDirection, gViewProj, gView)
+         - DirectionToUv(worldDirection, gPrevViewProj, gPrevView);
 }
 
 // Sentinel depth for sky pixels, far beyond any real hit.

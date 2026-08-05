@@ -29,8 +29,8 @@ cbuffer cbAccumulate : register(b0)
 };
 
 Texture2D<float4>   gRadiance   : register(t0); // this frame, rgb radiance / a = hit
-Texture2D<float4>   gMotion     : register(t1); // xy = currentUV - previousUV, z = previous view Z
-Texture2D<float4>   gGuide      : register(t2); // this frame: octNormal.xy, view Z, instanceIndex
+Texture2D<float4>   gMotion     : register(t1); // xy = currentUV - previousUV, z = previous camera distance
+Texture2D<float4>   gGuide      : register(t2); // this frame: octNormal.xy, camera distance, instanceIndex
 Texture2D<float4>   gPrevGuide  : register(t3); // same, previous frame
 Texture2D<float4>   gHistory    : register(t4); // rgb running mean, a = effective sample count
 
@@ -39,7 +39,9 @@ RWTexture2D<float4> gHistoryOut : register(u0);
 struct Guide
 {
     float3 Normal;
-    float  ViewZ;
+    // Distance from the camera, not view-space Z: a fisheye sees past 90 degrees off-axis, where
+    // view Z turns negative and stops ordering surfaces.
+    float  Distance;
     uint   InstanceIndex;
 };
 
@@ -47,7 +49,7 @@ Guide UnpackGuide(float4 packed)
 {
     Guide g;
     g.Normal = DecodeOctahedral(packed.xy);
-    g.ViewZ = packed.z;
+    g.Distance = packed.z;
     g.InstanceIndex = asuint(packed.w);
     return g;
 }
@@ -66,10 +68,10 @@ float3 ClipColor(float3 color, float3 boxMin, float3 boxMax)
 
 // A history tap is only usable if it landed on the same surface. Without this the bilinear
 // footprint straddles silhouettes and drags background radiance onto foreground pixels.
-// expectedPrevViewZ is this pixel's surface transformed into the PREVIOUS view, not its current
-// depth. Comparing current depth against stored previous depth would reject history on every
-// camera translation, since the two are measured from different origins.
-bool IsHistoryTapValid(Guide current, float expectedPrevViewZ, int2 tapCoord)
+// expectedPrevDistance is this pixel's surface measured from the PREVIOUS camera, not its current
+// distance. Comparing current distance against stored previous distance would reject history on
+// every camera translation, since the two are measured from different origins.
+bool IsHistoryTapValid(Guide current, float expectedPrevDistance, int2 tapCoord)
 {
     if (any(tapCoord < int2(0, 0)) || any(tapCoord >= int2(gRenderTargetSize)))
     {
@@ -87,9 +89,7 @@ bool IsHistoryTapValid(Guide current, float expectedPrevViewZ, int2 tapCoord)
     {
         return true;
     }
-    // Behind the previous camera: ClipToUV's abs(w) guard would have produced a plausible-looking
-    // but meaningless UV, and the [0,1] bounds test does not always catch it.
-    if (expectedPrevViewZ <= 0.0f)
+    if (expectedPrevDistance <= 0.0f)
     {
         return false;
     }
@@ -98,7 +98,7 @@ bool IsHistoryTapValid(Guide current, float expectedPrevViewZ, int2 tapCoord)
         return false;
     }
     // Relative, with an absolute floor so near-camera geometry does not degenerate.
-    return abs(expectedPrevViewZ - prev.ViewZ) <= max(gDepthThreshold * prev.ViewZ, 0.01f);
+    return abs(expectedPrevDistance - prev.Distance) <= max(gDepthThreshold * prev.Distance, 0.01f);
 }
 
 [numthreads(8, 8, 1)]
@@ -113,7 +113,7 @@ void CS(uint3 dispatchThreadId : SV_DispatchThreadID)
     const float3 currentColor = gRadiance.Load(int3(pixel, 0)).rgb;
     const float4 motionSample = gMotion.Load(int3(pixel, 0));
     const float2 motion = motionSample.xy;
-    const float expectedPrevViewZ = motionSample.z;
+    const float expectedPrevDistance = motionSample.z;
     const Guide current = UnpackGuide(gGuide.Load(int3(pixel, 0)));
     const float sampleCount = float(max(gSamplesPerPixel, 1u));
 
@@ -164,7 +164,7 @@ void CS(uint3 dispatchThreadId : SV_DispatchThreadID)
         for (int i = 0; i < 4; ++i)
         {
             const int2 tap = baseCoord + offsets[i];
-            if (weights[i] <= 0.0f || !IsHistoryTapValid(current, expectedPrevViewZ, tap))
+            if (weights[i] <= 0.0f || !IsHistoryTapValid(current, expectedPrevDistance, tap))
             {
                 continue;
             }

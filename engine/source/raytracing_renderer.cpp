@@ -600,6 +600,11 @@ namespace udsdx
 			// row-vector convention mul(v, M).
 			XMStoreFloat4x4(&constants.ViewProjInverse, XMMatrixTranspose(XMMatrixInverse(nullptr, viewProjMatrix)));
 			constants.ViewProj = viewProj.Transpose();
+			// The fisheye path has no projection matrix: it maps angles directly, so it needs the
+			// view matrices rather than the combined ones.
+			constants.View = view.Transpose();
+			constants.PrevView = m_prevView.Transpose();
+			constants.ViewInverse = view.Invert().Transpose();
 			// m_prevViewProj is this renderer's own copy of what it computed last frame, not
 			// Camera's: Camera::UpdateConstantBuffer has already overwritten its copy by the time
 			// this runs. Chaining our own value also guarantees a motionless camera yields a
@@ -608,6 +613,10 @@ namespace udsdx
 
 			const Vector3 eye = camera->GetTransform()->GetWorldPosition();
 			constants.CameraPosition = Vector4(eye.x, eye.y, eye.z, 1.0f);
+			constants.PrevCameraPosition = Vector4(m_prevEyePosition.x, m_prevEyePosition.y, m_prevEyePosition.z, 1.0f);
+
+			m_pendingView = view;
+			m_pendingEyePosition = eye;
 		}
 
 		constants.RenderTargetSize = Vector2(static_cast<float>(m_width), static_cast<float>(m_height));
@@ -644,8 +653,15 @@ namespace udsdx
 		constants.FogHeightFalloff = options.FogHeightFalloff;
 		constants.FogDistanceStart = options.FogDistanceStart;
 
+		constants.FisheyeEnabled = options.RaytracingFisheye ? 1u : 0u;
+		// The stored angle is the half-field: a 180 degree fisheye puts the corners 90 degrees
+		// off the optical axis.
+		constants.FisheyeThetaMax = 0.5f * options.RaytracingFisheyeFov * DEG2RAD;
+
 		m_constantBuffers[param.FrameResourceIndex]->CopyData(0, constants);
 		m_prevViewProj = viewProj;
+		m_prevView = m_pendingView;
+		m_prevEyePosition = m_pendingEyePosition;
 
 		RaytracingAccumulateConstants accumulate;
 		accumulate.RenderTargetSize = constants.RenderTargetSize;
@@ -780,6 +796,9 @@ namespace udsdx
 		settings.SamplesPerPixel = std::max(1u, param.RenderOptions->RaytracingSamplesPerPixel);
 		settings.DebugMode = static_cast<UINT>(param.RenderOptions->RaytracingDebug);
 		settings.HasEnvironmentMap = hasEnvironmentMap ? 1u : 0u;
+		// Switching projection remaps every pixel, so no history survives it.
+		settings.FisheyeEnabled = param.RenderOptions->RaytracingFisheye ? 1u : 0u;
+		settings.FisheyeFov = param.RenderOptions->RaytracingFisheyeFov;
 		if (light != nullptr)
 		{
 			settings.SunDirection = light->GetLightDirection();

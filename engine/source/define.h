@@ -75,6 +75,11 @@ namespace udsdx
 		float RaytracingVarianceClipGamma = 2.0f;
 		float RaytracingNormalThreshold = 0.9f;
 		float RaytracingDepthThreshold = 0.05f;
+		// Equidistant (r = f * theta) fisheye, full-frame: the image circle is fit to the screen
+		// diagonal and the sides are cropped, so the corners see exactly the configured field.
+		// Raytracing only -- the raster path has a projection matrix and cannot represent this.
+		bool RaytracingFisheye = false;
+		float RaytracingFisheyeFov = 180.0f; // degrees, total field; 180 puts the corners at 90 off-axis
 		float RaytracingSunAngularDiameter = 0.53f;  // degrees; the real sun subtends ~0.53
 		float RaytracingRayMaxDistance = 1000.0f;
 		float RaytracingShadowRayOffset = 1e-3f;

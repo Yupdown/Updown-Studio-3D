@@ -45,13 +45,15 @@ namespace udsdx
 			UINT SamplesPerPixel = 0;
 			UINT DebugMode = 0;
 			UINT HasEnvironmentMap = 0;
+			UINT FisheyeEnabled = 0;
+			float FisheyeFov = 0.0f;
 			UINT Pad = 0;
 		};
 
 		static constexpr DXGI_FORMAT HISTORY_FORMAT = DXGI_FORMAT_R32G32B32A32_FLOAT;
 		static constexpr DXGI_FORMAT RADIANCE_FORMAT = DXGI_FORMAT_R16G16B16A16_FLOAT;
-		// xy is the UV velocity; z carries the hit point's previous-frame view Z, which the
-		// accumulation pass needs to compare against the stored previous depth.
+		// xy is the UV velocity; z carries the hit point's distance from the previous camera, which
+		// the accumulation pass compares against the stored previous depth.
 		static constexpr DXGI_FORMAT MOTION_FORMAT = DXGI_FORMAT_R16G16B16A16_FLOAT;
 		// Instance indices past 2048 would not survive a half float, so the guide stays FP32.
 		static constexpr DXGI_FORMAT GUIDE_FORMAT = DXGI_FORMAT_R32G32B32A32_FLOAT;
@@ -156,6 +158,13 @@ namespace udsdx
 		// Camera::UpdateConstantBuffer has already overwritten its own copy by the time this pass
 		// runs, so it would hand back the current matrix.
 		Matrix4x4 m_prevViewProj = Matrix4x4::Identity;
+		// The fisheye forward projection needs the view matrix and eye position of the previous
+		// frame, which the combined view-projection cannot supply. Staged during UploadConstants
+		// and promoted at the end of it so the pair always describes consecutive frames.
+		Matrix4x4 m_prevView = Matrix4x4::Identity;
+		Matrix4x4 m_pendingView = Matrix4x4::Identity;
+		Vector3 m_prevEyePosition = Vector3::Zero;
+		Vector3 m_pendingEyePosition = Vector3::Zero;
 		const Camera* m_lastCamera = nullptr;
 		RadianceSettings m_lastSettings{};
 
