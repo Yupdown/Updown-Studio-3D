@@ -21,6 +21,17 @@ cbuffer cbPerFrame : register(b1)
 	float gMotionBlurRadius;
 };
 
+cbuffer cbBlurSource : register(b2)
+{
+	// The rasterizer supplies the reverse-Z depth buffer, which still has to be linearized here.
+	// The raytracer has no depth buffer at all and supplies distance from the camera, already
+	// linear -- and under a fisheye projection there is no valid NDC depth to linearize anyway.
+	uint gDepthIsLinear;
+	uint gBlurSourcePad0;
+	uint gBlurSourcePad1;
+	uint gBlurSourcePad2;
+};
+
 Texture2D gSource : register(t0);
 Texture2D gMotion : register(t1);
 Texture2D gDepth : register(t2);
@@ -53,6 +64,14 @@ float NdcDepthToViewDepth(float z_ndc)
 {
 	float viewZ = gProj[3][2] / max(z_ndc, 1e-6f);
 	return viewZ;
+}
+
+// Only the depth *differences* feed the Guertin weighting, so any monotonic linear depth works --
+// view-space Z from the rasterizer or camera distance from the raytracer.
+float SampleViewDepth(float2 uv)
+{
+	float raw = gDepth.Sample(gSamPoint, uv).r;
+	return gDepthIsLinear != 0u ? raw : NdcDepthToViewDepth(raw);
 }
 
 // Depth comapare function returns two weights: background and foreground that sum one
@@ -110,7 +129,7 @@ float4 PS(VertexOut pin) : SV_Target
 	float2 wc = normalize(lerp(wp, normalize(vc), saturate((lvx - 0.5f) / 1.5f)));
 
 	float4 sampleSum = 0.0f;
-	float depthSrc = NdcDepthToViewDepth(gDepth.Sample(gSamPoint, pin.TexC).r);
+	float depthSrc = SampleViewDepth(pin.TexC);
 	float bias = GetDitherThreshold(pin.PosH.xy);
 
 	[unroll]
@@ -119,7 +138,7 @@ float4 PS(VertexOut pin) : SV_Target
 		float t = lerp(-1.0f, 1.0f, (i + bias) / gSampleCount);
 		float2 d = vn;
 		float2 texDest = pin.TexC + d * rcpro * t;
-		float depthDst = NdcDepthToViewDepth(gDepth.Sample(gSamPoint, texDest).r);
+		float depthDst = SampleViewDepth(texDest);
 
 		float2 vs = ClampMotionRadius(gMotion.Sample(gSamPoint, texDest).xy * gRenderTargetSize * gMotionBlurFactor, blurRadius);
 		float wa = dot(wc, normalize(d));

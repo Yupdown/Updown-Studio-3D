@@ -499,6 +499,12 @@ namespace udsdx
 			claim(nullptr, nullptr); // history[read]
 		}
 
+		claim(&m_motionCpuSrv, &m_motionGpuSrv);
+		for (int i = 0; i < 2; ++i)
+		{
+			claim(&m_guideDepthCpuSrv[i], &m_guideDepthGpuSrv[i]);
+		}
+
 		for (int i = 0; i < 2; ++i)
 		{
 			claim(&m_historyCpuUav[i], &m_historyGpuUav[i]);
@@ -564,8 +570,20 @@ namespace udsdx
 			makeSrv(m_historyBuffers[1 - phase].Get(), HISTORY_FORMAT, srv);
 		}
 
+		makeSrv(m_motionBuffer.Get(), MOTION_FORMAT, m_motionCpuSrv);
+
 		for (int i = 0; i < 2; ++i)
 		{
+			// Broadcast the guide's .z (camera distance) across all channels, so the motion blur
+			// shader's .r read lands on it without needing to know the guide layout.
+			D3D12_SHADER_RESOURCE_VIEW_DESC depthDesc = {};
+			depthDesc.Format = GUIDE_FORMAT;
+			depthDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+			depthDesc.Shader4ComponentMapping = D3D12_ENCODE_SHADER_4_COMPONENT_MAPPING(2, 2, 2, 2);
+			depthDesc.Texture2D.MostDetailedMip = 0;
+			depthDesc.Texture2D.MipLevels = 1;
+			m_device->CreateShaderResourceView(m_guideBuffers[i].Get(), &depthDesc, m_guideDepthCpuSrv[i]);
+
 			makeUav(m_historyBuffers[i].Get(), HISTORY_FORMAT, m_historyCpuUav[i]);
 			makeSrv(m_historyBuffers[i].Get(), HISTORY_FORMAT, m_historyCpuSrv[i]);
 		}
@@ -843,6 +861,7 @@ namespace udsdx
 		ResolveToTarget(param);
 
 		// Guide and history share the index: this frame's write becomes next frame's read.
+		m_currentGuideIndex = m_historyWriteIndex;
 		std::swap(m_historyReadIndex, m_historyWriteIndex);
 		m_historyValid = true;
 	}

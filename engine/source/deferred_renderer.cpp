@@ -715,7 +715,8 @@ namespace udsdx
 		}
 	}
 
-	void DeferredRenderer::PassRenderRaytracing(RenderParam& renderParam, Scene* scene, Camera* camera)
+	void DeferredRenderer::PassRenderRaytracing(RenderParam& renderParam, Scene* scene, Camera* camera,
+		D3D12_GPU_VIRTUAL_ADDRESS cameraCbv)
 	{
 		ZoneScopedN("Raytracing Main Pass");
 
@@ -732,9 +733,26 @@ namespace udsdx
 
 		// Bloom is the only pass that tonemaps and writes the back buffer, so it always runs here.
 		// SSAO, deferred lighting, the forward pass and the outline all depend on a rasterized
-		// G-buffer and stencil that this mode never produces; TAA and motion blur are redundant
-		// because progressive accumulation already resolves the image temporally.
+		// G-buffer and stencil that this mode never produces.
 		m_postProcessBloom->Pass(renderParam);
+
+		// Motion blur is a shutter effect, orthogonal to noise reduction, so temporal accumulation
+		// does not replace it -- unlike TAA, which is deliberately skipped here because the
+		// accumulator already resolves temporally with per-tap geometric validation and a far
+		// longer history than TAA's blend cap allows.
+		//
+		// It runs on the raytracer's own motion vectors, and on camera distance in place of a
+		// depth buffer this mode never produces.
+		// IsHistoryValid doubles as "the pass ran to completion this frame": every early-out inside
+		// it clears the flag. Without this the blur would sample a guide buffer that was never
+		// written, which happens while the acceleration structure is still building.
+		if (renderParam.RenderOptions->DrawMotionBlur && m_raytracingRenderer->IsHistoryValid())
+		{
+			m_motionBlur->Pass(renderParam, cameraCbv,
+				m_raytracingRenderer->GetMotionSrv(),
+				m_raytracingRenderer->GetLinearDepthSrv(),
+				/*depthIsLinear*/ true);
+		}
 	}
 
 	void DeferredRenderer::PassRenderMain(RenderParam& renderParam, Scene* scene, Camera* camera, D3D12_GPU_VIRTUAL_ADDRESS cameraCbv)
@@ -746,7 +764,7 @@ namespace udsdx
 
 		if (renderParam.RaytracingActive)
 		{
-			PassRenderRaytracing(renderParam, scene, camera);
+			PassRenderRaytracing(renderParam, scene, camera, cameraCbv);
 			return;
 		}
 
@@ -822,7 +840,7 @@ namespace udsdx
 		// Motion blur pass
 		if (renderParam.RenderOptions->DrawMotionBlur)
 		{
-			m_motionBlur->Pass(renderParam, cameraCbv);
+			m_motionBlur->Pass(renderParam, cameraCbv, GetGBufferSrv(2), GetDepthBufferSrv(), /*depthIsLinear*/ false);
 		}
 
 		// Post-process outline pass

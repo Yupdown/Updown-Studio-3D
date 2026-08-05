@@ -17,7 +17,14 @@ namespace udsdx
 		MotionBlur& operator=(const MotionBlur& rhs) = delete;
 		~MotionBlur() = default;
 
-		void Pass(RenderParam& param, D3D12_GPU_VIRTUAL_ADDRESS cbvGpu);
+		// The velocity and depth sources are supplied by the caller rather than read from the
+		// G-buffer: the raytracing path produces its own motion vectors and has no depth buffer at
+		// all. depthIsLinear selects whether the depth SRV holds reverse-Z NDC that still needs
+		// linearizing, or an already-linear depth.
+		void Pass(RenderParam& param, D3D12_GPU_VIRTUAL_ADDRESS cbvGpu,
+			D3D12_GPU_DESCRIPTOR_HANDLE velocitySrv,
+			D3D12_GPU_DESCRIPTOR_HANDLE depthSrv,
+			bool depthIsLinear);
 
 		void OnResize(UINT newWidth, UINT newHeight);
 		void BuildResources();

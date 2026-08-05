@@ -16,7 +16,10 @@ namespace udsdx
 		BuildRootSignature();
 	}
 
-	void MotionBlur::Pass(RenderParam& param, D3D12_GPU_VIRTUAL_ADDRESS cbvGpu)
+	void MotionBlur::Pass(RenderParam& param, D3D12_GPU_VIRTUAL_ADDRESS cbvGpu,
+		D3D12_GPU_DESCRIPTOR_HANDLE velocitySrv,
+		D3D12_GPU_DESCRIPTOR_HANDLE depthSrv,
+		bool depthIsLinear)
 	{
 		auto pCommandList = param.CommandList;
 
@@ -29,7 +32,7 @@ namespace udsdx
 		pCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_tileMaxBuffer.Get(), D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
 
 		pCommandList->SetPipelineState(m_tileMaxPso.Get());
-		pCommandList->SetComputeRootDescriptorTable(0, param.Renderer->GetGBufferSrv(2));
+		pCommandList->SetComputeRootDescriptorTable(0, velocitySrv);
 		pCommandList->SetComputeRootDescriptorTable(1, m_tileMaxGpuUav);
 
 		pCommandList->Dispatch((computeWidth + 15) / 16, (computeHeight + 15) / 16, 1);
@@ -69,9 +72,11 @@ namespace udsdx
 		pCommandList->SetGraphicsRootConstantBufferView(0, cbvGpu);
 		pCommandList->SetGraphicsRootConstantBufferView(1, param.ConstantBufferView);
 		pCommandList->SetGraphicsRootDescriptorTable(2, m_sourceGpuSrv);
-		pCommandList->SetGraphicsRootDescriptorTable(3, param.Renderer->GetGBufferSrv(2));
-		pCommandList->SetGraphicsRootDescriptorTable(4, param.Renderer->GetDepthBufferSrv());
+		pCommandList->SetGraphicsRootDescriptorTable(3, velocitySrv);
+		pCommandList->SetGraphicsRootDescriptorTable(4, depthSrv);
 		pCommandList->SetGraphicsRootDescriptorTable(5, m_neighborMaxGpuSrv);
+		const UINT depthIsLinearValue = depthIsLinear ? 1u : 0u;
+		pCommandList->SetGraphicsRoot32BitConstants(6, 1, &depthIsLinearValue, 0);
 		pCommandList->DrawInstanced(6, 1, 0, 0);
 	}
 
@@ -206,7 +211,7 @@ namespace udsdx
 			CD3DX12_DESCRIPTOR_RANGE texTable4;
 			texTable4.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3);
 
-			CD3DX12_ROOT_PARAMETER slotRootParameter[6]{};
+			CD3DX12_ROOT_PARAMETER slotRootParameter[7]{};
 
 			slotRootParameter[0].InitAsConstantBufferView(0);
 			slotRootParameter[1].InitAsConstantBufferView(1);
@@ -214,6 +219,8 @@ namespace udsdx
 			slotRootParameter[3].InitAsDescriptorTable(1, &texTable2);
 			slotRootParameter[4].InitAsDescriptorTable(1, &texTable3);
 			slotRootParameter[5].InitAsDescriptorTable(1, &texTable4);
+			// b2: how to interpret the depth SRV the caller bound.
+			slotRootParameter[6].InitAsConstants(4, 2);
 
 			CD3DX12_STATIC_SAMPLER_DESC samplerDesc[] = {
 				CD3DX12_STATIC_SAMPLER_DESC(

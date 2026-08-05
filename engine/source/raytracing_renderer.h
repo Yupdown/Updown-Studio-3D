@@ -87,6 +87,13 @@ namespace udsdx
 		// camera or scene motion is handled by reprojection and must not call this.
 		void InvalidateHistory() { m_historyValid = false; }
 		bool IsHistoryValid() const { return m_historyValid; }
+		// Sources the motion blur pass consumes. Valid after Pass() has run for the frame.
+		// The depth SRV is a swizzled view of the guide buffer that presents camera distance in
+		// .r, which is where the blur shader looks; it is already linear, so that pass must be
+		// told not to linearize it.
+		D3D12_GPU_DESCRIPTOR_HANDLE GetMotionSrv() const { return m_motionGpuSrv; }
+		D3D12_GPU_DESCRIPTOR_HANDLE GetLinearDepthSrv() const { return m_guideDepthGpuSrv[m_currentGuideIndex]; }
+
 		UINT GetInstanceCount() const;
 		UINT GetGeometryCount() const;
 		UINT GetBlasCount() const;
@@ -137,6 +144,12 @@ namespace udsdx
 		std::array<CD3DX12_CPU_DESCRIPTOR_HANDLE, 2> m_raygenUavCpu{};
 		std::array<CD3DX12_GPU_DESCRIPTOR_HANDLE, 2> m_raygenUavTable{};
 
+		CD3DX12_CPU_DESCRIPTOR_HANDLE m_motionCpuSrv{};
+		CD3DX12_GPU_DESCRIPTOR_HANDLE m_motionGpuSrv{};
+		// Guide views swizzled so camera distance (.z) reads back through .r.
+		std::array<CD3DX12_CPU_DESCRIPTOR_HANDLE, 2> m_guideDepthCpuSrv{};
+		std::array<CD3DX12_GPU_DESCRIPTOR_HANDLE, 2> m_guideDepthGpuSrv{};
+
 		std::array<CD3DX12_CPU_DESCRIPTOR_HANDLE, 2> m_historyCpuSrv{};
 		std::array<CD3DX12_GPU_DESCRIPTOR_HANDLE, 2> m_historyGpuSrv{};
 		std::array<CD3DX12_CPU_DESCRIPTOR_HANDLE, 2> m_historyCpuUav{};
@@ -177,6 +190,9 @@ namespace udsdx
 
 		int m_historyReadIndex = 0;
 		int m_historyWriteIndex = 1;
+		// The guide slot written this frame. Recorded before the ping-pong swap so passes running
+		// after Pass() can still find it.
+		int m_currentGuideIndex = 1;
 		bool m_historyValid = false;
 		bool m_stateObjectValid = false;
 	};

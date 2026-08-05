@@ -42,7 +42,7 @@ namespace udsdx
 		void PassRenderShadow(RenderParam& renderParam, Scene* scene, Camera* camera, LightDirectional* light);
 		void PassRenderSSAO(RenderParam& renderParam, Camera* camera);
 		void PassRenderMain(RenderParam& renderParam, Scene* scene, Camera* camera, D3D12_GPU_VIRTUAL_ADDRESS cameraCbv);
-		void PassRenderRaytracing(RenderParam& renderParam, Scene* scene, Camera* camera);
+		void PassRenderRaytracing(RenderParam& renderParam, Scene* scene, Camera* camera, D3D12_GPU_VIRTUAL_ADDRESS cameraCbv);
 
 	public:
 		CD3DX12_GPU_DESCRIPTOR_HANDLE GetGBufferSrv(UINT index) const { return m_gBuffersGpuSrv[index]; }
