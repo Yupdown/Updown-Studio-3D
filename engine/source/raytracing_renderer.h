@@ -10,17 +10,51 @@ namespace udsdx
 	class LightDirectional;
 	class AccelerationStructure;
 
-	// Standalone full-screen DXR 1.0 path tracer with progressive accumulation.
+	// Standalone full-screen DXR 1.0 path tracer with velocity-based temporal accumulation.
 	//
 	// It replaces the raster pipeline rather than augmenting it: primary rays are traced, sun
 	// visibility is a shadow ray with a cone-sampled direction, and one cosine-weighted diffuse
-	// bounce supplies the radiosity term. Radiance is summed into an FP32 buffer for as long as the
-	// camera, scene and lighting hold still, and resolved into the deferred renderer's HDR target
-	// so the existing bloom pass can tonemap it.
+	// bounce supplies the radiosity term.
+	//
+	// Each frame emits a 1spp estimate plus a motion vector, then a compute pass reprojects the
+	// previous frame's accumulated estimate through that motion vector and folds the new sample
+	// in. A surface that stays on screen keeps its history whether the camera or the object moved;
+	// only disoccluded or changed pixels restart. The result resolves into the deferred renderer's
+	// HDR target so the existing bloom pass can tonemap it.
 	class RaytracingRenderer
 	{
 	public:
-		static constexpr DXGI_FORMAT ACCUMULATION_FORMAT = DXGI_FORMAT_R32G32B32A32_FLOAT;
+		// Everything baked into the accumulated radiance. Editing any of it makes the existing
+		// history a mean of a different quantity, so it has to be dropped. Deliberately excludes
+		// the camera and the scene: reprojection handles those now instead of resetting.
+		//
+		// Compared with memcmp, so it must stay a zero-initialised POD with no padding surprises.
+		struct RadianceSettings
+		{
+			Color FogColor{};
+			Color FogSunColor{};
+			float FogDensity = 0.0f;
+			float FogHeightFalloff = 0.0f;
+			float FogDistanceStart = 0.0f;
+			float RayMaxDistance = 0.0f;
+			float ShadowRayOffset = 0.0f;
+			Vector3 SunDirection{};
+			Color SunColor{};
+			float SunIntensity = 0.0f;
+			float SunAngularDiameter = 0.0f;
+			UINT SamplesPerPixel = 0;
+			UINT DebugMode = 0;
+			UINT HasEnvironmentMap = 0;
+			UINT Pad = 0;
+		};
+
+		static constexpr DXGI_FORMAT HISTORY_FORMAT = DXGI_FORMAT_R32G32B32A32_FLOAT;
+		static constexpr DXGI_FORMAT RADIANCE_FORMAT = DXGI_FORMAT_R16G16B16A16_FLOAT;
+		// xy is the UV velocity; z carries the hit point's previous-frame view Z, which the
+		// accumulation pass needs to compare against the stored previous depth.
+		static constexpr DXGI_FORMAT MOTION_FORMAT = DXGI_FORMAT_R16G16B16A16_FLOAT;
+		// Instance indices past 2048 would not survive a half float, so the guide stays FP32.
+		static constexpr DXGI_FORMAT GUIDE_FORMAT = DXGI_FORMAT_R32G32B32A32_FLOAT;
 		static constexpr DXGI_FORMAT RESOLVE_FORMAT = DXGI_FORMAT_R11G11B10_FLOAT;
 
 		RaytracingRenderer(ID3D12Device5* device, ID3D12GraphicsCommandList4* commandList);
@@ -31,48 +65,37 @@ namespace udsdx
 		void BuildRootSignatures();
 		void BuildStateObject();
 		void BuildShaderTables();
-		// Grows the hit group table to cover `geometryCount` records. Record i always carries the
-		// constant i, so the contents are position-invariant and only ever need extending.
 		void EnsureHitGroupTable(UINT geometryCount);
+		void BuildAccumulatePipelineState();
 		void BuildResolvePipelineState();
 		void BuildResources();
 		void BuildDescriptors(DescriptorParam& descriptorParam);
 		void RebuildDescriptors();
 		void OnResize(UINT newWidth, UINT newHeight);
 
-		// Builds the acceleration structure, dispatches rays and resolves into the HDR target.
+		// Builds the acceleration structure, dispatches rays, accumulates temporally and resolves
+		// into the HDR target.
 		void Pass(RenderParam& param, Scene* scene, Camera* camera, LightDirectional* light);
 
 		// False when the state object failed to build or the SRV heap ran dry, in which case the
 		// caller falls back to the deferred path instead of tracing an incomplete scene.
 		bool IsAvailable() const;
 
-		// Why the progressive accumulator last restarted. SceneMotion is the common one: any
-		// animating object changes the acceleration structure and correctly invalidates a
-		// reference render, so a continuously animated scene never converges by design.
-		enum class ResetReason
-		{
-			None,
-			Requested,
-			SceneMotion,
-			ViewOrLighting,
-			SceneAndView
-		};
-		static const char* ToString(ResetReason reason);
-
-		void RequestAccumulationReset() { m_resetRequested = true; }
-		UINT GetAccumulatedSamples() const { return m_accumulatedSamples; }
-		UINT GetAccumulatedFrames() const { return m_accumulatedFrames; }
-		ResetReason GetLastResetReason() const { return m_lastResetReason; }
+		// Drops the accumulated history. Needed on resize and when re-entering the mode; ordinary
+		// camera or scene motion is handled by reprojection and must not call this.
+		void InvalidateHistory() { m_historyValid = false; }
+		bool IsHistoryValid() const { return m_historyValid; }
 		UINT GetInstanceCount() const;
 		UINT GetGeometryCount() const;
 		UINT GetBlasCount() const;
 
 	private:
 		void CreateDummyEnvironmentCube();
-		UINT64 HashFrame(const RenderParam& param, Camera* camera, LightDirectional* light, UINT64 sceneHash) const;
 		void UploadConstants(RenderParam& param, Camera* camera, LightDirectional* light, bool hasEnvironmentMap);
+		void AccumulateTemporal(RenderParam& param);
 		void ResolveToTarget(RenderParam& param);
+		void TransitionForWrite(ID3D12GraphicsCommandList* commandList, ID3D12Resource* resource);
+		void TransitionForRead(ID3D12GraphicsCommandList* commandList, ID3D12Resource* resource);
 
 		ID3D12Device5* m_device = nullptr;
 		ID3D12GraphicsCommandList4* m_commandList = nullptr;
@@ -86,41 +109,66 @@ namespace udsdx
 		ComPtr<ID3D12RootSignature> m_hitGroupLocalRootSignature;
 		ComPtr<ID3D12StateObject> m_stateObject;
 		ComPtr<ID3D12StateObjectProperties> m_stateObjectProperties;
-		// Ray generation and miss records are fixed; hit group records scale with the geometry
-		// count, so they live in their own growable buffer.
 		ComPtr<ID3D12Resource> m_shaderTable;
 		ComPtr<ID3D12Resource> m_hitGroupTable;
 		UINT m_hitGroupCapacity = 0;
-		// Superseded hit group tables, retired for a few frames because the GPU may still be
-		// reading them when a growth happens.
 		std::vector<std::pair<ComPtr<ID3D12Resource>, UINT64>> m_retiredHitGroupTables;
 		UINT64 m_frameCounter = 0;
 		D3D12_DISPATCH_RAYS_DESC m_dispatchDesc = {};
 
+		ComPtr<ID3D12RootSignature> m_accumulateRootSignature;
+		ComPtr<ID3D12PipelineState> m_accumulatePipelineState;
 		ComPtr<ID3D12RootSignature> m_resolveRootSignature;
 		ComPtr<ID3D12PipelineState> m_resolvePipelineState;
 
-		ComPtr<ID3D12Resource> m_accumulationBuffer;
-		CD3DX12_CPU_DESCRIPTOR_HANDLE m_accumulationCpuUav{};
-		CD3DX12_GPU_DESCRIPTOR_HANDLE m_accumulationGpuUav{};
-		CD3DX12_CPU_DESCRIPTOR_HANDLE m_accumulationCpuSrv{};
-		CD3DX12_GPU_DESCRIPTOR_HANDLE m_accumulationGpuSrv{};
+		// Ray generation outputs, consumed by the accumulation pass in the same frame.
+		ComPtr<ID3D12Resource> m_radianceBuffer;
+		ComPtr<ID3D12Resource> m_motionBuffer;
+		// Guide and history ping-pong together on the same index: this frame's write becomes next
+		// frame's read, and validation compares the current guide against the previous one.
+		std::array<ComPtr<ID3D12Resource>, 2> m_guideBuffers;
+		std::array<ComPtr<ID3D12Resource>, 2> m_historyBuffers;
 
-		// A root parameter the shader references must always be bound, even in scenes with no
-		// EnvironmentMap, so a 1x1x6 cube stands in.
+		// The three ray generation UAVs are allocated consecutively so one descriptor range covers
+		// radiance, motion and the write-side guide. One run per ping-pong phase, because the
+		// guide it points at alternates.
+		std::array<CD3DX12_CPU_DESCRIPTOR_HANDLE, 2> m_raygenUavCpu{};
+		std::array<CD3DX12_GPU_DESCRIPTOR_HANDLE, 2> m_raygenUavTable{};
+
+		std::array<CD3DX12_CPU_DESCRIPTOR_HANDLE, 2> m_historyCpuSrv{};
+		std::array<CD3DX12_GPU_DESCRIPTOR_HANDLE, 2> m_historyGpuSrv{};
+		std::array<CD3DX12_CPU_DESCRIPTOR_HANDLE, 2> m_historyCpuUav{};
+		std::array<CD3DX12_GPU_DESCRIPTOR_HANDLE, 2> m_historyGpuUav{};
+
+		// Contiguous SRV run the accumulation pass binds as one table:
+		// radiance, motion, guide[write], guide[read], history[read].
+		std::array<CD3DX12_CPU_DESCRIPTOR_HANDLE, 2> m_accumulateSrvCpu{};
+		std::array<CD3DX12_GPU_DESCRIPTOR_HANDLE, 2> m_accumulateSrvTable{};
+
 		ComPtr<ID3D12Resource> m_dummyEnvironmentCube;
 		CD3DX12_CPU_DESCRIPTOR_HANDLE m_dummyEnvironmentCpuSrv{};
 		CD3DX12_GPU_DESCRIPTOR_HANDLE m_dummyEnvironmentGpuSrv{};
 
 		std::array<std::unique_ptr<UploadBuffer<RaytracingConstants>>, FrameResourceCount> m_constantBuffers;
+		std::array<std::unique_ptr<UploadBuffer<RaytracingAccumulateConstants>>, FrameResourceCount> m_accumulateConstantBuffers;
 
-		UINT64 m_lastHash = 0;
-		UINT64 m_lastSceneHash = 0;
-		UINT64 m_lastViewHash = 0;
-		ResetReason m_lastResetReason = ResetReason::None;
-		UINT m_accumulatedSamples = 0;
-		UINT m_accumulatedFrames = 0;
-		bool m_resetRequested = true;
+		// Previous frame's unjittered view-projection. Kept here rather than read back from Camera:
+		// Camera::UpdateConstantBuffer has already overwritten its own copy by the time this pass
+		// runs, so it would hand back the current matrix.
+		Matrix4x4 m_prevViewProj = Matrix4x4::Identity;
+		const Camera* m_lastCamera = nullptr;
+		RadianceSettings m_lastSettings{};
+
+		// Buffers rest here and are raised to UNORDERED_ACCESS only while being written, so the
+		// ping-pong swap never has to track which buffer is in which state. The combined read
+		// state covers both the accumulation compute pass and the resolve pixel shader, which
+		// matters because the resolve reads whichever history slot the swap just produced.
+		static constexpr D3D12_RESOURCE_STATES kRestingState =
+			D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+
+		int m_historyReadIndex = 0;
+		int m_historyWriteIndex = 1;
+		bool m_historyValid = false;
 		bool m_stateObjectValid = false;
 	};
 }

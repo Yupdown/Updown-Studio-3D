@@ -37,6 +37,10 @@ namespace udsdx
 		// Scene::RenderSceneObjects path that would otherwise validate it.
 		const Matrix4x4& GetTransformCacheRef() const { return m_transformCache; }
 
+		// World matrix from the frame before that. The raytracer turns the pair into a per-pixel
+		// motion vector so temporal accumulation can follow a surface as it moves on screen.
+		const Matrix4x4& GetPrevTransformCacheRef() const { return m_prevTransformCache; }
+
 	protected:
 		std::vector<Material> m_materials;
 

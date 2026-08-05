@@ -11,6 +11,7 @@
 #include "debug_console.h"
 #include "compiled_shaders/vs_drawscreen.h"
 #include "compiled_shaders/ps_raytracing_resolve.h"
+#include "compiled_shaders/cs_raytracing_accumulate.h"
 #include "compiled_shaders/lib_raytracing.h"
 
 namespace udsdx
@@ -45,19 +46,6 @@ namespace udsdx
 		static_assert(kShaderIdentifierSize + sizeof(UINT) <= kHitGroupRecordStride, "A hit group record must fit its stride.");
 		static_assert(kHitGroupRecordStride % D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT == 0, "Hit group records must be record-aligned.");
 		static_assert(kMissTableOffset % kTableAlignment == 0, "Miss table must be table-aligned.");
-
-		constexpr UINT64 kFnvOffsetBasis = 14695981039346656037ull;
-		constexpr UINT64 kFnvPrime = 1099511628211ull;
-
-		void HashBytes(UINT64& hash, const void* data, size_t size)
-		{
-			const auto* bytes = static_cast<const unsigned char*>(data);
-			for (size_t i = 0; i < size; ++i)
-			{
-				hash ^= static_cast<UINT64>(bytes[i]);
-				hash *= kFnvPrime;
-			}
-		}
 	}
 
 	RaytracingRenderer::RaytracingRenderer(ID3D12Device5* device, ID3D12GraphicsCommandList4* commandList)
@@ -70,6 +58,10 @@ namespace udsdx
 		{
 			constantBuffer = std::make_unique<UploadBuffer<RaytracingConstants>>(device, 1, true);
 		}
+		for (auto& constantBuffer : m_accumulateConstantBuffers)
+		{
+			constantBuffer = std::make_unique<UploadBuffer<RaytracingAccumulateConstants>>(device, 1, true);
+		}
 
 		BuildRootSignatures();
 		BuildStateObject();
@@ -77,28 +69,17 @@ namespace udsdx
 		{
 			BuildShaderTables();
 		}
+		BuildAccumulatePipelineState();
 		BuildResolvePipelineState();
 		CreateDummyEnvironmentCube();
 	}
 
 	RaytracingRenderer::~RaytracingRenderer() = default;
 
-	const char* RaytracingRenderer::ToString(ResetReason reason)
-	{
-		switch (reason)
-		{
-		case ResetReason::Requested: return "manual reset";
-		case ResetReason::SceneMotion: return "scene motion (an object moved)";
-		case ResetReason::ViewOrLighting: return "camera / lighting / settings";
-		case ResetReason::SceneAndView: return "scene motion + camera";
-		default: return "none";
-		}
-	}
-
 	bool RaytracingRenderer::IsAvailable() const
 	{
 		return m_stateObjectValid
-			&& m_accumulationBuffer != nullptr
+			&& m_historyBuffers[0] != nullptr
 			&& !m_accelerationStructure->IsDescriptorHeapExhausted();
 	}
 
@@ -112,8 +93,9 @@ namespace udsdx
 		// does not accept stage-specific visibility, and ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT must not
 		// be set. Total cost is 10 of the 64 available DWORDs.
 		{
-			CD3DX12_DESCRIPTOR_RANGE accumulationRange;
-			accumulationRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0);
+			// Three consecutive UAVs: radiance, motion and the write-side guide.
+			CD3DX12_DESCRIPTOR_RANGE raygenUavRange;
+			raygenUavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 3, 0, 0);
 
 			// Unbounded ranges over the whole shader-visible SRV heap, in separate spaces so a
 			// Texture2D array and a ByteAddressBuffer array can both address it by heap index.
@@ -124,14 +106,15 @@ namespace udsdx
 			CD3DX12_DESCRIPTOR_RANGE environmentRange;
 			environmentRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 3);
 
-			CD3DX12_ROOT_PARAMETER slotRootParameter[7]{};
+			CD3DX12_ROOT_PARAMETER slotRootParameter[8]{};
 			slotRootParameter[0].InitAsConstantBufferView(0, 0);        // b0: cbRaytracing
 			slotRootParameter[1].InitAsShaderResourceView(0, 0);        // t0 space0: TLAS
 			slotRootParameter[2].InitAsShaderResourceView(1, 0);        // t1 space0: gGeometryInfo
-			slotRootParameter[3].InitAsDescriptorTable(1, &accumulationRange);
-			slotRootParameter[4].InitAsDescriptorTable(1, &textureRange);
-			slotRootParameter[5].InitAsDescriptorTable(1, &rawBufferRange);
-			slotRootParameter[6].InitAsDescriptorTable(1, &environmentRange);
+			slotRootParameter[3].InitAsShaderResourceView(2, 0);        // t2 space0: gInstanceInfo
+			slotRootParameter[4].InitAsDescriptorTable(1, &raygenUavRange);
+			slotRootParameter[5].InitAsDescriptorTable(1, &textureRange);
+			slotRootParameter[6].InitAsDescriptorTable(1, &rawBufferRange);
+			slotRootParameter[7].InitAsDescriptorTable(1, &environmentRange);
 
 			// No anisotropic sampler: anisotropic filtering is illegal in raytracing shaders.
 			CD3DX12_STATIC_SAMPLER_DESC samplerDesc[] = {
@@ -183,7 +166,38 @@ namespace udsdx
 			m_hitGroupLocalRootSignature->SetName(L"RaytracingRenderer::HitGroupLocal");
 		}
 
-		// Resolve pass root signature: debug constants plus the accumulation SRV.
+		// Temporal accumulation root signature. Independent of the DXR global signature: this is an
+		// ordinary compute pass.
+		{
+			// radiance, motion, guide[write], guide[read], history[read] -- one contiguous run.
+			CD3DX12_DESCRIPTOR_RANGE srvRange;
+			srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 5, 0);
+			CD3DX12_DESCRIPTOR_RANGE uavRange;
+			uavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
+
+			CD3DX12_ROOT_PARAMETER slotRootParameter[3]{};
+			slotRootParameter[0].InitAsConstantBufferView(0);
+			slotRootParameter[1].InitAsDescriptorTable(1, &srvRange);
+			slotRootParameter[2].InitAsDescriptorTable(1, &uavRange);
+
+			CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(_countof(slotRootParameter), slotRootParameter,
+				0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_NONE);
+
+			ComPtr<ID3DBlob> serializedRootSig;
+			ComPtr<ID3DBlob> errorBlob;
+			HRESULT hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1,
+				serializedRootSig.GetAddressOf(), errorBlob.GetAddressOf());
+			if (errorBlob != nullptr)
+			{
+				::OutputDebugStringA(static_cast<char*>(errorBlob->GetBufferPointer()));
+			}
+			ThrowIfFailed(hr);
+			ThrowIfFailed(m_device->CreateRootSignature(0, serializedRootSig->GetBufferPointer(),
+				serializedRootSig->GetBufferSize(), IID_PPV_ARGS(m_accumulateRootSignature.GetAddressOf())));
+			m_accumulateRootSignature->SetName(L"RaytracingRenderer::Accumulate");
+		}
+
+		// Resolve pass root signature: debug constants plus the history SRV.
 		{
 			CD3DX12_DESCRIPTOR_RANGE accumulationRange;
 			accumulationRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
@@ -245,7 +259,7 @@ namespace udsdx
 		localRootAssociation->AddExport(kHitGroupName);
 
 		auto* shaderConfig = pipeline.CreateSubobject<CD3DX12_RAYTRACING_SHADER_CONFIG_SUBOBJECT>();
-		shaderConfig->Config(sizeof(float) * 10 + sizeof(UINT) * 2, D3D12_RAYTRACING_MAX_ATTRIBUTE_SIZE_IN_BYTES);
+		shaderConfig->Config(sizeof(float) * 13 + sizeof(UINT) * 3, D3D12_RAYTRACING_MAX_ATTRIBUTE_SIZE_IN_BYTES);
 
 		auto* globalRootSignature = pipeline.CreateSubobject<CD3DX12_GLOBAL_ROOT_SIGNATURE_SUBOBJECT>();
 		globalRootSignature->SetRootSignature(m_globalRootSignature.Get());
@@ -342,6 +356,16 @@ namespace udsdx
 		};
 	}
 
+	void RaytracingRenderer::BuildAccumulatePipelineState()
+	{
+		D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc = {};
+		psoDesc.pRootSignature = m_accumulateRootSignature.Get();
+		psoDesc.CS = { g_cso_cs_raytracing_accumulate, sizeof(g_cso_cs_raytracing_accumulate) };
+
+		ThrowIfFailed(m_device->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(m_accumulatePipelineState.GetAddressOf())));
+		m_accumulatePipelineState->SetName(L"RaytracingRenderer::Accumulate");
+	}
+
 	void RaytracingRenderer::BuildResolvePipelineState()
 	{
 		D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc;
@@ -394,7 +418,10 @@ namespace udsdx
 		m_height = newHeight;
 
 		BuildResources();
-		m_resetRequested = true;
+		// The buffers were just recreated at a new size, so nothing can be reprojected into them.
+		m_historyValid = false;
+		m_historyReadIndex = 0;
+		m_historyWriteIndex = 1;
 	}
 
 	void RaytracingRenderer::BuildResources()
@@ -404,25 +431,38 @@ namespace udsdx
 			return;
 		}
 
-		m_accumulationBuffer.Reset();
-
-		D3D12_RESOURCE_DESC desc = {};
-		desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-		desc.Alignment = 0;
-		desc.Width = m_width;
-		desc.Height = m_height;
-		desc.DepthOrArraySize = 1;
-		desc.MipLevels = 1;
-		desc.Format = ACCUMULATION_FORMAT;
-		desc.SampleDesc.Count = 1;
-		desc.SampleDesc.Quality = 0;
-		desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-		desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
-
 		const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
-		ThrowIfFailed(m_device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &desc,
-			D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(m_accumulationBuffer.GetAddressOf())));
-		m_accumulationBuffer->SetName(L"RaytracingRenderer::Accumulation");
+
+		auto createTarget = [&](ComPtr<ID3D12Resource>& target, DXGI_FORMAT format, const wchar_t* name)
+		{
+			target.Reset();
+
+			D3D12_RESOURCE_DESC desc = {};
+			desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+			desc.Alignment = 0;
+			desc.Width = m_width;
+			desc.Height = m_height;
+			desc.DepthOrArraySize = 1;
+			desc.MipLevels = 1;
+			desc.Format = format;
+			desc.SampleDesc.Count = 1;
+			desc.SampleDesc.Quality = 0;
+			desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+			desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+
+			// Everything rests in NON_PIXEL_SHADER_RESOURCE and is raised to UNORDERED_ACCESS only
+			// while being written, so the ping-pong swap never has to track which buffer is where.
+			ThrowIfFailed(m_device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &desc,
+				kRestingState, nullptr, IID_PPV_ARGS(target.GetAddressOf())));
+			target->SetName(name);
+		};
+
+		createTarget(m_radianceBuffer, RADIANCE_FORMAT, L"RaytracingRenderer::Radiance");
+		createTarget(m_motionBuffer, MOTION_FORMAT, L"RaytracingRenderer::Motion");
+		createTarget(m_guideBuffers[0], GUIDE_FORMAT, L"RaytracingRenderer::Guide0");
+		createTarget(m_guideBuffers[1], GUIDE_FORMAT, L"RaytracingRenderer::Guide1");
+		createTarget(m_historyBuffers[0], HISTORY_FORMAT, L"RaytracingRenderer::History0");
+		createTarget(m_historyBuffers[1], HISTORY_FORMAT, L"RaytracingRenderer::History1");
 
 		m_dispatchDesc.Width = m_width;
 		m_dispatchDesc.Height = m_height;
@@ -431,41 +471,103 @@ namespace udsdx
 
 	void RaytracingRenderer::BuildDescriptors(DescriptorParam& descriptorParam)
 	{
-		m_accumulationCpuUav = descriptorParam.SrvCpuHandle;
-		m_accumulationGpuUav = descriptorParam.SrvGpuHandle;
-		descriptorParam.SrvCpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
-		descriptorParam.SrvGpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
+		auto claim = [&](CD3DX12_CPU_DESCRIPTOR_HANDLE* cpu, CD3DX12_GPU_DESCRIPTOR_HANDLE* gpu)
+		{
+			if (cpu != nullptr) { *cpu = descriptorParam.SrvCpuHandle; }
+			if (gpu != nullptr) { *gpu = descriptorParam.SrvGpuHandle; }
+			descriptorParam.SrvCpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
+			descriptorParam.SrvGpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
+		};
 
-		m_accumulationCpuSrv = descriptorParam.SrvCpuHandle;
-		m_accumulationGpuSrv = descriptorParam.SrvGpuHandle;
-		descriptorParam.SrvCpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
-		descriptorParam.SrvGpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
+		// Two ray generation UAV runs, one per ping-pong phase. Each run is three consecutive
+		// descriptors -- radiance, motion, guide[phase] -- so a single table range covers it.
+		for (int phase = 0; phase < 2; ++phase)
+		{
+			claim(&m_raygenUavCpu[phase], &m_raygenUavTable[phase]);
+			claim(nullptr, nullptr); // motion UAV
+			claim(nullptr, nullptr); // guide[phase] UAV
+		}
 
-		m_dummyEnvironmentCpuSrv = descriptorParam.SrvCpuHandle;
-		m_dummyEnvironmentGpuSrv = descriptorParam.SrvGpuHandle;
-		descriptorParam.SrvCpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
-		descriptorParam.SrvGpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
+		// Accumulation SRV runs, one per phase: radiance, motion, guide[write], guide[read],
+		// history[read].
+		for (int phase = 0; phase < 2; ++phase)
+		{
+			claim(&m_accumulateSrvCpu[phase], &m_accumulateSrvTable[phase]);
+			claim(nullptr, nullptr); // motion
+			claim(nullptr, nullptr); // guide[write]
+			claim(nullptr, nullptr); // guide[read]
+			claim(nullptr, nullptr); // history[read]
+		}
+
+		for (int i = 0; i < 2; ++i)
+		{
+			claim(&m_historyCpuUav[i], &m_historyGpuUav[i]);
+		}
+		for (int i = 0; i < 2; ++i)
+		{
+			claim(&m_historyCpuSrv[i], &m_historyGpuSrv[i]);
+		}
+
+		claim(&m_dummyEnvironmentCpuSrv, &m_dummyEnvironmentGpuSrv);
 
 		RebuildDescriptors();
 	}
 
 	void RaytracingRenderer::RebuildDescriptors()
 	{
-		if (m_accumulationBuffer != nullptr && m_accumulationCpuUav.ptr != 0)
+		if (m_historyBuffers[0] == nullptr || m_raygenUavCpu[0].ptr == 0)
+		{
+			return;
+		}
+
+		const UINT descriptorSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+		auto makeUav = [&](ID3D12Resource* resource, DXGI_FORMAT format, CD3DX12_CPU_DESCRIPTOR_HANDLE handle)
 		{
 			D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
-			uavDesc.Format = ACCUMULATION_FORMAT;
+			uavDesc.Format = format;
 			uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
 			uavDesc.Texture2D.MipSlice = 0;
-			m_device->CreateUnorderedAccessView(m_accumulationBuffer.Get(), nullptr, &uavDesc, m_accumulationCpuUav);
-
+			m_device->CreateUnorderedAccessView(resource, nullptr, &uavDesc, handle);
+		};
+		auto makeSrv = [&](ID3D12Resource* resource, DXGI_FORMAT format, CD3DX12_CPU_DESCRIPTOR_HANDLE handle)
+		{
 			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-			srvDesc.Format = ACCUMULATION_FORMAT;
+			srvDesc.Format = format;
 			srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 			srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 			srvDesc.Texture2D.MostDetailedMip = 0;
 			srvDesc.Texture2D.MipLevels = 1;
-			m_device->CreateShaderResourceView(m_accumulationBuffer.Get(), &srvDesc, m_accumulationCpuSrv);
+			m_device->CreateShaderResourceView(resource, &srvDesc, handle);
+		};
+
+		for (int phase = 0; phase < 2; ++phase)
+		{
+			CD3DX12_CPU_DESCRIPTOR_HANDLE uav = m_raygenUavCpu[phase];
+			makeUav(m_radianceBuffer.Get(), RADIANCE_FORMAT, uav);
+			uav.Offset(1, descriptorSize);
+			makeUav(m_motionBuffer.Get(), MOTION_FORMAT, uav);
+			uav.Offset(1, descriptorSize);
+			makeUav(m_guideBuffers[phase].Get(), GUIDE_FORMAT, uav);
+
+			// phase is the write index: guide[phase] is this frame's, guide[1 - phase] last
+			// frame's, and history[1 - phase] the history being reprojected.
+			CD3DX12_CPU_DESCRIPTOR_HANDLE srv = m_accumulateSrvCpu[phase];
+			makeSrv(m_radianceBuffer.Get(), RADIANCE_FORMAT, srv);
+			srv.Offset(1, descriptorSize);
+			makeSrv(m_motionBuffer.Get(), MOTION_FORMAT, srv);
+			srv.Offset(1, descriptorSize);
+			makeSrv(m_guideBuffers[phase].Get(), GUIDE_FORMAT, srv);
+			srv.Offset(1, descriptorSize);
+			makeSrv(m_guideBuffers[1 - phase].Get(), GUIDE_FORMAT, srv);
+			srv.Offset(1, descriptorSize);
+			makeSrv(m_historyBuffers[1 - phase].Get(), HISTORY_FORMAT, srv);
+		}
+
+		for (int i = 0; i < 2; ++i)
+		{
+			makeUav(m_historyBuffers[i].Get(), HISTORY_FORMAT, m_historyCpuUav[i]);
+			makeSrv(m_historyBuffers[i].Get(), HISTORY_FORMAT, m_historyCpuSrv[i]);
 		}
 
 		if (m_dummyEnvironmentCube != nullptr && m_dummyEnvironmentCpuSrv.ptr != 0)
@@ -481,71 +583,35 @@ namespace udsdx
 		}
 	}
 
-	UINT64 RaytracingRenderer::HashFrame(const RenderParam& param, Camera* camera, LightDirectional* light, UINT64 sceneHash) const
-	{
-		UINT64 hash = kFnvOffsetBasis;
-		HashBytes(hash, &sceneHash, sizeof(sceneHash));
-
-		if (camera != nullptr)
-		{
-			const Matrix4x4 view = camera->GetViewMatrix();
-			const Matrix4x4 proj = camera->GetProjMatrix(param.AspectRatio);
-			HashBytes(hash, &view, sizeof(view));
-			HashBytes(hash, &proj, sizeof(proj));
-		}
-		if (light != nullptr)
-		{
-			const Vector3 direction = light->GetLightDirection();
-			const Color color = light->GetColor();
-			const float intensity = light->GetIntensity();
-			const float angular = light->GetAngularDiameter();
-			HashBytes(hash, &direction, sizeof(direction));
-			HashBytes(hash, &color, sizeof(color));
-			HashBytes(hash, &intensity, sizeof(intensity));
-			HashBytes(hash, &angular, sizeof(angular));
-		}
-
-		const RenderOptions& options = *param.RenderOptions;
-		HashBytes(hash, &options.RaytracingSunAngularDiameter, sizeof(float));
-		HashBytes(hash, &options.RaytracingRayMaxDistance, sizeof(float));
-		HashBytes(hash, &options.RaytracingShadowRayOffset, sizeof(float));
-		HashBytes(hash, &options.RaytracingDebug, sizeof(options.RaytracingDebug));
-		// Fog is baked into the accumulated radiance, so editing it in the debug panel has to
-		// restart convergence rather than blend new fog over already-accumulated samples.
-		HashBytes(hash, &options.FogColor, sizeof(options.FogColor));
-		HashBytes(hash, &options.FogSunColor, sizeof(options.FogSunColor));
-		HashBytes(hash, &options.FogDensity, sizeof(float));
-		HashBytes(hash, &options.FogHeightFalloff, sizeof(float));
-		HashBytes(hash, &options.FogDistanceStart, sizeof(float));
-		HashBytes(hash, &m_width, sizeof(m_width));
-		HashBytes(hash, &m_height, sizeof(m_height));
-
-		const bool hasEnvironment = param.RenderEnvironmentMap != nullptr && param.RenderEnvironmentMap->HasValidCubeMap();
-		HashBytes(hash, &hasEnvironment, sizeof(hasEnvironment));
-
-		return hash;
-	}
-
 	void RaytracingRenderer::UploadConstants(RenderParam& param, Camera* camera, LightDirectional* light, bool hasEnvironmentMap)
 	{
 		const RenderOptions& options = *param.RenderOptions;
 
 		RaytracingConstants constants;
+		Matrix4x4 viewProj = Matrix4x4::Identity;
 		if (camera != nullptr)
 		{
 			const Matrix4x4 view = camera->GetViewMatrix();
 			const Matrix4x4 proj = camera->GetProjMatrix(param.AspectRatio);
-			const XMMATRIX viewProj = XMLoadFloat4x4(&view) * XMLoadFloat4x4(&proj);
+			const XMMATRIX viewProjMatrix = XMLoadFloat4x4(&view) * XMLoadFloat4x4(&proj);
+			XMStoreFloat4x4(&viewProj, viewProjMatrix);
+
 			// Transposed on upload, matching every other matrix in the engine: HLSL uses the
 			// row-vector convention mul(v, M).
-			XMStoreFloat4x4(&constants.ViewProjInverse, XMMatrixTranspose(XMMatrixInverse(nullptr, viewProj)));
+			XMStoreFloat4x4(&constants.ViewProjInverse, XMMatrixTranspose(XMMatrixInverse(nullptr, viewProjMatrix)));
+			constants.ViewProj = viewProj.Transpose();
+			// m_prevViewProj is this renderer's own copy of what it computed last frame, not
+			// Camera's: Camera::UpdateConstantBuffer has already overwritten its copy by the time
+			// this runs. Chaining our own value also guarantees a motionless camera yields a
+			// bit-exact zero velocity, which is what lets accumulation reach high sample counts.
+			constants.PrevViewProj = m_prevViewProj.Transpose();
 
 			const Vector3 eye = camera->GetTransform()->GetWorldPosition();
 			constants.CameraPosition = Vector4(eye.x, eye.y, eye.z, 1.0f);
 		}
 
 		constants.RenderTargetSize = Vector2(static_cast<float>(m_width), static_cast<float>(m_height));
-		constants.AccumulatedSamples = m_accumulatedSamples;
+		constants.HistoryValid = m_historyValid ? 1u : 0u;
 		constants.SamplesPerPixel = std::max(1u, options.RaytracingSamplesPerPixel);
 
 		if (light != nullptr)
@@ -568,9 +634,6 @@ namespace udsdx
 		constants.SkyMaxRadiance = 64.0f;
 		constants.DebugMode = static_cast<UINT>(options.RaytracingDebug);
 		constants.HasEnvironmentMap = hasEnvironmentMap ? 1u : 0u;
-		// Seed from the monotonic dispatch counter, not the accumulated frame count. In a scene
-		// that invalidates the accumulator every frame the latter is permanently 0, which would
-		// replay one identical random sequence forever and freeze the noise pattern in place.
 		constants.FrameSeed = static_cast<UINT>(m_frameCounter);
 
 		// Same RenderOptions values the raster path funnels through PassConstants, so both
@@ -582,15 +645,63 @@ namespace udsdx
 		constants.FogDistanceStart = options.FogDistanceStart;
 
 		m_constantBuffers[param.FrameResourceIndex]->CopyData(0, constants);
+		m_prevViewProj = viewProj;
+
+		RaytracingAccumulateConstants accumulate;
+		accumulate.RenderTargetSize = constants.RenderTargetSize;
+		accumulate.InvRenderTargetSize = Vector2(1.0f / std::max(1.0f, constants.RenderTargetSize.x),
+			1.0f / std::max(1.0f, constants.RenderTargetSize.y));
+		accumulate.SamplesPerPixel = constants.SamplesPerPixel;
+		accumulate.HistoryValid = constants.HistoryValid;
+		accumulate.DebugMode = constants.DebugMode;
+		accumulate.VarianceClipGamma = options.RaytracingVarianceClipGamma;
+		accumulate.MaxSamplesStatic = options.RaytracingMaxSamplesStatic;
+		accumulate.MaxSamplesMoving = options.RaytracingMaxSamplesMoving;
+		accumulate.NormalThreshold = options.RaytracingNormalThreshold;
+		accumulate.DepthThreshold = options.RaytracingDepthThreshold;
+
+		m_accumulateConstantBuffers[param.FrameResourceIndex]->CopyData(0, accumulate);
+	}
+
+	void RaytracingRenderer::TransitionForWrite(ID3D12GraphicsCommandList* commandList, ID3D12Resource* resource)
+	{
+		const D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(resource,
+			kRestingState, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+		commandList->ResourceBarrier(1, &barrier);
+	}
+
+	void RaytracingRenderer::TransitionForRead(ID3D12GraphicsCommandList* commandList, ID3D12Resource* resource)
+	{
+		const D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(resource,
+			D3D12_RESOURCE_STATE_UNORDERED_ACCESS, kRestingState);
+		commandList->ResourceBarrier(1, &barrier);
+	}
+
+	void RaytracingRenderer::AccumulateTemporal(RenderParam& param)
+	{
+		ZoneScopedN("Raytracing Temporal");
+		TracyD3D12Zone(*param.TracyQueueContext, param.CommandList, "Raytracing Temporal");
+
+		auto* commandList = param.CommandList;
+		const int frameResourceIndex = param.FrameResourceIndex;
+
+		TransitionForWrite(commandList, m_historyBuffers[m_historyWriteIndex].Get());
+
+		commandList->SetComputeRootSignature(m_accumulateRootSignature.Get());
+		commandList->SetPipelineState(m_accumulatePipelineState.Get());
+		commandList->SetComputeRootConstantBufferView(0,
+			m_accumulateConstantBuffers[frameResourceIndex]->Resource()->GetGPUVirtualAddress());
+		commandList->SetComputeRootDescriptorTable(1, m_accumulateSrvTable[m_historyWriteIndex]);
+		commandList->SetComputeRootDescriptorTable(2, m_historyGpuUav[m_historyWriteIndex]);
+
+		commandList->Dispatch((m_width + 7u) / 8u, (m_height + 7u) / 8u, 1u);
+
+		TransitionForRead(commandList, m_historyBuffers[m_historyWriteIndex].Get());
 	}
 
 	void RaytracingRenderer::ResolveToTarget(RenderParam& param)
 	{
 		auto* commandList = param.CommandList;
-
-		const D3D12_RESOURCE_BARRIER toRead = CD3DX12_RESOURCE_BARRIER::Transition(m_accumulationBuffer.Get(),
-			D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		commandList->ResourceBarrier(1, &toRead);
 
 		auto targetRtv = param.Renderer->GetRenderTargetRTVView();
 		commandList->OMSetRenderTargets(1, &targetRtv, true, nullptr);
@@ -604,15 +715,11 @@ namespace udsdx
 		commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 		const UINT debugMode = static_cast<UINT>(param.RenderOptions->RaytracingDebug);
-		const float heatmapMax = static_cast<float>(std::max(1u, m_accumulatedSamples));
+		const float heatmapMax = std::max(1.0f, param.RenderOptions->RaytracingMaxSamplesStatic);
 		commandList->SetGraphicsRoot32BitConstants(0, 1, &debugMode, 0);
 		commandList->SetGraphicsRoot32BitConstants(0, 1, &heatmapMax, 1);
-		commandList->SetGraphicsRootDescriptorTable(1, m_accumulationGpuSrv);
+		commandList->SetGraphicsRootDescriptorTable(1, m_historyGpuSrv[m_historyWriteIndex]);
 		commandList->DrawInstanced(6, 1, 0, 0);
-
-		const D3D12_RESOURCE_BARRIER toWrite = CD3DX12_RESOURCE_BARRIER::Transition(m_accumulationBuffer.Get(),
-			D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-		commandList->ResourceBarrier(1, &toWrite);
 	}
 
 	void RaytracingRenderer::Pass(RenderParam& param, Scene* scene, Camera* camera, LightDirectional* light)
@@ -620,8 +727,12 @@ namespace udsdx
 		ZoneScopedN("Raytracing Pass");
 		TracyD3D12Zone(*param.TracyQueueContext, param.CommandList, "Raytracing Pass");
 
+		// Every early-out below has to invalidate the history. Camera::UpdateConstantBuffer has
+		// already advanced its own previous matrix by the time this runs, so a skipped frame
+		// leaves the stored history one frame further back than gPrevViewProj describes.
 		if (!IsAvailable() || m_width == 0 || m_height == 0)
 		{
+			m_historyValid = false;
 			return;
 		}
 
@@ -637,6 +748,7 @@ namespace udsdx
 		// no transitions are needed for them.
 		if (!m_accelerationStructure->Build(dxrCommandList, scene->GetRaytracingObjects(), frameResourceIndex))
 		{
+			m_historyValid = false;
 			return;
 		}
 
@@ -646,60 +758,73 @@ namespace udsdx
 		EnvironmentMap* environmentMap = param.RenderEnvironmentMap;
 		const bool hasEnvironmentMap = environmentMap != nullptr && environmentMap->HasValidCubeMap();
 
-		// Split so the panel can report *why* accumulation restarted. A scene that animates every
-		// frame legitimately invalidates a progressive reference render, and without this readout
-		// that is indistinguishable from the accumulator being broken.
-		const UINT64 sceneHash = m_accelerationStructure->GetContentHash();
-		const UINT64 viewHash = HashFrame(param, camera, light, 0);
-		const UINT64 hash = HashFrame(param, camera, light, sceneHash);
-		if (hash != m_lastHash || m_resetRequested)
+		// Each camera would otherwise swap the ping-pong and read the other camera's history.
+		// Degrading to "no accumulation with two cameras" beats cross-contamination.
+		if (camera != m_lastCamera)
 		{
-			m_lastResetReason = m_resetRequested ? ResetReason::Requested
-				: (sceneHash != m_lastSceneHash
-					? (viewHash != m_lastViewHash ? ResetReason::SceneAndView : ResetReason::SceneMotion)
-					: ResetReason::ViewOrLighting);
-			m_lastHash = hash;
-			m_resetRequested = false;
-			m_accumulatedSamples = 0;
-			m_accumulatedFrames = 0;
-		}
-		m_lastSceneHash = sceneHash;
-		m_lastViewHash = viewHash;
-
-		const UINT maxAccumulation = param.RenderOptions->RaytracingMaxAccumulation;
-		const bool converged = maxAccumulation != 0u && m_accumulatedFrames >= maxAccumulation;
-
-		if (!converged)
-		{
-			UploadConstants(param, camera, light, hasEnvironmentMap);
-
-			// Order this frame's writes against the previous frame's DispatchRays: D3D12 does not
-			// insert UAV hazards across ExecuteCommandLists boundaries.
-			const D3D12_RESOURCE_BARRIER beforeDispatch = CD3DX12_RESOURCE_BARRIER::UAV(m_accumulationBuffer.Get());
-			dxrCommandList->ResourceBarrier(1, &beforeDispatch);
-
-			const CD3DX12_GPU_DESCRIPTOR_HANDLE heapStart(param.SRVDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
-
-			dxrCommandList->SetComputeRootSignature(m_globalRootSignature.Get());
-			dxrCommandList->SetComputeRootConstantBufferView(0, m_constantBuffers[frameResourceIndex]->Resource()->GetGPUVirtualAddress());
-			dxrCommandList->SetComputeRootShaderResourceView(1, m_accelerationStructure->GetTlasAddress(frameResourceIndex));
-			dxrCommandList->SetComputeRootShaderResourceView(2, m_accelerationStructure->GetGeometryInfoAddress(frameResourceIndex));
-			dxrCommandList->SetComputeRootDescriptorTable(3, m_accumulationGpuUav);
-			dxrCommandList->SetComputeRootDescriptorTable(4, heapStart);
-			dxrCommandList->SetComputeRootDescriptorTable(5, heapStart);
-			dxrCommandList->SetComputeRootDescriptorTable(6, hasEnvironmentMap
-				? environmentMap->GetCubeMapSrvGpu() : m_dummyEnvironmentGpuSrv);
-
-			dxrCommandList->SetPipelineState1(m_stateObject.Get());
-			dxrCommandList->DispatchRays(&m_dispatchDesc);
-
-			const D3D12_RESOURCE_BARRIER afterDispatch = CD3DX12_RESOURCE_BARRIER::UAV(m_accumulationBuffer.Get());
-			dxrCommandList->ResourceBarrier(1, &afterDispatch);
-
-			m_accumulatedSamples += std::max(1u, param.RenderOptions->RaytracingSamplesPerPixel);
-			++m_accumulatedFrames;
+			m_historyValid = false;
+			m_lastCamera = camera;
 		}
 
+		// Anything baked into the accumulated radiance invalidates it when edited, because the
+		// history then holds a mean of a different quantity. Deliberately excludes the camera and
+		// the scene: those are exactly what reprojection now handles instead of resetting.
+		RadianceSettings settings = {};
+		settings.FogColor = param.RenderOptions->FogColor;
+		settings.FogSunColor = param.RenderOptions->FogSunColor;
+		settings.FogDensity = param.RenderOptions->FogDensity;
+		settings.FogHeightFalloff = param.RenderOptions->FogHeightFalloff;
+		settings.FogDistanceStart = param.RenderOptions->FogDistanceStart;
+		settings.RayMaxDistance = param.RenderOptions->RaytracingRayMaxDistance;
+		settings.ShadowRayOffset = param.RenderOptions->RaytracingShadowRayOffset;
+		settings.SamplesPerPixel = std::max(1u, param.RenderOptions->RaytracingSamplesPerPixel);
+		settings.DebugMode = static_cast<UINT>(param.RenderOptions->RaytracingDebug);
+		settings.HasEnvironmentMap = hasEnvironmentMap ? 1u : 0u;
+		if (light != nullptr)
+		{
+			settings.SunDirection = light->GetLightDirection();
+			settings.SunColor = light->GetColor();
+			settings.SunIntensity = light->GetIntensity();
+			settings.SunAngularDiameter = light->GetAngularDiameter();
+		}
+		if (std::memcmp(&settings, &m_lastSettings, sizeof(settings)) != 0)
+		{
+			m_historyValid = false;
+			m_lastSettings = settings;
+		}
+
+		UploadConstants(param, camera, light, hasEnvironmentMap);
+
+		TransitionForWrite(dxrCommandList, m_radianceBuffer.Get());
+		TransitionForWrite(dxrCommandList, m_motionBuffer.Get());
+		TransitionForWrite(dxrCommandList, m_guideBuffers[m_historyWriteIndex].Get());
+
+		const CD3DX12_GPU_DESCRIPTOR_HANDLE heapStart(param.SRVDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+
+		dxrCommandList->SetComputeRootSignature(m_globalRootSignature.Get());
+		dxrCommandList->SetComputeRootConstantBufferView(0, m_constantBuffers[frameResourceIndex]->Resource()->GetGPUVirtualAddress());
+		dxrCommandList->SetComputeRootShaderResourceView(1, m_accelerationStructure->GetTlasAddress(frameResourceIndex));
+		dxrCommandList->SetComputeRootShaderResourceView(2, m_accelerationStructure->GetGeometryInfoAddress(frameResourceIndex));
+		dxrCommandList->SetComputeRootShaderResourceView(3, m_accelerationStructure->GetInstanceInfoAddress(frameResourceIndex));
+		dxrCommandList->SetComputeRootDescriptorTable(4, m_raygenUavTable[m_historyWriteIndex]);
+		dxrCommandList->SetComputeRootDescriptorTable(5, heapStart);
+		dxrCommandList->SetComputeRootDescriptorTable(6, heapStart);
+		dxrCommandList->SetComputeRootDescriptorTable(7, hasEnvironmentMap
+			? environmentMap->GetCubeMapSrvGpu() : m_dummyEnvironmentGpuSrv);
+
+		dxrCommandList->SetPipelineState1(m_stateObject.Get());
+		dxrCommandList->DispatchRays(&m_dispatchDesc);
+
+		// Real state transitions, not UAV barriers: the accumulation pass reads all three as SRVs.
+		TransitionForRead(dxrCommandList, m_radianceBuffer.Get());
+		TransitionForRead(dxrCommandList, m_motionBuffer.Get());
+		TransitionForRead(dxrCommandList, m_guideBuffers[m_historyWriteIndex].Get());
+
+		AccumulateTemporal(param);
 		ResolveToTarget(param);
+
+		// Guide and history share the index: this frame's write becomes next frame's read.
+		std::swap(m_historyReadIndex, m_historyWriteIndex);
+		m_historyValid = true;
 	}
 }

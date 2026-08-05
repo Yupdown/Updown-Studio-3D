@@ -10,12 +10,7 @@
 #define GEOM_FLAG_ALPHA_TEST    0x1u
 #define INVALID_SRV_INDEX       0xFFFFFFFFu
 
-#define RT_DEBUG_NONE           0u
-#define RT_DEBUG_ALBEDO         1u
-#define RT_DEBUG_NORMAL         2u
-#define RT_DEBUG_DIRECT         3u
-#define RT_DEBUG_INDIRECT       4u
-#define RT_DEBUG_HEATMAP        5u
+#include "inc_raytracing_common.hlsl"
 
 #define RT_PI                   3.14159265359f
 
@@ -39,9 +34,11 @@ struct GeometryInfo
 cbuffer cbRaytracing : register(b0, space0)
 {
     float4x4 gViewProjInverse;   // transposed on upload; row-vector convention, use mul(v, M)
+    float4x4 gViewProj;          // unjittered; paired with gPrevViewProj for motion vectors
+    float4x4 gPrevViewProj;
     float4   gEyePosW;
     float2   gRenderTargetSize;
-    uint     gAccumulatedSamples;
+    uint     gHistoryValid;
     uint     gSamplesPerPixel;
 
     float3   gDirLight;          // direction the light travels, matching inc_common.hlsl
@@ -66,9 +63,21 @@ cbuffer cbRaytracing : register(b0, space0)
     float    gFogPad;
 };
 
+// Per-instance previous object-to-world, indexed by InstanceIndex(). Column-vector 3x4, matching
+// D3D12_RAYTRACING_INSTANCE_DESC::Transform.
+struct InstanceInfo
+{
+    float4 PrevTransform[3];
+};
+
 RaytracingAccelerationStructure gScene          : register(t0, space0);
 StructuredBuffer<GeometryInfo>  gGeometryInfo   : register(t1, space0);
-RWTexture2D<float4>             gAccumulation   : register(u0, space0);
+StructuredBuffer<InstanceInfo>  gInstanceInfo   : register(t2, space0);
+
+// Ray generation outputs. The temporal accumulation pass consumes all three.
+RWTexture2D<float4>             gRadianceOut    : register(u0, space0);  // rgb radiance, a = hit
+RWTexture2D<float4>             gMotionOut      : register(u1, space0);  // xy = currentUV - previousUV, z = previous view Z
+RWTexture2D<float4>             gGuideOut       : register(u2, space0);  // octNormal.xy, view Z, instanceIndex
 
 // Two separate unbounded tables over the same shader-visible SRV heap, so a heap index is the
 // bindless lookup index in both cases -- the same convention Texture::GetSrvIndex already uses.
@@ -94,13 +103,15 @@ SamplerState gSamplerLinearClamp : register(s2);
 // parameter type has to match every caller.
 struct SurfacePayload
 {
-    float3 Albedo;    // 12
-    float  HitT;      //  4   negative means miss
-    float3 Normal;    // 12   world space, faces the incoming ray
-    uint   Flags;     //  4
-    float3 Emission;  // 12   sky radiance on miss
-    uint   Rng;       //  4
-};                    // 48 bytes total
+    float3 Albedo;       // 12
+    float  HitT;         //  4   negative means miss
+    float3 Normal;       // 12   world space, faces the incoming ray
+    uint   Flags;        //  4
+    float3 Emission;     // 12   sky radiance on miss
+    uint   Rng;          //  4
+    float3 PrevWorldPos; // 12   hit point carried into the previous frame's world space
+    uint   InstanceIdx;  //  4   InstanceIndex(), the temporal validation key
+};                       // 64 bytes total
 
 //------------------------------------------------------------------------------------------------
 // Random numbers
@@ -216,6 +227,58 @@ float4 SampleAlbedo(GeometryInfo info, float2 uv)
         return gTextures[info.AlbedoTexIndex].SampleLevel(gSamplerPointWrap, uv, 0.0f);
     }
     return gTextures[info.AlbedoTexIndex].SampleLevel(gSamplerLinearWrap, uv, 0.0f);
+}
+
+//------------------------------------------------------------------------------------------------
+// Motion vectors and the temporal guide
+//------------------------------------------------------------------------------------------------
+
+// Mirrors ClipToUV in ps_skybox_velocity.hlsl. No jitter term: the raytracer suppresses the
+// camera's TAA jitter and offsets sub-pixel positions inside the ray generation shader instead,
+// so gViewProj / gPrevViewProj are already unjittered.
+float2 ClipToUV(float4 clipPos)
+{
+    float invW = rcp(max(abs(clipPos.w), 1e-5f));
+    float2 ndc = clipPos.xy * invW;
+    return ndc * float2(0.5f, -0.5f) + 0.5f;
+}
+
+// Engine convention: velocity is currentUV - previousUV, and consumers read history at
+// uv - velocity. Matches PackMotion in inc_common.hlsl.
+//
+// prevViewZ comes out for free: this projection has row 2 col 3 == 1 (camera.cpp's reverse-Z
+// infinite-far matrix), so clip.w IS the view-space Z. The accumulation pass needs it to compare
+// against the previous frame's stored depth -- comparing raw hit distances instead would falsely
+// reject history whenever the camera translates, since those are measured from different origins.
+float2 MotionFromWorld(float3 currentWorld, float3 prevWorld, out float prevViewZ)
+{
+    float4 prevClip = mul(float4(prevWorld, 1.0f), gPrevViewProj);
+    prevViewZ = prevClip.w;
+    return ClipToUV(mul(float4(currentWorld, 1.0f), gViewProj)) - ClipToUV(prevClip);
+}
+
+float ViewZFromWorld(float3 worldPos)
+{
+    return mul(float4(worldPos, 1.0f), gViewProj).w;
+}
+
+// Sky: project the ray direction with w = 0 so only camera rotation registers, never translation.
+// ps_skybox_velocity.hlsl does exactly this for the rasterized skybox.
+float2 MotionFromDirection(float3 worldDirection)
+{
+    float2 currentUv = ClipToUV(mul(float4(worldDirection, 0.0f), gViewProj));
+    float2 prevUv = ClipToUV(mul(float4(worldDirection, 0.0f), gPrevViewProj));
+    return currentUv - prevUv;
+}
+
+// Sentinel depth for sky pixels, far beyond any real hit.
+#define RT_SKY_VIEW_Z 1e30f
+
+// Applies a column-vector 3x4 object-to-world to an object-space point.
+float3 TransformPoint3x4(float4 m[3], float3 p)
+{
+    float4 h = float4(p, 1.0f);
+    return float3(dot(m[0], h), dot(m[1], h), dot(m[2], h));
 }
 
 //------------------------------------------------------------------------------------------------

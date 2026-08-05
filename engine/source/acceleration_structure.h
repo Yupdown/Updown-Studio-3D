@@ -10,9 +10,9 @@ namespace udsdx
 	// Per-geometry record consumed by the hit shaders. Mirrors GeometryInfo in inc_raytracing.hlsl,
 	// so the field order and size must stay in lockstep.
 	//
-	// A TLAS instance stores its base offset into this array in InstanceID, and the hit shader
-	// indexes it as gGeometryInfo[InstanceID() + GeometryIndex()]. That single flat lookup replaces
-	// per-material shader records, so the shader table stays at one hit group.
+	// Indexed by the hit group's local root constant, which carries this record's flat index --
+	// GeometryIndex() is DXR 1.1 only and the library is lib_6_3. One shader record per geometry
+	// replaces per-material hit groups, so the state object keeps a single hit group.
 	struct RaytracingGeometryInfo
 	{
 		UINT VertexBufferSrvIndex = InvalidSrvIndex;
@@ -30,6 +30,17 @@ namespace udsdx
 	static_assert(sizeof(RaytracingGeometryInfo) == 48, "RaytracingGeometryInfo must match the HLSL StructuredBuffer stride.");
 
 	static constexpr UINT RaytracingGeometryFlagAlphaTest = 0x1u;
+
+	// Per-instance record indexed by InstanceIndex() in the hit shaders. Holds the previous
+	// frame's object-to-world so a hit point can be re-projected into the previous frame,
+	// which is what gives temporal accumulation its motion vectors.
+	//
+	// Same column-vector 3x4 convention as D3D12_RAYTRACING_INSTANCE_DESC::Transform.
+	struct RaytracingInstanceInfo
+	{
+		float PrevTransform[12] = {};
+	};
+	static_assert(sizeof(RaytracingInstanceInfo) == 48, "RaytracingInstanceInfo must match the HLSL StructuredBuffer stride.");
 
 	// Owns the bottom- and top-level acceleration structures for the scene.
 	//
@@ -52,10 +63,7 @@ namespace udsdx
 
 		D3D12_GPU_VIRTUAL_ADDRESS GetTlasAddress(int frameResourceIndex) const;
 		D3D12_GPU_VIRTUAL_ADDRESS GetGeometryInfoAddress(int frameResourceIndex) const;
-
-		// FNV-1a hash over everything that changes the traced image. The renderer folds this into
-		// its own hash to decide whether the progressive accumulator must restart.
-		UINT64 GetContentHash() const { return m_contentHash; }
+		D3D12_GPU_VIRTUAL_ADDRESS GetInstanceInfoAddress(int frameResourceIndex) const;
 
 		UINT GetInstanceCount() const { return m_instanceCount; }
 		UINT GetGeometryCount() const { return m_geometryCount; }
@@ -120,14 +128,18 @@ namespace udsdx
 		std::array<UINT, FrameResourceCount> m_geometryCapacity{};
 		std::array<RaytracingGeometryInfo*, FrameResourceCount> m_geometryMapped{};
 
+		std::array<ComPtr<ID3D12Resource>, FrameResourceCount> m_instanceInfoUpload{};
+		std::array<UINT, FrameResourceCount> m_instanceInfoCapacity{};
+		std::array<RaytracingInstanceInfo*, FrameResourceCount> m_instanceInfoMapped{};
+
 		std::vector<D3D12_RAYTRACING_INSTANCE_DESC> m_instanceScratch;
 		std::vector<RaytracingGeometryInfo> m_geometryScratch;
+		std::vector<RaytracingInstanceInfo> m_instanceInfoScratch;
 
 		// Buffers superseded by a growth, paired with the frame they were retired on.
 		std::vector<std::pair<ComPtr<ID3D12Resource>, UINT64>> m_retiredResources;
 		static constexpr UINT64 RetireFrames = FrameResourceCount + 1;
 
-		UINT64 m_contentHash = 0;
 		UINT64 m_frameCounter = 0;
 		UINT m_instanceCount = 0;
 		UINT m_geometryCount = 0;

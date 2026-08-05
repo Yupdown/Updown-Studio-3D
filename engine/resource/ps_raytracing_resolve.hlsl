@@ -1,6 +1,7 @@
 #include "vs_drawscreen.hlsl"
+#include "inc_raytracing_common.hlsl"
 
-// Resolves the progressive accumulation buffer into the intermediate HDR target.
+// Resolves the temporal history buffer into the intermediate HDR target.
 //
 // A pixel shader rather than a compute shader because DeferredRenderer's m_targetBuffer is created
 // with ALLOW_RENDER_TARGET only and has no UAV.
@@ -12,11 +13,11 @@ cbuffer cbResolve : register(b0)
 	float2 gResolvePad;
 };
 
-Texture2D gAccumulation : register(t0);
+// rgb is the running mean and a is the effective sample count, both produced by the temporal
+// accumulation pass. Nothing left to divide here.
+Texture2D gHistory : register(t0);
 
 SamplerState gsamPointClamp : register(s0);
-
-#define RT_DEBUG_HEATMAP 5u
 
 // Black -> blue -> green -> red -> white ramp.
 float3 Heatmap(float t)
@@ -31,14 +32,14 @@ float3 Heatmap(float t)
 
 float4 PS(VertexOut pin) : SV_Target
 {
-	float4 accumulated = gAccumulation.SampleLevel(gsamPointClamp, pin.TexC, 0.0f);
-	// Alpha holds the running sample count written by the ray generation shader.
-	float sampleCount = max(accumulated.w, 1.0f);
+	float4 history = gHistory.SampleLevel(gsamPointClamp, pin.TexC, 0.0f);
 
 	if (gDebugMode == RT_DEBUG_HEATMAP)
 	{
-		return float4(Heatmap(sampleCount / max(gHeatmapMax, 1.0f)), 1.0f);
+		// Now a genuinely per-pixel count: disocclusions and rejected history show up dark, which
+		// is exactly where reprojection is failing.
+		return float4(Heatmap(history.a / max(gHeatmapMax, 1.0f)), 1.0f);
 	}
 
-	return float4(accumulated.rgb / sampleCount, 1.0f);
+	return float4(history.rgb, 1.0f);
 }

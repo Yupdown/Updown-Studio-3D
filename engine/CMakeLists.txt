@@ -230,6 +230,7 @@ endfunction()
 set(ENGINE_SHADER_HEADERS)
 add_engine_shader(resource/cs_motion_blur_neighbormax.hlsl CS cs_6_0)
 add_engine_shader(resource/cs_motion_blur_tilemax.hlsl CS cs_6_0)
+add_engine_shader(resource/cs_raytracing_accumulate.hlsl CS cs_6_0)
 add_engine_shader(resource/cs_screenspace_ao_blur.hlsl CS cs_6_0)
 add_engine_shader(resource/cs_env_equirect_to_cubemap.hlsl CS cs_6_0)
 add_engine_shader(resource/cs_env_irradiance_convolution.hlsl CS cs_6_0)
@@ -248,7 +249,9 @@ add_engine_shader(resource/ps_raytracing_resolve.hlsl PS ps_6_0)
 add_engine_shader(resource/vs_drawscreen.hlsl VS vs_6_0)
 add_engine_shader(resource/vs_skybox.hlsl VS vs_6_0)
 add_engine_shader_library(resource/lib_raytracing.hlsl lib_6_3
-    DEPENDS_ON "${CMAKE_CURRENT_SOURCE_DIR}/resource/inc_raytracing.hlsl")
+    DEPENDS_ON
+        "${CMAKE_CURRENT_SOURCE_DIR}/resource/inc_raytracing.hlsl"
+        "${CMAKE_CURRENT_SOURCE_DIR}/resource/inc_raytracing_common.hlsl")
 
 set(EMBEDDED_COMMON_HLSL_INPUT "${CMAKE_CURRENT_SOURCE_DIR}/resource/inc_common.hlsl")
 set(EMBEDDED_COMMON_HLSL_HEADER "${ENGINE_EMBEDDED_SHADER_DIR}/inc_common_hlsl.h")

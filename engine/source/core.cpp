@@ -1101,19 +1101,12 @@ namespace udsdx
 
 			if (raytracing != nullptr)
 			{
-				ImGui::Text("Accumulated: %u samples over %u frames",
-					raytracing->GetAccumulatedSamples(), raytracing->GetAccumulatedFrames());
-				ImGui::Text("Last restart: %s",
-					RaytracingRenderer::ToString(raytracing->GetLastResetReason()));
-				if (raytracing->GetAccumulatedFrames() <= 1)
-				{
-					ImGui::TextDisabled("Not converging: something changes every frame.");
-				}
 				ImGui::Text("Instances: %u   Geometries: %u   BLAS: %u",
 					raytracing->GetInstanceCount(), raytracing->GetGeometryCount(), raytracing->GetBlasCount());
-				if (ImGui::Button("Reset Accumulation"))
+				ImGui::TextDisabled("Per-pixel sample counts: Debug Output -> Sample Heatmap");
+				if (ImGui::Button("Reset History"))
 				{
-					raytracing->RequestAccumulationReset();
+					raytracing->InvalidateHistory();
 				}
 
 				int samplesPerPixel = static_cast<int>(options.RaytracingSamplesPerPixel);
@@ -1122,16 +1115,18 @@ namespace udsdx
 					options.RaytracingSamplesPerPixel = static_cast<unsigned int>(samplesPerPixel);
 				}
 
-				int maxAccumulation = static_cast<int>(options.RaytracingMaxAccumulation);
-				if (ImGui::SliderInt("Max Accumulation Frames (0 = unlimited)", &maxAccumulation, 0, 16384))
-				{
-					options.RaytracingMaxAccumulation = static_cast<unsigned int>(std::max(0, maxAccumulation));
-				}
+				ImGui::SeparatorText("Temporal Accumulation");
+				ImGui::SliderFloat("Max Samples (static)", &options.RaytracingMaxSamplesStatic, 1.0f, 4096.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+				ImGui::SliderFloat("Max Samples (in motion)", &options.RaytracingMaxSamplesMoving, 1.0f, 256.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+				ImGui::SliderFloat("Variance Clip Gamma", &options.RaytracingVarianceClipGamma, 0.5f, 16.0f, "%.2f");
+				ImGui::SliderFloat("Normal Tolerance (cos)", &options.RaytracingNormalThreshold, 0.5f, 0.999f, "%.3f");
+				ImGui::SliderFloat("Depth Tolerance", &options.RaytracingDepthThreshold, 0.001f, 0.5f, "%.4f", ImGuiSliderFlags_Logarithmic);
 
+				ImGui::SeparatorText("Rays");
 				ImGui::SliderFloat("Ray Max Distance", &options.RaytracingRayMaxDistance, 10.0f, 20000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
 				ImGui::SliderFloat("Shadow Ray Offset", &options.RaytracingShadowRayOffset, 1e-4f, 0.1f, "%.5f", ImGuiSliderFlags_Logarithmic);
 
-				static const char* debugModeNames[] = { "None", "Albedo", "Normal", "Direct Only", "Indirect Only", "Sample Heatmap" };
+				static const char* debugModeNames[] = { "None", "Albedo", "Normal", "Direct Only", "Indirect Only", "Motion Vector", "Sample Heatmap" };
 				int debugMode = static_cast<int>(options.RaytracingDebug);
 				if (ImGui::Combo("Debug Output", &debugMode, debugModeNames, IM_ARRAYSIZE(debugModeNames)))
 				{

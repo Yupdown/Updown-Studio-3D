@@ -74,6 +74,13 @@ void ClosestHitSurface(inout SurfacePayload payload, in BuiltInTriangleIntersect
     payload.HitT = RayTCurrent();
     payload.Emission = 0.0f;
     payload.Flags = info.Flags;
+
+    // Carry the hit point into the previous frame. ObjectRayOrigin/Direction are already in
+    // object space and RayTCurrent() is the same parameter in both spaces, so this is the
+    // object-space hit point -- do not multiply by WorldToObject again.
+    float3 objectHit = ObjectRayOrigin() + ObjectRayDirection() * RayTCurrent();
+    payload.PrevWorldPos = TransformPoint3x4(gInstanceInfo[InstanceIndex()].PrevTransform, objectHit);
+    payload.InstanceIdx = InstanceIndex();
 }
 
 [shader("anyhit")]
@@ -118,6 +125,8 @@ SurfacePayload TraceSurface(RayDesc ray)
     payload.Flags = 0u;
     payload.Emission = 0.0f;
     payload.Rng = 0u;
+    payload.PrevWorldPos = 0.0f;
+    payload.InstanceIdx = 0xFFFFFFFFu;
 
     TraceRay(gScene, RAY_FLAG_NONE, 0xFFu,
              0,  // RayContributionToHitGroupIndex: one hit group shader serves both ray types
@@ -151,6 +160,8 @@ float3 DirectSun(float3 position, float3 normal, float3 albedo, inout uint rng)
     payload.Flags = 0u;
     payload.Emission = 0.0f;
     payload.Rng = 0u;
+    payload.PrevWorldPos = 0.0f;
+    payload.InstanceIdx = 0xFFFFFFFFu;
 
     // SKIP_CLOSEST_HIT_SHADER still runs any-hit, which is what makes alpha-tested cutouts cast
     // correctly shaped shadows.
@@ -169,9 +180,13 @@ float3 DirectSun(float3 position, float3 normal, float3 albedo, inout uint rng)
     return albedo * gSunColor.rgb * gSunIntensity * ndotl;
 }
 
-float3 TracePath(RayDesc ray, inout uint rng)
+// primaryOut reports the first intersection so the caller can build a motion vector and the
+// temporal guide from it without re-tracing.
+float3 TracePath(RayDesc ray, inout uint rng, out SurfacePayload primaryOut)
 {
     SurfacePayload primary = TraceSurface(ray);
+    primaryOut = primary;
+
     if (primary.HitT < 0.0f)
     {
         // Primary sky hits stay unclamped so open sky matches the rasterized skybox exactly.
@@ -247,6 +262,16 @@ void RayGenMain()
     uint rng = InitRng(pixel, gFrameSeed);
 
     float3 sum = 0.0f;
+
+    // The motion vector and guide come from the first sample only. They are per-pixel quantities,
+    // and the sub-pixel jitter between samples is far below the precision reprojection needs.
+    SurfacePayload primary = (SurfacePayload)0;
+    RayDesc primaryRay;
+    primaryRay.Origin = gEyePosW.xyz;
+    primaryRay.Direction = float3(0.0f, 0.0f, 1.0f);
+    primaryRay.TMin = 0.0f;
+    primaryRay.TMax = gRayMaxDistance;
+
     for (uint sample = 0u; sample < gSamplesPerPixel; ++sample)
     {
         float2 uv = (float2(pixel) + NextFloat2(rng)) / float2(dimensions);
@@ -263,18 +288,35 @@ void RayGenMain()
         ray.TMin = 1e-3f;
         ray.TMax = gRayMaxDistance;
 
-        sum += TracePath(ray, rng);
+        SurfacePayload samplePrimary;
+        sum += TracePath(ray, rng, samplePrimary);
+
+        if (sample == 0u)
+        {
+            primary = samplePrimary;
+            primaryRay = ray;
+        }
     }
 
-    // Alpha carries the running sample count, so the resolve is rgb / max(a, 1) and the heatmap is
-    // a free read. A debug mode bypasses accumulation and shows the current frame only.
-    float sampleCount = float(gSamplesPerPixel);
-    if (gDebugMode != RT_DEBUG_NONE && gDebugMode != RT_DEBUG_HEATMAP)
+    // This shader no longer accumulates: it emits one frame's estimate plus everything the
+    // temporal pass needs to reproject it. Accumulation happens there, where a 3x3 neighbourhood
+    // is reachable (ray generation shaders have no groupshared memory).
+    gRadianceOut[pixel] = float4(sum / float(max(gSamplesPerPixel, 1u)), primary.HitT < 0.0f ? 0.0f : 1.0f);
+
+    if (primary.HitT < 0.0f)
     {
-        gAccumulation[pixel] = float4(sum, sampleCount);
-        return;
+        // Sky: only camera rotation moves it, and there is no surface to validate against.
+        gMotionOut[pixel] = float4(MotionFromDirection(primaryRay.Direction), RT_SKY_VIEW_Z, 0.0f);
+        gGuideOut[pixel] = float4(0.0f, 0.0f, RT_SKY_VIEW_Z, asfloat(RT_INVALID_INSTANCE));
     }
+    else
+    {
+        float3 currentWorld = primaryRay.Origin + primaryRay.Direction * primary.HitT;
+        float prevViewZ;
+        float2 motion = MotionFromWorld(currentWorld, primary.PrevWorldPos, prevViewZ);
 
-    float4 previous = (gAccumulatedSamples == 0u) ? float4(0.0f, 0.0f, 0.0f, 0.0f) : gAccumulation[pixel];
-    gAccumulation[pixel] = previous + float4(sum, sampleCount);
+        gMotionOut[pixel] = float4(motion, prevViewZ, 0.0f);
+        gGuideOut[pixel] = float4(EncodeOctahedral(primary.Normal), ViewZFromWorld(currentWorld),
+                                  asfloat(primary.InstanceIdx));
+    }
 }

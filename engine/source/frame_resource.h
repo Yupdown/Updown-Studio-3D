@@ -62,9 +62,13 @@ namespace udsdx
 	struct RaytracingConstants
 	{
 		Matrix4x4 ViewProjInverse = Matrix4x4::Identity;
+		// Unjittered current and previous view-projection. The ray generation shader projects each
+		// primary hit through both to produce a per-pixel motion vector for temporal reprojection.
+		Matrix4x4 ViewProj = Matrix4x4::Identity;
+		Matrix4x4 PrevViewProj = Matrix4x4::Identity;
 		Vector4 CameraPosition = Vector4::Zero;
 		Vector2 RenderTargetSize = Vector2::Zero;
-		UINT AccumulatedSamples = 0;
+		UINT HistoryValid = 0;
 		UINT SamplesPerPixel = 1;
 
 		Vector3 SunDirection = Vector3::Zero;
@@ -89,6 +93,27 @@ namespace udsdx
 		float FogHeightFalloff = 0.0f;
 		float FogDistanceStart = 0.0f;
 		float FogPad = 0.0f;
+	};
+
+	// Mirrors cbAccumulate in cs_raytracing_accumulate.hlsl. Drives the temporal reprojection pass
+	// that turns this frame's 1spp radiance plus the reprojected history into the running estimate.
+	struct RaytracingAccumulateConstants
+	{
+		Vector2 RenderTargetSize = Vector2::Zero;
+		Vector2 InvRenderTargetSize = Vector2::Zero;
+
+		UINT SamplesPerPixel = 1;
+		UINT HistoryValid = 0;
+		UINT DebugMode = 0;
+		float VarianceClipGamma = 2.0f;
+
+		// Effective sample-count ceiling. A pixel that reprojects exactly may keep accumulating up
+		// to the static cap; one that is moving is held at the lower cap so it behaves as an
+		// exponential moving average and stale reprojection error cannot pile up.
+		float MaxSamplesStatic = 1024.0f;
+		float MaxSamplesMoving = 32.0f;
+		float NormalThreshold = 0.9f;   // minimum dot(normal, prevNormal) to accept history
+		float DepthThreshold = 0.05f;   // maximum relative hit-distance difference
 	};
 
 	class FrameResource

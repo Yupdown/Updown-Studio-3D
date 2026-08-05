@@ -12,19 +12,6 @@ namespace udsdx
 {
 	namespace
 	{
-		constexpr UINT64 kFnvOffsetBasis = 14695981039346656037ull;
-		constexpr UINT64 kFnvPrime = 1099511628211ull;
-
-		void HashBytes(UINT64& hash, const void* data, size_t size)
-		{
-			const auto* bytes = static_cast<const unsigned char*>(data);
-			for (size_t i = 0; i < size; ++i)
-			{
-				hash ^= static_cast<UINT64>(bytes[i]);
-				hash *= kFnvPrime;
-			}
-		}
-
 		ComPtr<ID3D12Resource> CreateBuffer(ID3D12Device5* device, UINT64 size, D3D12_RESOURCE_FLAGS flags,
 			D3D12_RESOURCE_STATES initialState, D3D12_HEAP_TYPE heapType)
 		{
@@ -47,8 +34,10 @@ namespace udsdx
 	{
 		m_instanceCapacity.fill(0u);
 		m_geometryCapacity.fill(0u);
+		m_instanceInfoCapacity.fill(0u);
 		m_instanceMapped.fill(nullptr);
 		m_geometryMapped.fill(nullptr);
+		m_instanceInfoMapped.fill(nullptr);
 		m_tlasSize.fill(0ull);
 		m_tlasScratchSize.fill(0ull);
 	}
@@ -64,6 +53,10 @@ namespace udsdx
 			if (m_geometryMapped[i] != nullptr)
 			{
 				m_geometryUpload[i]->Unmap(0, nullptr);
+			}
+			if (m_instanceInfoMapped[i] != nullptr)
+			{
+				m_instanceInfoUpload[i]->Unmap(0, nullptr);
 			}
 		}
 	}
@@ -275,6 +268,21 @@ namespace udsdx
 				D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_HEAP_TYPE_UPLOAD);
 			ThrowIfFailed(m_geometryUpload[index]->Map(0, nullptr, reinterpret_cast<void**>(&m_geometryMapped[index])));
 		}
+
+		if (m_instanceInfoCapacity[index] < instanceCount)
+		{
+			if (m_instanceInfoMapped[index] != nullptr)
+			{
+				m_instanceInfoUpload[index]->Unmap(0, nullptr);
+				m_instanceInfoMapped[index] = nullptr;
+			}
+			Retire(m_instanceInfoUpload[index]);
+			m_instanceInfoCapacity[index] = std::max<UINT>(instanceCount, m_instanceInfoCapacity[index] * 2u);
+			m_instanceInfoUpload[index] = CreateBuffer(m_device,
+				static_cast<UINT64>(m_instanceInfoCapacity[index]) * sizeof(RaytracingInstanceInfo),
+				D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_HEAP_TYPE_UPLOAD);
+			ThrowIfFailed(m_instanceInfoUpload[index]->Map(0, nullptr, reinterpret_cast<void**>(&m_instanceInfoMapped[index])));
+		}
 	}
 
 	void AccelerationStructure::EvictStaleBlas()
@@ -302,10 +310,10 @@ namespace udsdx
 		m_pendingBlasCount = 0;
 		m_instanceScratch.clear();
 		m_geometryScratch.clear();
+		m_instanceInfoScratch.clear();
 		DrainRetired();
 
 		UINT buildBudget = MaxBlasBuildsPerFrame;
-		UINT64 hash = kFnvOffsetBasis;
 
 		for (RaytracingMeshRenderer* renderer : renderers)
 		{
@@ -315,15 +323,19 @@ namespace udsdx
 				continue;
 			}
 
+			// Must happen before the BLAS readiness check, not after. In raytracing mode
+			// Scene::RenderSceneObjects never runs, so this is the only thing keeping the
+			// transform pair current -- and a renderer still queued behind the per-frame BLAS
+			// build budget would otherwise go unvalidated for many frames and then report one
+			// enormous bogus motion vector on the frame its BLAS finally lands.
+			// Idempotent within a frame, so calling it for skipped renderers costs nothing.
+			renderer->ValidateTransformCache();
+
 			BlasEntry* entry = AcquireBlas(mesh, commandList, buildBudget);
 			if (entry == nullptr || !entry->Ready || entry->GeometryCount == 0)
 			{
 				continue;
 			}
-
-			// The renderer is outside the Scene::RenderSceneObjects path that would normally
-			// validate this, so refresh it here. The call is idempotent within a frame.
-			renderer->ValidateTransformCache();
 
 			const UINT geometryBase = static_cast<UINT>(m_geometryScratch.size());
 
@@ -368,22 +380,17 @@ namespace udsdx
 			instance.AccelerationStructure = entry->Result->GetGPUVirtualAddress();
 			m_instanceScratch.push_back(instance);
 
-			HashBytes(hash, instance.Transform, sizeof(instance.Transform));
-			HashBytes(hash, &geometryBase, sizeof(geometryBase));
-			ID3D12Resource* blas = entry->Result.Get();
-			HashBytes(hash, &blas, sizeof(blas));
-		}
-
-		for (const RaytracingGeometryInfo& info : m_geometryScratch)
-		{
-			HashBytes(hash, &info.AlbedoTexIndex, sizeof(UINT) * 3);
+			// Parallel array indexed by InstanceIndex() in the hit shaders. Same transpose as the
+			// instance desc above, but from the frame before, which is what turns a hit point into
+			// a motion vector.
+			RaytracingInstanceInfo instanceInfo;
+			const Matrix4x4 prevTransform = renderer->GetPrevTransformCacheRef().Transpose();
+			std::memcpy(instanceInfo.PrevTransform, &prevTransform, sizeof(float) * 12);
+			m_instanceInfoScratch.push_back(instanceInfo);
 		}
 
 		m_instanceCount = static_cast<UINT>(m_instanceScratch.size());
 		m_geometryCount = static_cast<UINT>(m_geometryScratch.size());
-		HashBytes(hash, &m_instanceCount, sizeof(m_instanceCount));
-		HashBytes(hash, &m_geometryCount, sizeof(m_geometryCount));
-		m_contentHash = hash;
 
 		EvictStaleBlas();
 
@@ -397,6 +404,8 @@ namespace udsdx
 			m_instanceScratch.size() * sizeof(D3D12_RAYTRACING_INSTANCE_DESC));
 		std::memcpy(m_geometryMapped[frameResourceIndex], m_geometryScratch.data(),
 			m_geometryScratch.size() * sizeof(RaytracingGeometryInfo));
+		std::memcpy(m_instanceInfoMapped[frameResourceIndex], m_instanceInfoScratch.data(),
+			m_instanceInfoScratch.size() * sizeof(RaytracingInstanceInfo));
 
 		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
 		inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
@@ -447,5 +456,10 @@ namespace udsdx
 	D3D12_GPU_VIRTUAL_ADDRESS AccelerationStructure::GetGeometryInfoAddress(int frameResourceIndex) const
 	{
 		return m_geometryUpload[frameResourceIndex] != nullptr ? m_geometryUpload[frameResourceIndex]->GetGPUVirtualAddress() : 0;
+	}
+
+	D3D12_GPU_VIRTUAL_ADDRESS AccelerationStructure::GetInstanceInfoAddress(int frameResourceIndex) const
+	{
+		return m_instanceInfoUpload[frameResourceIndex] != nullptr ? m_instanceInfoUpload[frameResourceIndex]->GetGPUVirtualAddress() : 0;
 	}
 }

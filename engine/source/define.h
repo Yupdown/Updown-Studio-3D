@@ -42,6 +42,7 @@ namespace udsdx
 		Normal,
 		DirectOnly,
 		IndirectOnly,
+		MotionVector,
 		SampleHeatmap,
 		Count
 	};
@@ -67,7 +68,13 @@ namespace udsdx
 		// pass; only the bloom pass still runs, because it owns tonemapping and the back-buffer write.
 		bool DrawRaytracing = false;
 		unsigned int RaytracingSamplesPerPixel = 1u;
-		unsigned int RaytracingMaxAccumulation = 0u; // 0 = unlimited
+		// Temporal reprojection: history is capped at MaxSamplesMoving while a pixel is in motion
+		// and allowed up to MaxSamplesStatic once it reprojects exactly.
+		float RaytracingMaxSamplesMoving = 32.0f;
+		float RaytracingMaxSamplesStatic = 1024.0f;
+		float RaytracingVarianceClipGamma = 2.0f;
+		float RaytracingNormalThreshold = 0.9f;
+		float RaytracingDepthThreshold = 0.05f;
 		float RaytracingSunAngularDiameter = 0.53f;  // degrees; the real sun subtends ~0.53
 		float RaytracingRayMaxDistance = 1000.0f;
 		float RaytracingShadowRayOffset = 1e-3f;
