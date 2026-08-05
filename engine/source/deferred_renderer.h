@@ -15,6 +15,7 @@ namespace udsdx
 	class MotionBlur;
 	class PostProcessTAA;
 	class PostProcessOutline;
+	class RaytracingRenderer;
 
 	class DeferredRenderer
 	{
@@ -41,6 +42,7 @@ namespace udsdx
 		void PassRenderShadow(RenderParam& renderParam, Scene* scene, Camera* camera, LightDirectional* light);
 		void PassRenderSSAO(RenderParam& renderParam, Camera* camera);
 		void PassRenderMain(RenderParam& renderParam, Scene* scene, Camera* camera, D3D12_GPU_VIRTUAL_ADDRESS cameraCbv);
+		void PassRenderRaytracing(RenderParam& renderParam, Scene* scene, Camera* camera);
 
 	public:
 		CD3DX12_GPU_DESCRIPTOR_HANDLE GetGBufferSrv(UINT index) const { return m_gBuffersGpuSrv[index]; }
@@ -58,6 +60,10 @@ namespace udsdx
 		ShadowMap*		GetShadowMap() const { return m_shadowMap.get(); }
 		ScreenSpaceAO*	GetScreenSpaceAO() const { return m_screenSpaceAO.get(); }
 		PostProcessBloom* GetPostProcessBloom() const { return m_postProcessBloom.get(); }
+		RaytracingRenderer* GetRaytracingRenderer() const { return m_raytracingRenderer.get(); }
+
+		// Single source of truth for "the raytracer replaces the raster path this frame".
+		bool IsRaytracingActive() const;
 
 		void SetClearColor(const Color& clearColor) { m_clearColor = clearColor; }
 		void SetClearColor(float r, float g, float b) { m_clearColor = Color(r, g, b, 1.0f); }
@@ -103,6 +109,8 @@ namespace udsdx
 		std::unique_ptr<MotionBlur> m_motionBlur;
 		std::unique_ptr<PostProcessTAA> m_postProcessTAA;
 		std::unique_ptr<PostProcessOutline> m_postProcessOutline;
+		// Only constructed when the device reports DXR 1.0 support.
+		std::unique_ptr<RaytracingRenderer> m_raytracingRenderer;
 
 		// Multiple Render Target (MRT) for deferred rendering
 		std::array<ComPtr<ID3D12Resource>, NUM_GBUFFERS> m_gBuffers;

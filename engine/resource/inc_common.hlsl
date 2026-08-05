@@ -48,6 +48,8 @@ cbuffer cbPerShadow : register(b4)
 	float4 gLightPosW[NUM_CASCADES];
     float4 gShadowDistance;
     float3 gDirLight;
+    float gLightIntensity;
+    float4 gLightColor;
 };
 
 cbuffer cbPerFrame : register(b5)
@@ -275,6 +277,8 @@ cbuffer cbPerShadow : register(b1)
 	float4 gLightPosW[4];
 	float4 gShadowDistance;
 	float3 gDirLight;
+	float gLightIntensity;
+	float4 gLightColor;
 };
 
 cbuffer cbPerFrame : register(b2)
@@ -430,10 +434,8 @@ float3 DiffuseLight(VertexOut pin)
 	float3 normalV = normalize(gBuffer2.Sample(gsamPointClamp, pin.TexC).xyz * 2.0f - 1.0f);
 	float3 normalW = normalize(mul(normalV, transpose((float3x3)gView)));
 
-    float3 lightColor = 1.0f;
 	float lambertian = max(dot(normalW, -gDirLight), 0.0);
-	float lightPower = 2.0f;
-	return lightColor * lambertian * lightPower;
+	return gLightColor.rgb * lambertian * gLightIntensity;
 }
 
 float3 ApplyFog(float3 col, float3 worldPos)

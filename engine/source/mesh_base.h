@@ -36,6 +36,18 @@ namespace udsdx
 		const std::vector<Submesh>& GetSubmeshes() const;
 		const BoundingBox& GetBounds() const;
 
+		// Raw GPU buffer access for raytracing: the acceleration structure builder needs the
+		// resources themselves (as BLAS geometry inputs and as raw SRVs for hit-shader attribute
+		// fetch), not just the IA views. Both buffers sit in GENERIC_READ after UploadBuffers,
+		// which already subsumes NON_PIXEL_SHADER_RESOURCE.
+		ID3D12Resource* GetVertexBufferResource() const { return m_vertexBufferGPU.Get(); }
+		ID3D12Resource* GetIndexBufferResource() const { return m_indexBufferGPU.Get(); }
+		UINT GetVertexByteStride() const { return m_vertexByteStride; }
+		UINT GetVertexBufferByteSize() const { return m_vertexBufferByteSize; }
+		UINT GetIndexBufferByteSize() const { return m_indexBufferByteSize; }
+		UINT GetVertexCount() const { return m_vertexByteStride != 0 ? m_vertexBufferByteSize / m_vertexByteStride : 0u; }
+		UINT GetIndexCount() const { return m_indexBufferByteSize / static_cast<UINT>(sizeof(UINT)); }
+
 	public:
 		template <typename TVertex>
 		void CreateBuffers(const std::vector<TVertex>& vertices, const std::vector<UINT>& indices);

@@ -11,6 +11,8 @@
 #include "post_process_bloom.h"
 #include "post_process_taa.h"
 #include "post_process_outline.h"
+#include "raytracing_renderer.h"
+#include "core.h"
 #include "debug_console.h"
 #include "shader_compile.h"
 #include "compiled_shaders/vs_skybox.h"
@@ -42,6 +44,14 @@ namespace udsdx
 		m_postProcessTAA->BuildPipelineState();
 		m_postProcessOutline = std::make_unique<PostProcessOutline>(m_device, m_commandList);
 		m_postProcessOutline->BuildPipelineState();
+
+		// The raytracing renderer needs the DXR-promoted device and command list, which only exist
+		// when the adapter reports DXR 1.0.
+		if (INSTANCE(Core)->IsRaytracingSupported())
+		{
+			m_raytracingRenderer = std::make_unique<RaytracingRenderer>(
+				INSTANCE(Core)->GetDXRDevice(), INSTANCE(Core)->GetDXRCommandList());
+		}
     }
 
     DeferredRenderer::~DeferredRenderer()
@@ -66,6 +76,18 @@ namespace udsdx
 		m_postProcessTAA->RebuildDescriptors();
 		m_postProcessOutline->OnResize(newWidth, newHeight);
 		m_postProcessOutline->RebuildDescriptors();
+		if (m_raytracingRenderer != nullptr)
+		{
+			m_raytracingRenderer->OnResize(newWidth, newHeight);
+			m_raytracingRenderer->RebuildDescriptors();
+		}
+	}
+
+	bool DeferredRenderer::IsRaytracingActive() const
+	{
+		return m_renderOptions.DrawRaytracing
+			&& m_raytracingRenderer != nullptr
+			&& m_raytracingRenderer->IsAvailable();
 	}
 
 	void DeferredRenderer::BuildAllDescriptors(DescriptorParam& descriptorParam)
@@ -77,6 +99,10 @@ namespace udsdx
 		m_postProcessBloom->BuildDescriptors(descriptorParam);
 		m_postProcessTAA->BuildDescriptors(descriptorParam);
 		m_postProcessOutline->BuildDescriptors(descriptorParam);
+		if (m_raytracingRenderer != nullptr)
+		{
+			m_raytracingRenderer->BuildDescriptors(descriptorParam);
+		}
 	}
 
 	void DeferredRenderer::BuildDescriptors(DescriptorParam& descriptorParam)
@@ -639,6 +665,11 @@ namespace udsdx
 		renderParam.RenderPostProcessBloom = m_postProcessBloom.get();
 		renderParam.RenderPostProcessTAA = m_postProcessTAA.get();
 		renderParam.RenderPostProcessOutline = m_postProcessOutline.get();
+		renderParam.RenderRaytracing = m_raytracingRenderer.get();
+		// Resolved before PrepareCameraConstants because it suppresses the TAA jitter: the
+		// raytracer jitters per sample itself, and a moving projection would reset the progressive
+		// accumulator every frame.
+		renderParam.RaytracingActive = IsRaytracingActive();
 
 		std::vector<D3D12_GPU_VIRTUAL_ADDRESS> cameraCbvs = scene->PrepareCameraConstants(renderParam);
 
@@ -649,8 +680,9 @@ namespace udsdx
 		const auto& cameras = scene->GetRenderCameras();
 		const auto& lights = scene->GetRenderLights();
 
-		// Shadow map rendering pass
-		if (!lights.empty() && !cameras.empty())
+		// Shadow map rendering pass. Raytraced shadows come from the sun visibility ray instead,
+		// so the cascade render is pure cost in that mode.
+		if (!lights.empty() && !cameras.empty() && !renderParam.RaytracingActive)
 		{
 			pCommandList->SetGraphicsRootConstantBufferView(RootParam::PerCameraCBV, cameraCbvs[0]);
 			PassRenderShadow(renderParam, scene, cameras.front(), lights[0]);
@@ -683,12 +715,40 @@ namespace udsdx
 		}
 	}
 
+	void DeferredRenderer::PassRenderRaytracing(RenderParam& renderParam, Scene* scene, Camera* camera)
+	{
+		ZoneScopedN("Raytracing Main Pass");
+
+		// The raytracing pass bails out while the acceleration structure is still being built, and
+		// nothing else writes the intermediate target in this mode, so clear it first rather than
+		// letting the bloom pass tonemap uninitialized memory.
+		renderParam.CommandList->ClearRenderTargetView(m_targetViewCpuRtv, m_clearColor, 0, nullptr);
+
+		const auto& environmentMaps = scene->GetRenderEnvironmentMaps();
+		renderParam.RenderEnvironmentMap = environmentMaps.empty() ? nullptr : environmentMaps.front();
+
+		const auto& lights = scene->GetRenderLights();
+		m_raytracingRenderer->Pass(renderParam, scene, camera, lights.empty() ? nullptr : lights.front());
+
+		// Bloom is the only pass that tonemaps and writes the back buffer, so it always runs here.
+		// SSAO, deferred lighting, the forward pass and the outline all depend on a rasterized
+		// G-buffer and stencil that this mode never produces; TAA and motion blur are redundant
+		// because progressive accumulation already resolves the image temporally.
+		m_postProcessBloom->Pass(renderParam);
+	}
+
 	void DeferredRenderer::PassRenderMain(RenderParam& renderParam, Scene* scene, Camera* camera, D3D12_GPU_VIRTUAL_ADDRESS cameraCbv)
 	{
 		ZoneScopedN("Main Pass");
 		TracyD3D12Zone(*renderParam.TracyQueueContext, renderParam.CommandList, "Main Pass");
 
 		auto pCommandList = renderParam.CommandList;
+
+		if (renderParam.RaytracingActive)
+		{
+			PassRenderRaytracing(renderParam, scene, camera);
+			return;
+		}
 
 		std::vector<ID3D12PipelineState*> defferedPipelineStates = scene->CollectDeferredPipelineStates();
 

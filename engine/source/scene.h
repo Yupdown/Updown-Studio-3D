@@ -10,6 +10,7 @@ namespace udsdx
 	class Camera;
 	class LightDirectional;
 	class EnvironmentMap;
+	class RaytracingMeshRenderer;
 
 	class Scene
 	{
@@ -49,6 +50,7 @@ namespace udsdx
 		void EnqueueRenderObject(RendererBase* object, RenderGroup group, ID3D12PipelineState* pipelineState, ID3D12PipelineState* deferredPipelineState, int parameter);
 		void EnqueueRenderShadowObject(RendererBase* object, ID3D12PipelineState* pipelineState, int parameter);
 		void EnqueueRenderGUIObject(GUIElement* object);
+		void EnqueueRaytracingObject(RaytracingMeshRenderer* object);
 
 		void RenderShadowSceneObjects(RenderParam& param, int instances = 1);
 		void RenderSceneObjects(RenderParam& param, RenderGroup group, int instances = 1);
@@ -59,6 +61,8 @@ namespace udsdx
 		const std::vector<Camera*>& GetRenderCameras() const { return m_renderCameraQueue; }
 		const std::vector<LightDirectional*>& GetRenderLights() const { return m_renderLightQueue; }
 		const std::vector<EnvironmentMap*>& GetRenderEnvironmentMaps() const { return m_renderEnvironmentMapQueue; }
+		// Renderers contributing geometry to the raytracing acceleration structure this frame.
+		const std::vector<RaytracingMeshRenderer*>& GetRaytracingObjects() const { return m_raytracingObjectQueue; }
 
 		// Collects the distinct deferred (lighting-composition) pipeline states enqueued this frame.
 		std::vector<ID3D12PipelineState*> CollectDeferredPipelineStates() const;
@@ -80,6 +84,7 @@ namespace udsdx
 		std::array<RendererGroup, 2> m_renderObjectQueues;
 		std::unordered_map<ID3D12PipelineState*, std::vector<std::pair<RendererBase*, int>>> m_renderShadowObjectQueue;
 		std::vector<GUIElement*> m_renderGUIObjectQueue;
+		std::vector<RaytracingMeshRenderer*> m_raytracingObjectQueue;
 	};
 }
 

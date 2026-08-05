@@ -43,7 +43,10 @@ namespace udsdx
 		// Animator registered with every clip, auto-playing the first one looped. Materials get
 		// 'shader' injected. Returns the root SceneObject (the caller adds it to a Scene), or
 		// nullptr if the asset is empty.
-		std::shared_ptr<SceneObject> Instantiate(Shader* shader) const;
+		// Pass enableRaytracing to attach RaytracingMeshRenderer instead of MeshRenderer on static
+		// nodes, so the instantiated geometry joins the raytracing acceleration structure. Rigged
+		// assets are unaffected: skinned meshes have no GPU vertex buffer to build a BLAS from.
+		std::shared_ptr<SceneObject> Instantiate(Shader* shader, bool enableRaytracing = false) const;
 
 		bool IsRigged() const { return m_isRigged; }
 		const std::vector<Node>& GetNodes() const { return m_nodes; }
@@ -85,7 +88,7 @@ namespace udsdx
 		void ExtractMaterialTextures(const aiScene* scene, unsigned int materialIndex, Material& material, const std::filesystem::path& resourcePath);
 		int RegisterEmbeddedTexture(const aiScene* scene, const char* assimpPath);
 		void ResolveEmbeddedTextures(ID3D12Device* device, ID3D12GraphicsCommandList* commandList);
-		std::shared_ptr<SceneObject> InstantiateNode(int nodeIndex, Shader* shader) const;
+		std::shared_ptr<SceneObject> InstantiateNode(int nodeIndex, Shader* shader, bool enableRaytracing) const;
 		Material MakeMaterial(int materialIndex, Shader* shader) const;
 
 	private:

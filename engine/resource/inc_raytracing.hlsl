@@ -1,0 +1,271 @@
+#ifndef INC_RAYTRACING_HLSL
+#define INC_RAYTRACING_HLSL
+
+// Shared declarations for the DXR 1.0 path tracer.
+//
+// This deliberately does NOT include inc_common.hlsl: that file binds cbuffers to b0..b5 and
+// declares Texture2D gTextures[] at (t0, space0), all of which would collide with the raytracing
+// global root signature laid out below.
+
+#define GEOM_FLAG_ALPHA_TEST    0x1u
+#define INVALID_SRV_INDEX       0xFFFFFFFFu
+
+#define RT_DEBUG_NONE           0u
+#define RT_DEBUG_ALBEDO         1u
+#define RT_DEBUG_NORMAL         2u
+#define RT_DEBUG_DIRECT         3u
+#define RT_DEBUG_INDIRECT       4u
+#define RT_DEBUG_HEATMAP        5u
+
+#define RT_PI                   3.14159265359f
+
+// Mirrors RaytracingGeometryInfo in acceleration_structure.h (48 bytes).
+struct GeometryInfo
+{
+    uint VertexBufferSrvIndex;
+    uint IndexBufferSrvIndex;
+    uint StartIndexLocation;
+    uint BaseVertexLocation;
+
+    uint AlbedoTexIndex;
+    uint SamplerMode;
+    uint Flags;
+    uint VertexStride;
+
+    float4 BaseColor;
+};
+
+// Mirrors RaytracingConstants in frame_resource.h.
+cbuffer cbRaytracing : register(b0, space0)
+{
+    float4x4 gViewProjInverse;   // transposed on upload; row-vector convention, use mul(v, M)
+    float4   gEyePosW;
+    float2   gRenderTargetSize;
+    uint     gAccumulatedSamples;
+    uint     gSamplesPerPixel;
+
+    float3   gDirLight;          // direction the light travels, matching inc_common.hlsl
+    float    gSunIntensity;
+    float4   gSunColor;
+
+    float    gSunCosHalfAngle;   // cos(0.5 * angular diameter)
+    float    gRayMaxDistance;
+    float    gShadowRayOffset;
+    float    gSkyIntensity;
+
+    float    gSkyMaxRadiance;    // clamps indirect sky so the sun disk is not double counted
+    uint     gDebugMode;
+    uint     gHasEnvironmentMap;
+    uint     gFrameSeed;
+
+    float4   gFogColor;
+    float4   gFogSunColor;
+    float    gFogDensity;
+    float    gFogHeightFalloff;
+    float    gFogDistanceStart;
+    float    gFogPad;
+};
+
+RaytracingAccelerationStructure gScene          : register(t0, space0);
+StructuredBuffer<GeometryInfo>  gGeometryInfo   : register(t1, space0);
+RWTexture2D<float4>             gAccumulation   : register(u0, space0);
+
+// Two separate unbounded tables over the same shader-visible SRV heap, so a heap index is the
+// bindless lookup index in both cases -- the same convention Texture::GetSrvIndex already uses.
+Texture2D                       gTextures[]     : register(t0, space1);
+ByteAddressBuffer               gRawBuffers[]   : register(t0, space2);
+
+TextureCube                     gEnvironmentMap : register(t0, space3);
+
+// Local root argument, one per hit group shader record. GeometryIndex() is a DXR 1.1 intrinsic and
+// is unavailable at lib_6_3, so the flat gGeometryInfo index is baked into the record instead:
+// an instance sets InstanceContributionToHitGroupIndex to its geometry base and TraceRay passes a
+// geometry multiplier of 1, which lands each submesh on its own record.
+cbuffer cbHitGroup : register(b0, space1)
+{
+    uint gGeometryIndex;
+};
+
+SamplerState gSamplerPointWrap   : register(s0);
+SamplerState gSamplerLinearWrap  : register(s1);
+SamplerState gSamplerLinearClamp : register(s2);
+
+// One payload for both ray types. The any-hit shader is shared between them, so its payload
+// parameter type has to match every caller.
+struct SurfacePayload
+{
+    float3 Albedo;    // 12
+    float  HitT;      //  4   negative means miss
+    float3 Normal;    // 12   world space, faces the incoming ray
+    uint   Flags;     //  4
+    float3 Emission;  // 12   sky radiance on miss
+    uint   Rng;       //  4
+};                    // 48 bytes total
+
+//------------------------------------------------------------------------------------------------
+// Random numbers
+//------------------------------------------------------------------------------------------------
+
+uint PcgHash(uint value)
+{
+    uint state = value * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+uint InitRng(uint2 pixel, uint seed)
+{
+    return PcgHash(pixel.x + PcgHash(pixel.y + PcgHash(seed)));
+}
+
+float NextFloat(inout uint state)
+{
+    state = state * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return float((word >> 22u) ^ word) * (1.0f / 4294967296.0f);
+}
+
+float2 NextFloat2(inout uint state)
+{
+    return float2(NextFloat(state), NextFloat(state));
+}
+
+//------------------------------------------------------------------------------------------------
+// Sampling
+//------------------------------------------------------------------------------------------------
+
+// Duff et al. branchless orthonormal basis.
+void OrthonormalBasis(float3 n, out float3 t, out float3 b)
+{
+    float sign = n.z >= 0.0f ? 1.0f : -1.0f;
+    float a = -1.0f / (sign + n.z);
+    float c = n.x * n.y * a;
+    t = float3(1.0f + sign * n.x * n.x * a, sign * c, -sign * n.x);
+    b = float3(c, sign + n.y * n.y * a, -n.y);
+}
+
+// Cosine-weighted hemisphere sample. Its pdf is cos/pi and the Lambert BRDF is albedo/pi, so the
+// two cancel and the estimator reduces to albedo * incoming radiance -- no pdf division anywhere.
+float3 CosineSampleHemisphere(float2 u, float3 n)
+{
+    float r = sqrt(u.x);
+    float phi = 2.0f * RT_PI * u.y;
+    float3 t, b;
+    OrthonormalBasis(n, t, b);
+    return normalize(t * (r * cos(phi)) + b * (r * sin(phi)) + n * sqrt(max(0.0f, 1.0f - u.x)));
+}
+
+// Uniform direction within a cone around `axis`, used to give the sun a finite angular diameter.
+float3 SampleCone(float2 u, float3 axis, float cosThetaMax)
+{
+    float cosTheta = lerp(cosThetaMax, 1.0f, u.x);
+    float sinTheta = sqrt(saturate(1.0f - cosTheta * cosTheta));
+    float phi = 2.0f * RT_PI * u.y;
+    float3 t, b;
+    OrthonormalBasis(axis, t, b);
+    return normalize(t * (sinTheta * cos(phi)) + b * (sinTheta * sin(phi)) + axis * cosTheta);
+}
+
+//------------------------------------------------------------------------------------------------
+// Geometry fetch
+//------------------------------------------------------------------------------------------------
+
+uint3 LoadTriangleIndices(GeometryInfo info, uint primitiveIndex)
+{
+    // ByteAddressBuffer needs 4-byte alignment only, which R32_UINT indices always satisfy.
+    return gRawBuffers[info.IndexBufferSrvIndex].Load3((info.StartIndexLocation + primitiveIndex * 3u) * 4u);
+}
+
+struct RtVertex
+{
+    float3 Position;
+    float2 Uv;
+    float3 Normal;
+};
+
+// Vertex layout from vertex.h: float3 position @0, float2 uv @12, float3 normal @20,
+// float3 tangent @32; stride 44. BaseVertexLocation is applied here for the same reason the BLAS
+// geometry desc folded it into VertexBuffer.StartAddress.
+RtVertex LoadVertex(GeometryInfo info, uint index)
+{
+    ByteAddressBuffer buffer = gRawBuffers[info.VertexBufferSrvIndex];
+    uint offset = (info.BaseVertexLocation + index) * info.VertexStride;
+
+    RtVertex v;
+    v.Position = asfloat(buffer.Load3(offset + 0u));
+    v.Uv       = asfloat(buffer.Load2(offset + 12u));
+    v.Normal   = asfloat(buffer.Load3(offset + 20u));
+    return v;
+}
+
+float3 BarycentricWeights(float2 barycentrics)
+{
+    return float3(1.0f - barycentrics.x - barycentrics.y, barycentrics.x, barycentrics.y);
+}
+
+// Raytracing shaders have no implicit derivatives, so Sample() and anisotropic filtering are
+// illegal here -- every texture read has to be an explicit-LOD SampleLevel.
+float4 SampleAlbedo(GeometryInfo info, float2 uv)
+{
+    if (info.AlbedoTexIndex == INVALID_SRV_INDEX)
+    {
+        return float4(1.0f, 1.0f, 1.0f, 1.0f);
+    }
+    if (info.SamplerMode == 0u)
+    {
+        return gTextures[info.AlbedoTexIndex].SampleLevel(gSamplerPointWrap, uv, 0.0f);
+    }
+    return gTextures[info.AlbedoTexIndex].SampleLevel(gSamplerLinearWrap, uv, 0.0f);
+}
+
+//------------------------------------------------------------------------------------------------
+// Exponential height fog
+//------------------------------------------------------------------------------------------------
+
+// Verbatim mirror of ApplyFog in inc_common.hlsl, kept textually identical so the two stay easy to
+// diff. It cannot simply be shared through an include: inc_common.hlsl binds cbuffers to b0..b5 and
+// declares its own bindless texture array, which collides with the raytracing global root
+// signature, and the runtime shader include handler resolves every unknown include name to the
+// embedded inc_common blob, so a third shared file would recurse.
+//
+// The identifiers below (gEyePosW, gDirLight, gFog*) are deliberately named to match the raster
+// cbuffer, so the function body is a byte-for-byte copy.
+float3 ApplyFog(float3 col, float3 worldPos)
+{
+    float distance = max(0.0f, length(worldPos - gEyePosW.xyz) - gFogDistanceStart);
+    float3 direction = normalize(worldPos - gEyePosW.xyz);
+    float sunAmount = max(dot(direction, -gDirLight), 0.0f);
+
+    float falloff = gFogHeightFalloff * direction.y;
+    float x = distance * falloff;
+
+    // x가 매우 작을 때 1.0 - exp(-x) 의 float32 정밀도 손실(Catastrophic Cancellation)로 인해
+    // 선형 구간에서 계단(Banding) 현상이 발생합니다.
+    // 이를 방지하고 0으로 나누기 문제도 회피하기 위해 테일러 급수(Taylor series) 전개를 사용합니다.
+    float lineIntegral;
+    if (abs(x) < 0.01f)
+    {
+        lineIntegral = distance * (1.0f - 0.5f * x + 0.1666667f * x * x);
+    }
+    else
+    {
+        lineIntegral = (1.0f - exp(-x)) / falloff;
+    }
+
+    float fogAmount = saturate(gFogDensity * exp(-gFogHeightFalloff * (gEyePosW.y + gFogDistanceStart * direction.y)) * lineIntegral);
+    float3 fogColor = lerp(gFogColor.rgb, gFogSunColor.rgb, pow(sunAmount, 2.0f));
+
+    return lerp(col, fogColor, fogAmount);
+}
+
+float3 SampleSky(float3 direction)
+{
+    if (gHasEnvironmentMap != 0u)
+    {
+        return gEnvironmentMap.SampleLevel(gSamplerLinearClamp, direction, 0.0f).rgb * gSkyIntensity;
+    }
+    // Matches the hardcoded sky colour in inc_common.hlsl's AmbientLight().
+    return pow(float3(0.357f, 0.404f, 0.467f), 2.2f) * gSkyIntensity;
+}
+
+#endif // INC_RAYTRACING_HLSL

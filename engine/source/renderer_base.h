@@ -24,12 +24,18 @@ namespace udsdx
 
 		D3D_PRIMITIVE_TOPOLOGY GetTopology() const;
 		Material GetMaterial(int index = 0) const;
+		size_t GetMaterialCount() const { return m_materials.size(); }
 
 		bool GetCastShadow() const;
 		bool GetDrawOutline() const { return m_drawOutline; }
 
 		void ValidateTransformCache();
 		virtual void UpdateTransformCache();
+
+		// World matrix as of the last ValidateTransformCache(). The raytracing acceleration
+		// structure reads this directly to build instance transforms, outside the normal
+		// Scene::RenderSceneObjects path that would otherwise validate it.
+		const Matrix4x4& GetTransformCacheRef() const { return m_transformCache; }
 
 	protected:
 		std::vector<Material> m_materials;

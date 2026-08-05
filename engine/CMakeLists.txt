@@ -1,4 +1,5 @@
 set(ENGINE_SOURCES
+    source/acceleration_structure.cpp
     source/allocation.cpp
     source/animation_clip.cpp
     source/animator.cpp
@@ -33,6 +34,8 @@ set(ENGINE_SOURCES
     source/post_process_bloom.cpp
     source/post_process_taa.cpp
     source/post_process_outline.cpp
+    source/raytracing_mesh_renderer.cpp
+    source/raytracing_renderer.cpp
     source/rect_transform.cpp
     source/renderer_base.cpp
     source/resource_load.cpp
@@ -187,6 +190,43 @@ function(add_engine_shader hlsl_file entrypoint profile)
     set(ENGINE_SHADER_HEADERS ${ENGINE_SHADER_HEADERS} "${shader_output}" PARENT_SCOPE)
 endfunction()
 
+# A DXR shader library exports several named shaders instead of one entry point, so it is compiled
+# with -T lib_6_3 and no -E. Otherwise identical to add_engine_shader.
+function(add_engine_shader_library hlsl_file profile)
+    set(options)
+    set(oneValueArgs)
+    set(multiValueArgs EXTRA_DEFINES DEPENDS_ON)
+    cmake_parse_arguments(SHADER "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+    get_filename_component(shader_name "${hlsl_file}" NAME_WE)
+    set(shader_input "${CMAKE_CURRENT_SOURCE_DIR}/${hlsl_file}")
+    set(shader_output "${ENGINE_COMPILED_SHADER_DIR}/${shader_name}.h")
+    set(shader_defines)
+
+    foreach(define_item IN LISTS ENGINE_SHADER_COMMON_DEFINES SHADER_EXTRA_DEFINES)
+        list(APPEND shader_defines -D${define_item})
+    endforeach()
+
+    add_custom_command(
+        OUTPUT "${shader_output}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${ENGINE_COMPILED_SHADER_DIR}"
+        COMMAND "${UPDOWN_DXC_EXECUTABLE}"
+            -T ${profile}
+            -Fh "${shader_output}"
+            -Vn g_cso_${shader_name}
+            -I "${CMAKE_CURRENT_SOURCE_DIR}/resource"
+            -Zi
+            -Qembed_debug
+            ${shader_defines}
+            "${shader_input}"
+        DEPENDS "${shader_input}" ${SHADER_DEPENDS_ON}
+        VERBATIM
+        COMMENT "Compiling DXIL library ${hlsl_file} to ${shader_output}"
+    )
+
+    set(ENGINE_SHADER_HEADERS ${ENGINE_SHADER_HEADERS} "${shader_output}" PARENT_SCOPE)
+endfunction()
+
 set(ENGINE_SHADER_HEADERS)
 add_engine_shader(resource/cs_motion_blur_neighbormax.hlsl CS cs_6_0)
 add_engine_shader(resource/cs_motion_blur_tilemax.hlsl CS cs_6_0)
@@ -204,8 +244,11 @@ add_engine_shader(resource/ps_screenspace_ao.hlsl PS ps_6_0)
 add_engine_shader(resource/ps_skybox.hlsl PS ps_6_0)
 add_engine_shader(resource/ps_skybox_velocity.hlsl PS ps_6_0)
 add_engine_shader(resource/ps_taa.hlsl PS ps_6_0)
+add_engine_shader(resource/ps_raytracing_resolve.hlsl PS ps_6_0)
 add_engine_shader(resource/vs_drawscreen.hlsl VS vs_6_0)
 add_engine_shader(resource/vs_skybox.hlsl VS vs_6_0)
+add_engine_shader_library(resource/lib_raytracing.hlsl lib_6_3
+    DEPENDS_ON "${CMAKE_CURRENT_SOURCE_DIR}/resource/inc_raytracing.hlsl")
 
 set(EMBEDDED_COMMON_HLSL_INPUT "${CMAKE_CURRENT_SOURCE_DIR}/resource/inc_common.hlsl")
 set(EMBEDDED_COMMON_HLSL_HEADER "${ENGINE_EMBEDDED_SHADER_DIR}/inc_common_hlsl.h")

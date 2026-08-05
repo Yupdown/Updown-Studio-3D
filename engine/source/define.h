@@ -31,6 +31,20 @@ namespace udsdx
 	class PostProcessOutline;
 	class BoundingCamera;
 	class EnvironmentMap;
+	class RaytracingRenderer;
+
+	// Visualisation modes for the raytracing renderer. Anything other than None bypasses the
+	// progressive accumulator so the buffer shows the current frame only.
+	enum class RaytracingDebugMode : UINT
+	{
+		None = 0,
+		Albedo,
+		Normal,
+		DirectOnly,
+		IndirectOnly,
+		SampleHeatmap,
+		Count
+	};
 
 	struct RenderOptions
 	{
@@ -47,6 +61,17 @@ namespace udsdx
 		float FogDensity = 0.03f;
 		float FogHeightFalloff = 0.2f;
 		float FogDistanceStart = 20.0f;
+
+		// Raytracing renderer. When DrawRaytracing is set the whole raster path (G-buffer, SSAO,
+		// deferred lighting, forward, TAA, motion blur, outline) is replaced by a full-screen DXR
+		// pass; only the bloom pass still runs, because it owns tonemapping and the back-buffer write.
+		bool DrawRaytracing = false;
+		unsigned int RaytracingSamplesPerPixel = 1u;
+		unsigned int RaytracingMaxAccumulation = 0u; // 0 = unlimited
+		float RaytracingSunAngularDiameter = 0.53f;  // degrees; the real sun subtends ~0.53
+		float RaytracingRayMaxDistance = 1000.0f;
+		float RaytracingShadowRayOffset = 1e-3f;
+		RaytracingDebugMode RaytracingDebug = RaytracingDebugMode::None;
 	};
 
 	// Number of cascaded shadow map levels; must match NUM_CASCADES in inc_common.hlsl.
@@ -96,6 +121,24 @@ namespace udsdx
 		EnvironmentMap* RenderEnvironmentMap;
 
 		TracyD3D12Ctx* TracyQueueContext;
+
+		// Appended last: RenderParam is aggregate-initialised with designated initialisers in
+		// Core::Render, so inserting fields earlier would break that initialiser's ordering.
+		ID3D12GraphicsCommandList4* DXRCommandList = nullptr;
+		bool RaytracingSupported = false;
+		RaytracingRenderer* RenderRaytracing = nullptr;
+		// True when the raytracer replaces the raster path this frame. Distinct from
+		// RenderOptions::DrawRaytracing, which is the user's request rather than the resolved state.
+		bool RaytracingActive = false;
+	};
+
+	// Result of a shader-visible SRV heap allocation. HeapIndex is the absolute index used as the
+	// bindless lookup index by shaders, or InvalidSrvIndex when the heap could not satisfy it.
+	struct SrvAllocation
+	{
+		CD3DX12_CPU_DESCRIPTOR_HANDLE CpuHandle{};
+		CD3DX12_GPU_DESCRIPTOR_HANDLE GpuHandle{};
+		UINT HeapIndex = 0xFFFFFFFFu;
 	};
 
 	struct DescriptorParam

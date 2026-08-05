@@ -7,6 +7,7 @@
 #include "scene_object.h"
 #include "transform.h"
 #include "mesh_renderer.h"
+#include "raytracing_mesh_renderer.h"
 #include "rigged_mesh_renderer.h"
 #include "animation_clip.h"
 #include "animator.h"
@@ -319,7 +320,7 @@ namespace udsdx
 		return Material(shader);
 	}
 
-	std::shared_ptr<SceneObject> ModelAsset::Instantiate(Shader* shader) const
+	std::shared_ptr<SceneObject> ModelAsset::Instantiate(Shader* shader, bool enableRaytracing) const
 	{
 		if (m_rootNodes.empty())
 		{
@@ -329,7 +330,7 @@ namespace udsdx
 		std::shared_ptr<SceneObject> root;
 		if (m_rootNodes.size() == 1)
 		{
-			root = InstantiateNode(m_rootNodes[0], shader);
+			root = InstantiateNode(m_rootNodes[0], shader, enableRaytracing);
 		}
 		else
 		{
@@ -337,7 +338,7 @@ namespace udsdx
 			root = SceneObject::MakeShared();
 			for (int rootNode : m_rootNodes)
 			{
-				root->AddChild(InstantiateNode(rootNode, shader));
+				root->AddChild(InstantiateNode(rootNode, shader, enableRaytracing));
 			}
 		}
 
@@ -370,7 +371,7 @@ namespace udsdx
 		return root;
 	}
 
-	std::shared_ptr<SceneObject> ModelAsset::InstantiateNode(int nodeIndex, Shader* shader) const
+	std::shared_ptr<SceneObject> ModelAsset::InstantiateNode(int nodeIndex, Shader* shader, bool enableRaytracing) const
 	{
 		const Node& node = m_nodes[nodeIndex];
 		auto object = SceneObject::MakeShared();
@@ -398,7 +399,9 @@ namespace udsdx
 				}
 				const std::vector<int>& submeshMaterials = m_meshSubmeshMaterials[meshIndex];
 
-				auto renderer = object->AddComponent<MeshRenderer>();
+				MeshRenderer* renderer = enableRaytracing
+					? object->AddComponent<RaytracingMeshRenderer>()
+					: object->AddComponent<MeshRenderer>();
 				renderer->SetMesh(static_cast<Mesh*>(m_meshes[meshIndex].get()));
 				const int materialIndex = submeshMaterials.empty() ? -1 : submeshMaterials[0];
 				renderer->SetMaterial(MakeMaterial(materialIndex, shader), 0);
@@ -407,7 +410,7 @@ namespace udsdx
 
 		for (int childNode : node.Children)
 		{
-			object->AddChild(InstantiateNode(childNode, shader));
+			object->AddChild(InstantiateNode(childNode, shader, enableRaytracing));
 		}
 
 		return object;

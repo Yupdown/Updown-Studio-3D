@@ -35,6 +35,7 @@
 #include "transform.h"
 #include "component.h"
 #include "mesh_renderer.h"
+#include "raytracing_mesh_renderer.h"
 #include "rigged_mesh_renderer.h"
 #include "rigged_prop_renderer.h"
 #include "inline_mesh_renderer.h"

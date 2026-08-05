@@ -1,0 +1,451 @@
+#include "pch.h"
+#include "acceleration_structure.h"
+#include "raytracing_mesh_renderer.h"
+#include "mesh_base.h"
+#include "mesh.h"
+#include "material.h"
+#include "texture.h"
+#include "core.h"
+#include "debug_console.h"
+
+namespace udsdx
+{
+	namespace
+	{
+		constexpr UINT64 kFnvOffsetBasis = 14695981039346656037ull;
+		constexpr UINT64 kFnvPrime = 1099511628211ull;
+
+		void HashBytes(UINT64& hash, const void* data, size_t size)
+		{
+			const auto* bytes = static_cast<const unsigned char*>(data);
+			for (size_t i = 0; i < size; ++i)
+			{
+				hash ^= static_cast<UINT64>(bytes[i]);
+				hash *= kFnvPrime;
+			}
+		}
+
+		ComPtr<ID3D12Resource> CreateBuffer(ID3D12Device5* device, UINT64 size, D3D12_RESOURCE_FLAGS flags,
+			D3D12_RESOURCE_STATES initialState, D3D12_HEAP_TYPE heapType)
+		{
+			ComPtr<ID3D12Resource> resource;
+			const CD3DX12_HEAP_PROPERTIES heapProps(heapType);
+			const CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(std::max<UINT64>(size, 1ull), flags);
+			ThrowIfFailed(device->CreateCommittedResource(
+				&heapProps,
+				D3D12_HEAP_FLAG_NONE,
+				&desc,
+				initialState,
+				nullptr,
+				IID_PPV_ARGS(&resource)));
+			return resource;
+		}
+	}
+
+	AccelerationStructure::AccelerationStructure(ID3D12Device5* device)
+		: m_device(device)
+	{
+		m_instanceCapacity.fill(0u);
+		m_geometryCapacity.fill(0u);
+		m_instanceMapped.fill(nullptr);
+		m_geometryMapped.fill(nullptr);
+		m_tlasSize.fill(0ull);
+		m_tlasScratchSize.fill(0ull);
+	}
+
+	AccelerationStructure::~AccelerationStructure()
+	{
+		for (int i = 0; i < FrameResourceCount; ++i)
+		{
+			if (m_instanceMapped[i] != nullptr)
+			{
+				m_instanceUpload[i]->Unmap(0, nullptr);
+			}
+			if (m_geometryMapped[i] != nullptr)
+			{
+				m_geometryUpload[i]->Unmap(0, nullptr);
+			}
+		}
+	}
+
+	bool AccelerationStructure::CreateGeometrySrvs(MeshBase* mesh, BlasEntry& entry)
+	{
+		// Two raw (ByteAddressBuffer) SRVs so the hit shaders can re-fetch UVs and normals. Raw
+		// rather than structured because the 44-byte Vertex stride is not 16-byte aligned, and the
+		// same declaration then serves the R32_UINT index buffer too.
+		SrvAllocation allocation = INSTANCE(Core)->AllocateSrvDescriptors(2);
+		if (allocation.HeapIndex == InvalidSrvIndex)
+		{
+			m_descriptorExhausted = true;
+			return false;
+		}
+
+		ID3D12Device* device = INSTANCE(Core)->GetDevice();
+		const UINT descriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+		srvDesc.Format = DXGI_FORMAT_R32_TYPELESS;
+		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		srvDesc.Buffer.FirstElement = 0;
+		srvDesc.Buffer.StructureByteStride = 0;
+		srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_RAW;
+
+		CD3DX12_CPU_DESCRIPTOR_HANDLE handle = allocation.CpuHandle;
+
+		srvDesc.Buffer.NumElements = mesh->GetVertexBufferByteSize() / 4u;
+		device->CreateShaderResourceView(mesh->GetVertexBufferResource(), &srvDesc, handle);
+		entry.VertexSrvIndex = allocation.HeapIndex;
+
+		handle.Offset(1, descriptorSize);
+		srvDesc.Buffer.NumElements = mesh->GetIndexBufferByteSize() / 4u;
+		device->CreateShaderResourceView(mesh->GetIndexBufferResource(), &srvDesc, handle);
+		entry.IndexSrvIndex = allocation.HeapIndex + 1u;
+
+		return true;
+	}
+
+	void AccelerationStructure::Retire(ComPtr<ID3D12Resource>& resource)
+	{
+		if (resource != nullptr)
+		{
+			m_retiredResources.emplace_back(resource, m_frameCounter);
+			resource.Reset();
+		}
+	}
+
+	void AccelerationStructure::DrainRetired()
+	{
+		std::erase_if(m_retiredResources, [this](const auto& retired)
+			{ return m_frameCounter - retired.second > RetireFrames; });
+	}
+
+	void AccelerationStructure::EnsureScratchCapacity(UINT64 sizeInBytes)
+	{
+		if (m_blasScratchSize >= sizeInBytes && m_blasScratch != nullptr)
+		{
+			return;
+		}
+		// Retire rather than release: builds recorded earlier in this very frame still point at
+		// the old scratch buffer, and freeing it here removes it out from under the command list.
+		Retire(m_blasScratch);
+		m_blasScratchSize = std::max<UINT64>(sizeInBytes, m_blasScratchSize * 2ull);
+		m_blasScratch = CreateBuffer(m_device, m_blasScratchSize,
+			D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+			D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+			D3D12_HEAP_TYPE_DEFAULT);
+	}
+
+	AccelerationStructure::BlasEntry* AccelerationStructure::AcquireBlas(MeshBase* mesh, ID3D12GraphicsCommandList4* commandList, UINT& buildBudget)
+	{
+		auto found = m_blasCache.find(mesh);
+		if (found != m_blasCache.end() && found->second.Ready)
+		{
+			found->second.LastSeenFrame = m_frameCounter;
+			return &found->second;
+		}
+
+		if (found == m_blasCache.end())
+		{
+			found = m_blasCache.emplace(mesh, BlasEntry{}).first;
+		}
+		BlasEntry& entry = found->second;
+		entry.LastSeenFrame = m_frameCounter;
+
+		if (buildBudget == 0u || m_descriptorExhausted)
+		{
+			++m_pendingBlasCount;
+			return nullptr;
+		}
+
+		if (entry.VertexSrvIndex == InvalidSrvIndex && !CreateGeometrySrvs(mesh, entry))
+		{
+			return nullptr;
+		}
+
+		// One geometry per submesh, so GeometryIndex() in the hit shader is the submesh index.
+		const auto& submeshes = mesh->GetSubmeshes();
+		if (submeshes.empty())
+		{
+			entry.Ready = true;
+			entry.GeometryCount = 0;
+			return &entry;
+		}
+
+		const D3D12_GPU_VIRTUAL_ADDRESS vertexAddress = mesh->GetVertexBufferResource()->GetGPUVirtualAddress();
+		const D3D12_GPU_VIRTUAL_ADDRESS indexAddress = mesh->GetIndexBufferResource()->GetGPUVirtualAddress();
+		const UINT vertexStride = mesh->GetVertexByteStride();
+		const UINT vertexCount = mesh->GetVertexCount();
+
+		std::vector<D3D12_RAYTRACING_GEOMETRY_DESC> geometryDescs(submeshes.size());
+		for (size_t i = 0; i < submeshes.size(); ++i)
+		{
+			const Submesh& submesh = submeshes[i];
+			D3D12_RAYTRACING_GEOMETRY_DESC& desc = geometryDescs[i];
+			desc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
+			// Never OPAQUE: the any-hit alpha test must be allowed to run. Fully opaque instances
+			// opt out through D3D12_RAYTRACING_INSTANCE_FLAG_FORCE_OPAQUE instead, which is a
+			// per-instance decision -- the BLAS itself is shared between materials.
+			desc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_NONE;
+			desc.Triangles.Transform3x4 = 0;
+			desc.Triangles.IndexFormat = MeshBase::INDEX_FORMAT;
+			desc.Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
+			desc.Triangles.IndexCount = submesh.IndexCount;
+			// Folding the submesh offsets into the addresses reproduces DrawIndexedInstanced
+			// exactly. The hit shader re-applies the same offsets when it reloads vertices.
+			desc.Triangles.IndexBuffer = indexAddress + static_cast<UINT64>(submesh.StartIndexLocation) * sizeof(UINT);
+			desc.Triangles.VertexCount = vertexCount > submesh.BaseVertexLocation ? vertexCount - submesh.BaseVertexLocation : 0u;
+			desc.Triangles.VertexBuffer.StartAddress = vertexAddress + static_cast<UINT64>(submesh.BaseVertexLocation) * vertexStride;
+			desc.Triangles.VertexBuffer.StrideInBytes = vertexStride;
+		}
+
+		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
+		inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
+		inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
+		inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
+		inputs.NumDescs = static_cast<UINT>(geometryDescs.size());
+		inputs.pGeometryDescs = geometryDescs.data();
+
+		D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO prebuildInfo = {};
+		m_device->GetRaytracingAccelerationStructurePrebuildInfo(&inputs, &prebuildInfo);
+		if (prebuildInfo.ResultDataMaxSizeInBytes == 0)
+		{
+			entry.Ready = true;
+			entry.GeometryCount = 0;
+			return &entry;
+		}
+
+		EnsureScratchCapacity(prebuildInfo.ScratchDataSizeInBytes);
+
+		// Acceleration structures live permanently in RAYTRACING_ACCELERATION_STRUCTURE; the state
+		// is sticky and must never be transitioned away from.
+		entry.Result = CreateBuffer(m_device, prebuildInfo.ResultDataMaxSizeInBytes,
+			D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+			D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
+			D3D12_HEAP_TYPE_DEFAULT);
+
+		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC buildDesc = {};
+		buildDesc.Inputs = inputs;
+		buildDesc.ScratchAccelerationStructureData = m_blasScratch->GetGPUVirtualAddress();
+		buildDesc.DestAccelerationStructureData = entry.Result->GetGPUVirtualAddress();
+
+		commandList->BuildRaytracingAccelerationStructure(&buildDesc, 0, nullptr);
+		// The scratch buffer is shared across builds in this frame, so consecutive builds must be
+		// ordered against each other.
+		const D3D12_RESOURCE_BARRIER scratchBarrier = CD3DX12_RESOURCE_BARRIER::UAV(m_blasScratch.Get());
+		commandList->ResourceBarrier(1, &scratchBarrier);
+
+		entry.GeometryCount = static_cast<UINT>(submeshes.size());
+		entry.Ready = true;
+		--buildBudget;
+
+		return &entry;
+	}
+
+	void AccelerationStructure::EnsureUploadCapacity(int frameResourceIndex, UINT instanceCount, UINT geometryCount)
+	{
+		const int index = frameResourceIndex;
+
+		if (m_instanceCapacity[index] < instanceCount)
+		{
+			if (m_instanceMapped[index] != nullptr)
+			{
+				m_instanceUpload[index]->Unmap(0, nullptr);
+				m_instanceMapped[index] = nullptr;
+			}
+			Retire(m_instanceUpload[index]);
+			m_instanceCapacity[index] = std::max<UINT>(instanceCount, m_instanceCapacity[index] * 2u);
+			m_instanceUpload[index] = CreateBuffer(m_device,
+				static_cast<UINT64>(m_instanceCapacity[index]) * sizeof(D3D12_RAYTRACING_INSTANCE_DESC),
+				D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_HEAP_TYPE_UPLOAD);
+			ThrowIfFailed(m_instanceUpload[index]->Map(0, nullptr, reinterpret_cast<void**>(&m_instanceMapped[index])));
+		}
+
+		if (m_geometryCapacity[index] < geometryCount)
+		{
+			if (m_geometryMapped[index] != nullptr)
+			{
+				m_geometryUpload[index]->Unmap(0, nullptr);
+				m_geometryMapped[index] = nullptr;
+			}
+			Retire(m_geometryUpload[index]);
+			m_geometryCapacity[index] = std::max<UINT>(geometryCount, m_geometryCapacity[index] * 2u);
+			m_geometryUpload[index] = CreateBuffer(m_device,
+				static_cast<UINT64>(m_geometryCapacity[index]) * sizeof(RaytracingGeometryInfo),
+				D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_HEAP_TYPE_UPLOAD);
+			ThrowIfFailed(m_geometryUpload[index]->Map(0, nullptr, reinterpret_cast<void**>(&m_geometryMapped[index])));
+		}
+	}
+
+	void AccelerationStructure::EvictStaleBlas()
+	{
+		for (auto it = m_blasCache.begin(); it != m_blasCache.end();)
+		{
+			if (m_frameCounter - it->second.LastSeenFrame > BlasEvictionFrames)
+			{
+				// The geometry SRV slots are not reclaimed: the descriptor allocator is monotonic.
+				// That is why the SRV heap reserve is sized generously in Core.
+				Retire(it->second.Result);
+				it = m_blasCache.erase(it);
+			}
+			else
+			{
+				++it;
+			}
+		}
+	}
+
+	bool AccelerationStructure::Build(ID3D12GraphicsCommandList4* commandList,
+		const std::vector<RaytracingMeshRenderer*>& renderers, int frameResourceIndex)
+	{
+		++m_frameCounter;
+		m_pendingBlasCount = 0;
+		m_instanceScratch.clear();
+		m_geometryScratch.clear();
+		DrainRetired();
+
+		UINT buildBudget = MaxBlasBuildsPerFrame;
+		UINT64 hash = kFnvOffsetBasis;
+
+		for (RaytracingMeshRenderer* renderer : renderers)
+		{
+			MeshBase* mesh = renderer->GetMesh();
+			if (mesh == nullptr)
+			{
+				continue;
+			}
+
+			BlasEntry* entry = AcquireBlas(mesh, commandList, buildBudget);
+			if (entry == nullptr || !entry->Ready || entry->GeometryCount == 0)
+			{
+				continue;
+			}
+
+			// The renderer is outside the Scene::RenderSceneObjects path that would normally
+			// validate this, so refresh it here. The call is idempotent within a frame.
+			renderer->ValidateTransformCache();
+
+			const UINT geometryBase = static_cast<UINT>(m_geometryScratch.size());
+
+			// Emit one record per submesh -- including submeshes beyond the material count, which
+			// the raster path clamps away. The BLAS contains all of them, so InstanceID() +
+			// GeometryIndex() must stay in range for every triangle it can hit.
+			const auto& submeshes = mesh->GetSubmeshes();
+			for (size_t i = 0; i < submeshes.size(); ++i)
+			{
+				RaytracingGeometryInfo info;
+				info.VertexBufferSrvIndex = entry->VertexSrvIndex;
+				info.IndexBufferSrvIndex = entry->IndexSrvIndex;
+				info.StartIndexLocation = submeshes[i].StartIndexLocation;
+				info.BaseVertexLocation = submeshes[i].BaseVertexLocation;
+				info.VertexStride = mesh->GetVertexByteStride();
+
+				if (i < renderer->GetMaterialCount())
+				{
+					const Material material = renderer->GetMaterial(static_cast<int>(i));
+					info.AlbedoTexIndex = material.GetSourceTextureIndex(0);
+					info.SamplerMode = static_cast<UINT>(material.GetSamplerMode());
+					// Every textured surface is alpha tested, matching color.hlsl's
+					// clip(texColor.a - 0.1f) and inc_common.hlsl's ShadowPS.
+					info.Flags = info.AlbedoTexIndex != InvalidSrvIndex ? RaytracingGeometryFlagAlphaTest : 0u;
+				}
+
+				m_geometryScratch.push_back(info);
+			}
+
+			D3D12_RAYTRACING_INSTANCE_DESC instance = {};
+			// The engine is row-vector (p' = p * M) but D3D12 instance transforms are column-vector
+			// (p' = T * p), so the first three rows of the transpose are exactly the 3x4 block.
+			const Matrix4x4 transform = renderer->GetTransformCacheRef().Transpose();
+			std::memcpy(instance.Transform, &transform, sizeof(float) * 12);
+			instance.InstanceID = geometryBase;
+			instance.InstanceMask = 0xFFu;
+			// Combined with TraceRay's geometry multiplier of 1, submesh j of this instance selects
+			// hit group record (geometryBase + j), whose local root constant is that same flat
+			// gGeometryInfo index.
+			instance.InstanceContributionToHitGroupIndex = geometryBase;
+			instance.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
+			instance.AccelerationStructure = entry->Result->GetGPUVirtualAddress();
+			m_instanceScratch.push_back(instance);
+
+			HashBytes(hash, instance.Transform, sizeof(instance.Transform));
+			HashBytes(hash, &geometryBase, sizeof(geometryBase));
+			ID3D12Resource* blas = entry->Result.Get();
+			HashBytes(hash, &blas, sizeof(blas));
+		}
+
+		for (const RaytracingGeometryInfo& info : m_geometryScratch)
+		{
+			HashBytes(hash, &info.AlbedoTexIndex, sizeof(UINT) * 3);
+		}
+
+		m_instanceCount = static_cast<UINT>(m_instanceScratch.size());
+		m_geometryCount = static_cast<UINT>(m_geometryScratch.size());
+		HashBytes(hash, &m_instanceCount, sizeof(m_instanceCount));
+		HashBytes(hash, &m_geometryCount, sizeof(m_geometryCount));
+		m_contentHash = hash;
+
+		EvictStaleBlas();
+
+		if (m_instanceCount == 0 || m_descriptorExhausted)
+		{
+			return false;
+		}
+
+		EnsureUploadCapacity(frameResourceIndex, m_instanceCount, m_geometryCount);
+		std::memcpy(m_instanceMapped[frameResourceIndex], m_instanceScratch.data(),
+			m_instanceScratch.size() * sizeof(D3D12_RAYTRACING_INSTANCE_DESC));
+		std::memcpy(m_geometryMapped[frameResourceIndex], m_geometryScratch.data(),
+			m_geometryScratch.size() * sizeof(RaytracingGeometryInfo));
+
+		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
+		inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
+		inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
+		inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
+		inputs.NumDescs = m_instanceCount;
+		inputs.InstanceDescs = m_instanceUpload[frameResourceIndex]->GetGPUVirtualAddress();
+
+		D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO prebuildInfo = {};
+		m_device->GetRaytracingAccelerationStructurePrebuildInfo(&inputs, &prebuildInfo);
+
+		if (m_tlasSize[frameResourceIndex] < prebuildInfo.ResultDataMaxSizeInBytes)
+		{
+			Retire(m_tlas[frameResourceIndex]);
+			m_tlasSize[frameResourceIndex] = prebuildInfo.ResultDataMaxSizeInBytes;
+			m_tlas[frameResourceIndex] = CreateBuffer(m_device, prebuildInfo.ResultDataMaxSizeInBytes,
+				D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+				D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
+				D3D12_HEAP_TYPE_DEFAULT);
+		}
+		if (m_tlasScratchSize[frameResourceIndex] < prebuildInfo.ScratchDataSizeInBytes)
+		{
+			Retire(m_tlasScratch[frameResourceIndex]);
+			m_tlasScratchSize[frameResourceIndex] = prebuildInfo.ScratchDataSizeInBytes;
+			m_tlasScratch[frameResourceIndex] = CreateBuffer(m_device, prebuildInfo.ScratchDataSizeInBytes,
+				D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+				D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+				D3D12_HEAP_TYPE_DEFAULT);
+		}
+
+		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC buildDesc = {};
+		buildDesc.Inputs = inputs;
+		buildDesc.ScratchAccelerationStructureData = m_tlasScratch[frameResourceIndex]->GetGPUVirtualAddress();
+		buildDesc.DestAccelerationStructureData = m_tlas[frameResourceIndex]->GetGPUVirtualAddress();
+
+		commandList->BuildRaytracingAccelerationStructure(&buildDesc, 0, nullptr);
+		const D3D12_RESOURCE_BARRIER tlasBarrier = CD3DX12_RESOURCE_BARRIER::UAV(m_tlas[frameResourceIndex].Get());
+		commandList->ResourceBarrier(1, &tlasBarrier);
+
+		return true;
+	}
+
+	D3D12_GPU_VIRTUAL_ADDRESS AccelerationStructure::GetTlasAddress(int frameResourceIndex) const
+	{
+		return m_tlas[frameResourceIndex] != nullptr ? m_tlas[frameResourceIndex]->GetGPUVirtualAddress() : 0;
+	}
+
+	D3D12_GPU_VIRTUAL_ADDRESS AccelerationStructure::GetGeometryInfoAddress(int frameResourceIndex) const
+	{
+		return m_geometryUpload[frameResourceIndex] != nullptr ? m_geometryUpload[frameResourceIndex]->GetGPUVirtualAddress() : 0;
+	}
+}

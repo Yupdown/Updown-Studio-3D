@@ -143,6 +143,8 @@ namespace udsdx
 		Vector3 cameraLook = Vector3::TransformNormal(Vector3::Backward, Matrix4x4::CreateFromQuaternion(camera->GetTransform()->GetWorldRotation()));
 
 		shadowConstants.LightDirection = lightDirection;
+		shadowConstants.LightIntensity = light->GetIntensity();
+		shadowConstants.LightColor = light->GetColor();
 		for (int i = 0; i < ShadowMapCount; ++i)
 		{
 			float f = m_shadowRanges[i];

@@ -72,6 +72,7 @@ namespace udsdx
 		}
 		m_renderShadowObjectQueue.clear();
 		m_renderGUIObjectQueue.clear();
+		m_raytracingObjectQueue.clear();
 
 		SceneObject::Enumerate(m_rootObjectSub, [&time, this](const std::shared_ptr<SceneObject>& sceneObject) { sceneObject->PostUpdate(time, *this); });
 		SceneObject::Enumerate(m_rootObjectSub, [&time, this](const std::shared_ptr<SceneObject>& sceneObject) { sceneObject->GetTransform()->ValidateSRTMatrices(); });
@@ -152,7 +153,10 @@ namespace udsdx
 
 	std::vector<D3D12_GPU_VIRTUAL_ADDRESS> Scene::PrepareCameraConstants(RenderParam& param)
 	{ ZoneScoped;
-		const bool enableTAAJitter = param.RenderOptions->DrawTAA;
+		// Raytracing jitters sub-pixel positions itself inside the ray generation shader, and a
+		// jittered projection would also perturb ViewProjInverse every frame, permanently resetting
+		// the progressive accumulator.
+		const bool enableTAAJitter = param.RenderOptions->DrawTAA && !param.RaytracingActive;
 		const float viewportWidth = std::max(param.Viewport.Width, 1.0f);
 		const float viewportHeight = std::max(param.Viewport.Height, 1.0f);
 		const Vector2 haltonSample = kHalton23_16[m_taaFrameIndex % kHalton23_16.size()];
@@ -262,6 +266,11 @@ namespace udsdx
 	void Scene::EnqueueRenderGUIObject(GUIElement* object)
 	{
 		m_renderGUIObjectQueue.emplace_back(object);
+	}
+
+	void Scene::EnqueueRaytracingObject(RaytracingMeshRenderer* object)
+	{
+		m_raytracingObjectQueue.emplace_back(object);
 	}
 
 	void Scene::RenderUI(RenderParam& param)

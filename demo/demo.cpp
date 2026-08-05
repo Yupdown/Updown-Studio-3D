@@ -103,7 +103,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
             chunkMeshes[i][j]->UploadBuffers(INSTANCE(Core)->GetDevice(), INSTANCE(Core)->GetCommandList());
             chunkObject[i][j] = SceneObject::MakeShared();
 
-            auto renderer = chunkObject[i][j]->AddComponent<MeshRenderer>();
+            auto renderer = chunkObject[i][j]->AddComponent<RaytracingMeshRenderer>();
             renderer->SetMesh(chunkMeshes[i][j].get());
             renderer->SetMaterial(materialTile);
 
@@ -119,7 +119,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 		// Wrap the instantiated asset under a placement object so the demo's position/scale layer on
 		// top of the asset's own internal node transforms instead of overwriting them.
 		objects[i] = SceneObject::MakeShared();
-		auto instance = maxwellAsset->Instantiate(pipelineStateTexture);
+		auto instance = maxwellAsset->Instantiate(pipelineStateTexture, /*enableRaytracing*/ true);
 		for (auto* renderer : instance->GetComponentsInChildren<MeshRenderer>())
 		{
 			renderer->SetMaterial(material);
@@ -247,6 +247,6 @@ void Update(const Time& time)
 
     for (int i = 0; i < objects.size(); ++i)
     {
-        objects[i]->GetTransform()->Rotate(Quaternion::CreateFromAxisAngle(Vector3::Up, time.deltaTime * 10.0f * rotations[i]));
+        // objects[i]->GetTransform()->Rotate(Quaternion::CreateFromAxisAngle(Vector3::Up, time.deltaTime * 10.0f * rotations[i]));
 	}
 }

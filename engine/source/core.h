@@ -63,6 +63,9 @@ namespace udsdx
 		ID3D12CommandAllocator* GetCommandAllocator() const;
 		ID3D12GraphicsCommandList2* GetCommandList() const;
 		bool IsShadowViewInstancingSupported() const;
+		bool IsRaytracingSupported() const;
+		ID3D12Device5* GetDXRDevice() const;
+		ID3D12GraphicsCommandList4* GetDXRCommandList() const;
 		ID3D12DescriptorHeap* GetSrvDescriptorHeap() const;
 		DeferredRenderer* GetRenderer() const;
 		ShadowMap* GetShadowMap() const;
@@ -76,6 +79,10 @@ namespace udsdx
 
 		DescriptorParam GetDescriptorParameters() const;
 		void ApplyDescriptorParameters(const DescriptorParam& param);
+		// Claims `count` consecutive slots from the shader-visible SRV heap and reports the absolute
+		// heap index of the first one (the bindless lookup index). Returns InvalidSrvIndex when the
+		// heap is exhausted rather than overrunning it.
+		SrvAllocation AllocateSrvDescriptors(UINT count);
 		void EnsureTextureShaderResourceView(Texture* texture);
 		RenderOptions& GetRenderOptionsRef();
 
@@ -162,6 +169,13 @@ namespace udsdx
 		// requires OPTIONS3::ViewInstancingTier >= 1 and shader model 6.1 (SV_ViewID)
 		D3D12_VIEW_INSTANCING_TIER m_viewInstancingTier = D3D12_VIEW_INSTANCING_TIER_NOT_SUPPORTED;
 		bool m_shadowViewInstancingSupported = false;
+
+		// DXR: promoted views of m_d3dDevice / m_commandList, valid only when m_raytracingSupported.
+		D3D12_RAYTRACING_TIER m_raytracingTier = D3D12_RAYTRACING_TIER_NOT_SUPPORTED;
+		bool m_raytracingSupported = false;
+		bool m_isSoftwareAdapter = false;
+		ComPtr<ID3D12Device5> m_dxrDevice;
+		ComPtr<ID3D12GraphicsCommandList4> m_dxrCommandList;
 
 		// Swap Chain (front and back buffer, similar as double-buffering)
 		ComPtr<IDXGISwapChain4> m_swapChain;

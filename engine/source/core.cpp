@@ -22,6 +22,8 @@
 #include "post_process_bloom.h"
 #include "post_process_taa.h"
 #include "post_process_outline.h"
+#include "raytracing_renderer.h"
+#include "light_directional.h"
 
 // Forward declare message handler from imgui_impl_win32.cpp
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -129,6 +131,7 @@ namespace udsdx
 
 			// Create hardware device with WARP adapter
 			ThrowIfFailed(::D3D12CreateDevice(dxgiAdapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&m_d3dDevice)));
+			m_isSoftwareAdapter = true;
 		}
 
 		// Check view instancing support for the cascaded shadow map pass.
@@ -147,6 +150,29 @@ namespace udsdx
 		DebugConsole::Log(std::string("Shadow view instancing: ") + (m_shadowViewInstancingSupported ?
 			"enabled (tier " + std::to_string(static_cast<int>(m_viewInstancingTier)) + ")" :
 			"unsupported, falling back to per-cascade rendering"));
+
+		// Check DXR 1.0 support for the raytracing renderer. It needs OPTIONS5::RaytracingTier >= 1.0,
+		// shader model 6.3 (for the lib_6_3 DXIL library), and ID3D12Device5. The device is promoted
+		// once here; the command list is promoted in CreateCommandObjects.
+		D3D12_FEATURE_DATA_D3D12_OPTIONS5 options5 = {};
+		if (SUCCEEDED(m_d3dDevice->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &options5, sizeof(options5))))
+		{
+			m_raytracingTier = options5.RaytracingTier;
+		}
+
+		D3D12_FEATURE_DATA_SHADER_MODEL shaderModel63 = { D3D_SHADER_MODEL_6_3 };
+		const bool sm63Supported = SUCCEEDED(m_d3dDevice->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &shaderModel63, sizeof(shaderModel63)))
+			&& shaderModel63.HighestShaderModel >= D3D_SHADER_MODEL_6_3;
+
+		// WARP advertises a raytracing tier but traces at a small fraction of a frame per second,
+		// which is worse than simply not offering the mode.
+		m_raytracingSupported = m_raytracingTier >= D3D12_RAYTRACING_TIER_1_0
+			&& sm63Supported
+			&& !m_isSoftwareAdapter
+			&& SUCCEEDED(m_d3dDevice.As(&m_dxrDevice));
+		DebugConsole::Log(std::string("Raytracing (DXR 1.0): ") + (m_raytracingSupported ?
+			"enabled (tier " + std::to_string(static_cast<int>(m_raytracingTier)) + ")" :
+			"unsupported, the raytracing renderer is disabled"));
 
 		// Check for tearing support
 		if (FAILED(m_dxgiFactory->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &m_tearingSupport, sizeof(m_tearingSupport))))
@@ -220,6 +246,14 @@ namespace udsdx
 			IID_PPV_ARGS(m_commandList.GetAddressOf())
 		));
 
+		// Promote to ID3D12GraphicsCommandList4 for DispatchRays / BuildRaytracingAccelerationStructure.
+		// The same list object is reused every frame, so this only has to happen once.
+		if (m_raytracingSupported && FAILED(m_commandList.As(&m_dxrCommandList)))
+		{
+			m_raytracingSupported = false;
+			DebugConsole::LogWarning("ID3D12GraphicsCommandList4 is unavailable; disabling the raytracing renderer.");
+		}
+
 		// Create fence for cpu-gpu synchronization
 		ThrowIfFailed(m_d3dDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_fence)));
 
@@ -277,7 +311,13 @@ namespace udsdx
 		// EnsureTextureShaderResourceView: environment maps and, notably, the embedded/external
 		// textures every loaded ModelAsset resolves on demand. A multi-material model can need many, so
 		// this is comfortably larger than the per-frame post-process descriptors.
-		static constexpr UINT kPostInitSrvReserve = 256;
+		//
+		// The raytracing renderer additionally takes two raw SRVs (vertex + index buffer) per mesh
+		// registered into the acceleration structure, and the descriptor allocator never reclaims.
+		// A shader-visible heap cannot be the source of CopyDescriptors, so it cannot be grown after
+		// the fact -- the reserve has to cover the worst case up front. Descriptors are ~32 bytes,
+		// so this costs a few hundred kilobytes.
+		static constexpr UINT kPostInitSrvReserve = 8192;
 		D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc;
 		srvHeapDesc.NumDescriptors = static_cast<UINT>(textures.size() + kPostInitSrvReserve);
 		srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
@@ -598,7 +638,10 @@ namespace udsdx
 
 			.RenderEnvironmentMap = nullptr,
 
-			.TracyQueueContext = &m_tracyQueueCtx
+			.TracyQueueContext = &m_tracyQueueCtx,
+
+			.DXRCommandList = m_dxrCommandList.Get(),
+			.RaytracingSupported = m_raytracingSupported
 		};
 
 		// Command list allocators can only be reset when the associated 
@@ -1039,6 +1082,87 @@ namespace udsdx
 		ImGui::SliderFloat("Fog Height Falloff", &m_deferredRenderer->GetRenderOptionsRef().FogHeightFalloff, 0.0f, 10000.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_Logarithmic);
 		ImGui::SliderFloat("Fog Distance Start", &m_deferredRenderer->GetRenderOptionsRef().FogDistanceStart, 0.0f, 100.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
 
+		if (ImGui::CollapsingHeader("Raytracing (DXR)"))
+		{
+			RenderOptions& options = m_deferredRenderer->GetRenderOptionsRef();
+			RaytracingRenderer* raytracing = m_deferredRenderer->GetRaytracingRenderer();
+
+			ImGui::BeginDisabled(!m_raytracingSupported);
+			ImGui::Checkbox("Use Raytracing", &options.DrawRaytracing);
+			ImGui::EndDisabled();
+			if (!m_raytracingSupported)
+			{
+				ImGui::TextDisabled("DXR 1.0 is unsupported on this adapter.");
+			}
+			else if (raytracing != nullptr && !raytracing->IsAvailable())
+			{
+				ImGui::TextDisabled("The raytracing pipeline failed to initialize.");
+			}
+
+			if (raytracing != nullptr)
+			{
+				ImGui::Text("Accumulated: %u samples over %u frames",
+					raytracing->GetAccumulatedSamples(), raytracing->GetAccumulatedFrames());
+				ImGui::Text("Last restart: %s",
+					RaytracingRenderer::ToString(raytracing->GetLastResetReason()));
+				if (raytracing->GetAccumulatedFrames() <= 1)
+				{
+					ImGui::TextDisabled("Not converging: something changes every frame.");
+				}
+				ImGui::Text("Instances: %u   Geometries: %u   BLAS: %u",
+					raytracing->GetInstanceCount(), raytracing->GetGeometryCount(), raytracing->GetBlasCount());
+				if (ImGui::Button("Reset Accumulation"))
+				{
+					raytracing->RequestAccumulationReset();
+				}
+
+				int samplesPerPixel = static_cast<int>(options.RaytracingSamplesPerPixel);
+				if (ImGui::SliderInt("Samples Per Pixel", &samplesPerPixel, 1, 16))
+				{
+					options.RaytracingSamplesPerPixel = static_cast<unsigned int>(samplesPerPixel);
+				}
+
+				int maxAccumulation = static_cast<int>(options.RaytracingMaxAccumulation);
+				if (ImGui::SliderInt("Max Accumulation Frames (0 = unlimited)", &maxAccumulation, 0, 16384))
+				{
+					options.RaytracingMaxAccumulation = static_cast<unsigned int>(std::max(0, maxAccumulation));
+				}
+
+				ImGui::SliderFloat("Ray Max Distance", &options.RaytracingRayMaxDistance, 10.0f, 20000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+				ImGui::SliderFloat("Shadow Ray Offset", &options.RaytracingShadowRayOffset, 1e-4f, 0.1f, "%.5f", ImGuiSliderFlags_Logarithmic);
+
+				static const char* debugModeNames[] = { "None", "Albedo", "Normal", "Direct Only", "Indirect Only", "Sample Heatmap" };
+				int debugMode = static_cast<int>(options.RaytracingDebug);
+				if (ImGui::Combo("Debug Output", &debugMode, debugModeNames, IM_ARRAYSIZE(debugModeNames)))
+				{
+					options.RaytracingDebug = static_cast<RaytracingDebugMode>(debugMode);
+				}
+
+				// The sun's angular diameter lives on the light, not in RenderOptions, because the
+				// deferred path reads the same values through ShadowConstants.
+				const auto& lights = m_scene != nullptr ? m_scene->GetRenderLights() : std::vector<LightDirectional*>{};
+				if (!lights.empty())
+				{
+					LightDirectional* sun = lights.front();
+					float angularDiameter = sun->GetAngularDiameter();
+					if (ImGui::SliderFloat("Sun Angular Diameter (deg)", &angularDiameter, 0.0f, 20.0f, "%.3f"))
+					{
+						sun->SetAngularDiameter(angularDiameter);
+					}
+					Color sunColor = sun->GetColor();
+					if (ImGui::ColorEdit3("Sun Color", reinterpret_cast<float*>(&sunColor)))
+					{
+						sun->SetColor(sunColor);
+					}
+					float sunIntensity = sun->GetIntensity();
+					if (ImGui::SliderFloat("Sun Intensity", &sunIntensity, 0.0f, 20.0f, "%.3f"))
+					{
+						sun->SetIntensity(sunIntensity);
+					}
+				}
+			}
+		}
+
 		// Set window position to top left corner
 		ImGui::SetWindowPos(ImVec2(0, 0));
 		// Set window size and makes it resizable
@@ -1096,6 +1220,21 @@ namespace udsdx
 	bool Core::IsShadowViewInstancingSupported() const
 	{
 		return m_shadowViewInstancingSupported;
+	}
+
+	bool Core::IsRaytracingSupported() const
+	{
+		return m_raytracingSupported;
+	}
+
+	ID3D12Device5* Core::GetDXRDevice() const
+	{
+		return m_dxrDevice.Get();
+	}
+
+	ID3D12GraphicsCommandList4* Core::GetDXRCommandList() const
+	{
+		return m_dxrCommandList.Get();
 	}
 
 	DeferredRenderer* Core::GetRenderer() const
@@ -1181,6 +1320,30 @@ namespace udsdx
 		m_srvHeapSize = static_cast<UINT>(param.SrvCpuHandle.ptr - m_srvHeap->GetCPUDescriptorHandleForHeapStart().ptr) / m_cbvSrvUavDescriptorSize;
 		m_rtvHeapSize = static_cast<UINT>(param.RtvCpuHandle.ptr - m_rtvHeap->GetCPUDescriptorHandleForHeapStart().ptr) / m_rtvDescriptorSize;
 		m_dsvHeapSize = static_cast<UINT>(param.DsvCpuHandle.ptr - m_dsvHeap->GetCPUDescriptorHandleForHeapStart().ptr) / m_dsvDescriptorSize;
+	}
+
+	SrvAllocation Core::AllocateSrvDescriptors(UINT count)
+	{
+		SrvAllocation allocation{};
+
+		const UINT capacity = m_srvHeap->GetDesc().NumDescriptors;
+		if (count == 0 || m_srvHeapSize + count > capacity)
+		{
+			// The heap cannot grow (a shader-visible heap is not a valid CopyDescriptors source), so
+			// report instead of walking off the end and silently corrupting neighbouring descriptors.
+			DebugConsole::LogError("SRV descriptor heap exhausted: requested " + std::to_string(count) +
+				", used " + std::to_string(m_srvHeapSize) + " of " + std::to_string(capacity) +
+				". Raise kPostInitSrvReserve in Core::CreateDescriptorHeaps.");
+			allocation.HeapIndex = InvalidSrvIndex;
+			return allocation;
+		}
+
+		allocation.CpuHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_srvHeap->GetCPUDescriptorHandleForHeapStart(), m_srvHeapSize, m_cbvSrvUavDescriptorSize);
+		allocation.GpuHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_srvHeap->GetGPUDescriptorHandleForHeapStart(), m_srvHeapSize, m_cbvSrvUavDescriptorSize);
+		allocation.HeapIndex = m_srvHeapSize;
+		m_srvHeapSize += count;
+
+		return allocation;
 	}
 
 	void Core::EnsureTextureShaderResourceView(Texture* texture)
