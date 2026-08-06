@@ -180,12 +180,9 @@ float3 DirectSun(float3 position, float3 normal, float3 albedo, inout uint rng)
     return albedo * gSunColor.rgb * gSunIntensity * ndotl;
 }
 
-// primaryOut reports the first intersection so the caller can build a motion vector and the
-// temporal guide from it without re-tracing.
-float3 TracePath(RayDesc ray, inout uint rng, out SurfacePayload primaryOut)
+float3 TracePath(RayDesc ray, inout uint rng)
 {
     SurfacePayload primary = TraceSurface(ray);
-    primaryOut = primary;
 
     if (primary.HitT < 0.0f)
     {
@@ -254,6 +251,36 @@ float3 TracePath(RayDesc ray, inout uint rng, out SurfacePayload primaryOut)
     return ApplyFog(direct + indirect, position);
 }
 
+// Primary ray for a screen UV, through whichever projection is active.
+RayDesc BuildPrimaryRay(float2 uv)
+{
+    RayDesc ray;
+    ray.Origin = gEyePosW.xyz;
+    ray.TMin = 1e-3f;
+    ray.TMax = gRayMaxDistance;
+
+    if (gFisheyeEnabled != 0u)
+    {
+        // A fisheye is generated, not warped: the ray direction comes straight from the
+        // angular mapping, so there is no perspective image to resample and no resolution
+        // lost toward the edges. Fields at or beyond 90 degrees off-axis cost nothing here,
+        // which a projection matrix cannot express at all.
+        float3 viewDirection = FisheyeUvToViewDirection(uv);
+        ray.Direction = normalize(mul(float4(viewDirection, 0.0f), gViewInverse).xyz);
+    }
+    else
+    {
+        float2 ndc = float2(uv.x * 2.0f - 1.0f, 1.0f - uv.y * 2.0f);
+
+        // Reverse-Z with an infinite far plane: NDC z == 1 is the NEAR plane and z == 0 is
+        // infinity (w == 0 there, so it cannot be unprojected).
+        float4 nearH = mul(float4(ndc, 1.0f, 1.0f), gViewProjInverse);
+        float3 nearW = nearH.xyz / nearH.w;
+        ray.Direction = normalize(nearW - ray.Origin);
+    }
+    return ray;
+}
+
 [shader("raygeneration")]
 void RayGenMain()
 {
@@ -261,76 +288,44 @@ void RayGenMain()
     uint2 dimensions = DispatchRaysDimensions().xy;
     uint rng = InitRng(pixel, gFrameSeed);
 
+    // The guide and motion vector come from a dedicated ray fixed at the pixel CENTRE, not from
+    // one of the jittered radiance samples. The temporal pass validates history by comparing this
+    // pixel's guide against last frame's stored guide; a jittered guide re-rolls the pixel's
+    // identity (instance / normal / depth) every frame wherever the footprint straddles a
+    // discontinuity, so the comparison rejects history with probability 2p(1-p) and edge pixels
+    // stay pinned at a handful of samples forever -- visible as permanent silhouette shimmer.
+    // A fixed centre sample makes the identity deterministic while radiance stays jittered for
+    // antialiasing. Surface attributes only: no light transport runs on this ray.
+    RayDesc guideRay = BuildPrimaryRay((float2(pixel) + 0.5f) / float2(dimensions));
+    SurfacePayload guide = TraceSurface(guideRay);
+
     float3 sum = 0.0f;
-
-    // The motion vector and guide come from the first sample only. They are per-pixel quantities,
-    // and the sub-pixel jitter between samples is far below the precision reprojection needs.
-    SurfacePayload primary = (SurfacePayload)0;
-    RayDesc primaryRay;
-    primaryRay.Origin = gEyePosW.xyz;
-    primaryRay.Direction = float3(0.0f, 0.0f, 1.0f);
-    primaryRay.TMin = 0.0f;
-    primaryRay.TMax = gRayMaxDistance;
-
     for (uint sample = 0u; sample < gSamplesPerPixel; ++sample)
     {
-        float2 uv = (float2(pixel) + NextFloat2(rng)) / float2(dimensions);
-
-        RayDesc ray;
-        ray.Origin = gEyePosW.xyz;
-        ray.TMin = 1e-3f;
-        ray.TMax = gRayMaxDistance;
-
-        if (gFisheyeEnabled != 0u)
-        {
-            // A fisheye is generated, not warped: the ray direction comes straight from the
-            // angular mapping, so there is no perspective image to resample and no resolution
-            // lost toward the edges. Fields at or beyond 90 degrees off-axis cost nothing here,
-            // which a projection matrix cannot express at all.
-            float3 viewDirection = FisheyeUvToViewDirection(uv);
-            ray.Direction = normalize(mul(float4(viewDirection, 0.0f), gViewInverse).xyz);
-        }
-        else
-        {
-            float2 ndc = float2(uv.x * 2.0f - 1.0f, 1.0f - uv.y * 2.0f);
-
-            // Reverse-Z with an infinite far plane: NDC z == 1 is the NEAR plane and z == 0 is
-            // infinity (w == 0 there, so it cannot be unprojected).
-            float4 nearH = mul(float4(ndc, 1.0f, 1.0f), gViewProjInverse);
-            float3 nearW = nearH.xyz / nearH.w;
-            ray.Direction = normalize(nearW - ray.Origin);
-        }
-
-        SurfacePayload samplePrimary;
-        sum += TracePath(ray, rng, samplePrimary);
-
-        if (sample == 0u)
-        {
-            primary = samplePrimary;
-            primaryRay = ray;
-        }
+        RayDesc ray = BuildPrimaryRay((float2(pixel) + NextFloat2(rng)) / float2(dimensions));
+        sum += TracePath(ray, rng);
     }
 
     // This shader no longer accumulates: it emits one frame's estimate plus everything the
     // temporal pass needs to reproject it. Accumulation happens there, where a 3x3 neighbourhood
     // is reachable (ray generation shaders have no groupshared memory).
-    gRadianceOut[pixel] = float4(sum / float(max(gSamplesPerPixel, 1u)), primary.HitT < 0.0f ? 0.0f : 1.0f);
+    gRadianceOut[pixel] = float4(sum / float(max(gSamplesPerPixel, 1u)), guide.HitT < 0.0f ? 0.0f : 1.0f);
 
-    if (primary.HitT < 0.0f)
+    if (guide.HitT < 0.0f)
     {
         // Sky: only camera rotation moves it, and there is no surface to validate against.
-        gMotionOut[pixel] = float4(MotionFromDirection(primaryRay.Direction), RT_SKY_VIEW_Z, 0.0f);
+        gMotionOut[pixel] = float4(MotionFromDirection(guideRay.Direction), RT_SKY_VIEW_Z, 0.0f);
         gGuideOut[pixel] = float4(0.0f, 0.0f, RT_SKY_VIEW_Z, asfloat(RT_INVALID_INSTANCE));
     }
     else
     {
-        float3 currentWorld = primaryRay.Origin + primaryRay.Direction * primary.HitT;
+        float3 currentWorld = guideRay.Origin + guideRay.Direction * guide.HitT;
         float prevDistance;
-        float2 motion = MotionFromWorld(currentWorld, primary.PrevWorldPos, prevDistance);
+        float2 motion = MotionFromWorld(currentWorld, guide.PrevWorldPos, prevDistance);
 
         gMotionOut[pixel] = float4(motion, prevDistance, 0.0f);
-        gGuideOut[pixel] = float4(EncodeOctahedral(primary.Normal),
+        gGuideOut[pixel] = float4(EncodeOctahedral(guide.Normal),
                                   CameraDistance(currentWorld, gEyePosW.xyz),
-                                  asfloat(primary.InstanceIdx));
+                                  asfloat(guide.InstanceIdx));
     }
 }
