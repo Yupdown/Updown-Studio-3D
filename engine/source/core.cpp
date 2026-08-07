@@ -1132,6 +1132,7 @@ namespace udsdx
 				ImGui::SeparatorText("Rays");
 				ImGui::SliderFloat("Ray Max Distance", &options.RaytracingRayMaxDistance, 10.0f, 20000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
 				ImGui::SliderFloat("Shadow Ray Offset", &options.RaytracingShadowRayOffset, 1e-4f, 0.1f, "%.5f", ImGuiSliderFlags_Logarithmic);
+				ImGui::SliderFloat("Indirect Sky Clamp", &options.RaytracingSkyMaxRadiance, 1.0f, 64.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
 
 				static const char* debugModeNames[] = { "None", "Albedo", "Normal", "Direct Only", "Indirect Only", "Motion Vector", "Sample Heatmap" };
 				int debugMode = static_cast<int>(options.RaytracingDebug);

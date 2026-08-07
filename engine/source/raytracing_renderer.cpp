@@ -658,7 +658,7 @@ namespace udsdx
 		constants.RayMaxDistance = options.RaytracingRayMaxDistance;
 		constants.ShadowRayOffset = options.RaytracingShadowRayOffset;
 		constants.SkyIntensity = 1.0f;
-		constants.SkyMaxRadiance = 64.0f;
+		constants.SkyMaxRadiance = param.RenderOptions->RaytracingSkyMaxRadiance;
 		constants.DebugMode = static_cast<UINT>(options.RaytracingDebug);
 		constants.HasEnvironmentMap = hasEnvironmentMap ? 1u : 0u;
 		constants.FrameSeed = static_cast<UINT>(m_frameCounter);
@@ -810,6 +810,7 @@ namespace udsdx
 		settings.FogHeightFalloff = param.RenderOptions->FogHeightFalloff;
 		settings.FogDistanceStart = param.RenderOptions->FogDistanceStart;
 		settings.RayMaxDistance = param.RenderOptions->RaytracingRayMaxDistance;
+		settings.SkyMaxRadiance = param.RenderOptions->RaytracingSkyMaxRadiance;
 		settings.ShadowRayOffset = param.RenderOptions->RaytracingShadowRayOffset;
 		settings.SamplesPerPixel = std::max(1u, param.RenderOptions->RaytracingSamplesPerPixel);
 		settings.DebugMode = static_cast<UINT>(param.RenderOptions->RaytracingDebug);

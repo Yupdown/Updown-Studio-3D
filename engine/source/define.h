@@ -82,6 +82,12 @@ namespace udsdx
 		float RaytracingFisheyeFov = 180.0f; // degrees, total field; 180 puts the corners at 90 off-axis
 		float RaytracingSunAngularDiameter = 0.53f;  // degrees; the real sun subtends ~0.53
 		float RaytracingRayMaxDistance = 1000.0f;
+		// Upper bound on sky radiance sampled by the indirect bounce. The environment map's
+		// brightest texels sit orders of magnitude above a shadowed surface's mean, so a single
+		// unlucky bounce sample dominates the pixel for hundreds of frames -- the classic firefly.
+		// Clamping the tail at the source costs a slight darkening of sky-lit shadow but cuts the
+		// indirect estimator's variance enough for dark regions to actually converge.
+		float RaytracingSkyMaxRadiance = 8.0f;
 		float RaytracingShadowRayOffset = 1e-3f;
 		RaytracingDebugMode RaytracingDebug = RaytracingDebugMode::None;
 	};

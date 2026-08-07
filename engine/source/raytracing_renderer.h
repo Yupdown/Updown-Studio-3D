@@ -37,6 +37,7 @@ namespace udsdx
 			float FogHeightFalloff = 0.0f;
 			float FogDistanceStart = 0.0f;
 			float RayMaxDistance = 0.0f;
+			float SkyMaxRadiance = 0.0f;
 			float ShadowRayOffset = 0.0f;
 			Vector3 SunDirection{};
 			Color SunColor{};

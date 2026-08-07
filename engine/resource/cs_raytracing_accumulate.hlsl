@@ -207,7 +207,22 @@ void CS(uint3 dispatchThreadId : SV_DispatchThreadID)
     }
     const float3 mean = moment1 / 9.0f;
     const float3 sigma = sqrt(max(moment2 / 9.0f - mean * mean, 0.0f));
-    historyColor = ClipColor(historyColor, mean - gVarianceClipGamma * sigma, mean + gVarianceClipGamma * sigma);
+
+    // Two guards keep the clip from fighting a converged estimate, while a genuine lighting
+    // change (which shifts the box centre itself by a large factor) still clips and gets followed.
+    //
+    // 1. Widen with convergence: a history backed by hundreds of samples deserves more trust than
+    //    nine fresh draws; a freshly reset pixel keeps the tight box.
+    //
+    // 2. Relative slack: on a skewed distribution -- a dark pixel whose radiance comes from rare
+    //    bright bounce samples -- a 3x3 of 1spp draws that happened to miss the tail measures a
+    //    sigma far below the true deviation, so no multiple of that sigma contains the converged
+    //    mean. Sigma-based widening cannot fix a sigma that was underestimated in the first
+    //    place; a margin proportional to the history itself can. Half the history's own value
+    //    passes sampling-scale disagreement but still catches multi-fold lighting changes.
+    const float clipGamma = gVarianceClipGamma * sqrt(1.0f + historyCount / 64.0f);
+    const float3 slack = 0.5f * historyColor;
+    historyColor = ClipColor(historyColor, mean - clipGamma * sigma - slack, mean + clipGamma * sigma + slack);
 
     // A pixel that barely moved reprojected almost exactly, so let it keep accumulating. One that
     // is sweeping across the screen accumulates reprojection error every frame, so cap its
