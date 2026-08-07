@@ -88,6 +88,10 @@ namespace udsdx
 		// Clamping the tail at the source costs a slight darkening of sky-lit shadow but cuts the
 		// indirect estimator's variance enough for dark regions to actually converge.
 		float RaytracingSkyMaxRadiance = 8.0f;
+		// Edge-aware a-trous passes over the accumulated indirect radiance. Display-side only, so
+		// changing them never invalidates history. 0 disables the filter.
+		unsigned int RaytracingAtrousIterations = 4u;
+		float RaytracingAtrousLuminanceSigma = 1.0f;
 		float RaytracingShadowRayOffset = 1e-3f;
 		RaytracingDebugMode RaytracingDebug = RaytracingDebugMode::None;
 	};

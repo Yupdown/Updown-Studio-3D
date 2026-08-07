@@ -13,9 +13,11 @@ cbuffer cbResolve : register(b0)
 	float2 gResolvePad;
 };
 
-// rgb is the running mean and a is the effective sample count, both produced by the temporal
-// accumulation pass. Nothing left to divide here.
+// Direct history: rgb running mean, a = effective sample count. Never spatially filtered, so sun
+// patches, sky and fog stay pixel-sharp.
 Texture2D gHistory : register(t0);
+// Indirect after the a-trous filter chain (or the raw indirect history when the filter is off).
+Texture2D gIndirect : register(t1);
 
 SamplerState gsamPointClamp : register(s0);
 
@@ -41,5 +43,5 @@ float4 PS(VertexOut pin) : SV_Target
 		return float4(Heatmap(history.a / max(gHeatmapMax, 1.0f)), 1.0f);
 	}
 
-	return float4(history.rgb, 1.0f);
+	return float4(history.rgb + gIndirect.SampleLevel(gsamPointClamp, pin.TexC, 0.0f).rgb, 1.0f);
 }

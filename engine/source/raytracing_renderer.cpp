@@ -12,6 +12,7 @@
 #include "compiled_shaders/vs_drawscreen.h"
 #include "compiled_shaders/ps_raytracing_resolve.h"
 #include "compiled_shaders/cs_raytracing_accumulate.h"
+#include "compiled_shaders/cs_raytracing_atrous.h"
 #include "compiled_shaders/lib_raytracing.h"
 
 namespace udsdx
@@ -70,6 +71,7 @@ namespace udsdx
 			BuildShaderTables();
 		}
 		BuildAccumulatePipelineState();
+		BuildAtrousPipelineState();
 		BuildResolvePipelineState();
 		CreateDummyEnvironmentCube();
 	}
@@ -93,9 +95,10 @@ namespace udsdx
 		// does not accept stage-specific visibility, and ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT must not
 		// be set. Total cost is 10 of the 64 available DWORDs.
 		{
-			// Three consecutive UAVs: radiance, motion and the write-side guide.
+			// Four consecutive UAVs: direct radiance, indirect radiance, motion and the
+			// write-side guide.
 			CD3DX12_DESCRIPTOR_RANGE raygenUavRange;
-			raygenUavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 3, 0, 0);
+			raygenUavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 4, 0, 0);
 
 			// Unbounded ranges over the whole shader-visible SRV heap, in separate spaces so a
 			// Texture2D array and a ByteAddressBuffer array can both address it by heap index.
@@ -169,11 +172,13 @@ namespace udsdx
 		// Temporal accumulation root signature. Independent of the DXR global signature: this is an
 		// ordinary compute pass.
 		{
-			// radiance, motion, guide[write], guide[read], history[read] -- one contiguous run.
+			// direct radiance, indirect radiance, motion, guide[write], guide[read],
+			// direct history[read], indirect history[read] -- one contiguous run.
 			CD3DX12_DESCRIPTOR_RANGE srvRange;
-			srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 5, 0);
+			srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 7, 0);
+			// direct history[write], indirect history[write].
 			CD3DX12_DESCRIPTOR_RANGE uavRange;
-			uavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
+			uavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 2, 0);
 
 			CD3DX12_ROOT_PARAMETER slotRootParameter[3]{};
 			slotRootParameter[0].InitAsConstantBufferView(0);
@@ -197,14 +202,51 @@ namespace udsdx
 			m_accumulateRootSignature->SetName(L"RaytracingRenderer::Accumulate");
 		}
 
-		// Resolve pass root signature: debug constants plus the history SRV.
+		// A-trous filter root signature: root constants plus separate single-descriptor tables,
+		// because the source alternates between the indirect history and the filter ping-pong.
+		{
+			CD3DX12_DESCRIPTOR_RANGE sourceRange;
+			sourceRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+			CD3DX12_DESCRIPTOR_RANGE guideRange;
+			guideRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
+			CD3DX12_DESCRIPTOR_RANGE destinationRange;
+			destinationRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
+
+			CD3DX12_ROOT_PARAMETER slotRootParameter[4]{};
+			slotRootParameter[0].InitAsConstants(8, 0);
+			slotRootParameter[1].InitAsDescriptorTable(1, &sourceRange);
+			slotRootParameter[2].InitAsDescriptorTable(1, &guideRange);
+			slotRootParameter[3].InitAsDescriptorTable(1, &destinationRange);
+
+			CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(_countof(slotRootParameter), slotRootParameter,
+				0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_NONE);
+
+			ComPtr<ID3DBlob> serializedRootSig;
+			ComPtr<ID3DBlob> errorBlob;
+			HRESULT hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1,
+				serializedRootSig.GetAddressOf(), errorBlob.GetAddressOf());
+			if (errorBlob != nullptr)
+			{
+				::OutputDebugStringA(static_cast<char*>(errorBlob->GetBufferPointer()));
+			}
+			ThrowIfFailed(hr);
+			ThrowIfFailed(m_device->CreateRootSignature(0, serializedRootSig->GetBufferPointer(),
+				serializedRootSig->GetBufferSize(), IID_PPV_ARGS(m_atrousRootSignature.GetAddressOf())));
+			m_atrousRootSignature->SetName(L"RaytracingRenderer::Atrous");
+		}
+
+		// Resolve pass root signature: debug constants plus the direct history and the filtered
+		// indirect.
 		{
 			CD3DX12_DESCRIPTOR_RANGE accumulationRange;
 			accumulationRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+			CD3DX12_DESCRIPTOR_RANGE indirectRange;
+			indirectRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
 
-			CD3DX12_ROOT_PARAMETER slotRootParameter[2]{};
+			CD3DX12_ROOT_PARAMETER slotRootParameter[3]{};
 			slotRootParameter[0].InitAsConstants(4, 0);
 			slotRootParameter[1].InitAsDescriptorTable(1, &accumulationRange, D3D12_SHADER_VISIBILITY_PIXEL);
+			slotRootParameter[2].InitAsDescriptorTable(1, &indirectRange, D3D12_SHADER_VISIBILITY_PIXEL);
 
 			CD3DX12_STATIC_SAMPLER_DESC samplerDesc[] = {
 				CD3DX12_STATIC_SAMPLER_DESC(0, D3D12_FILTER_MIN_MAG_MIP_POINT,
@@ -366,6 +408,16 @@ namespace udsdx
 		m_accumulatePipelineState->SetName(L"RaytracingRenderer::Accumulate");
 	}
 
+	void RaytracingRenderer::BuildAtrousPipelineState()
+	{
+		D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc = {};
+		psoDesc.pRootSignature = m_atrousRootSignature.Get();
+		psoDesc.CS = { g_cso_cs_raytracing_atrous, sizeof(g_cso_cs_raytracing_atrous) };
+
+		ThrowIfFailed(m_device->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(m_atrousPipelineState.GetAddressOf())));
+		m_atrousPipelineState->SetName(L"RaytracingRenderer::Atrous");
+	}
+
 	void RaytracingRenderer::BuildResolvePipelineState()
 	{
 		D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc;
@@ -458,11 +510,16 @@ namespace udsdx
 		};
 
 		createTarget(m_radianceBuffer, RADIANCE_FORMAT, L"RaytracingRenderer::Radiance");
+		createTarget(m_indirectRadianceBuffer, RADIANCE_FORMAT, L"RaytracingRenderer::IndirectRadiance");
 		createTarget(m_motionBuffer, MOTION_FORMAT, L"RaytracingRenderer::Motion");
 		createTarget(m_guideBuffers[0], GUIDE_FORMAT, L"RaytracingRenderer::Guide0");
 		createTarget(m_guideBuffers[1], GUIDE_FORMAT, L"RaytracingRenderer::Guide1");
 		createTarget(m_historyBuffers[0], HISTORY_FORMAT, L"RaytracingRenderer::History0");
 		createTarget(m_historyBuffers[1], HISTORY_FORMAT, L"RaytracingRenderer::History1");
+		createTarget(m_indirectHistoryBuffers[0], HISTORY_FORMAT, L"RaytracingRenderer::IndirectHistory0");
+		createTarget(m_indirectHistoryBuffers[1], HISTORY_FORMAT, L"RaytracingRenderer::IndirectHistory1");
+		createTarget(m_filterBuffers[0], RADIANCE_FORMAT, L"RaytracingRenderer::Filter0");
+		createTarget(m_filterBuffers[1], RADIANCE_FORMAT, L"RaytracingRenderer::Filter1");
 
 		m_dispatchDesc.Width = m_width;
 		m_dispatchDesc.Height = m_height;
@@ -479,24 +536,35 @@ namespace udsdx
 			descriptorParam.SrvGpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
 		};
 
-		// Two ray generation UAV runs, one per ping-pong phase. Each run is three consecutive
-		// descriptors -- radiance, motion, guide[phase] -- so a single table range covers it.
+		// Two ray generation UAV runs, one per ping-pong phase. Each run is four consecutive
+		// descriptors -- direct radiance, indirect radiance, motion, guide[phase] -- so a single
+		// table range covers it.
 		for (int phase = 0; phase < 2; ++phase)
 		{
 			claim(&m_raygenUavCpu[phase], &m_raygenUavTable[phase]);
+			claim(nullptr, nullptr); // indirect radiance UAV
 			claim(nullptr, nullptr); // motion UAV
 			claim(nullptr, nullptr); // guide[phase] UAV
 		}
 
-		// Accumulation SRV runs, one per phase: radiance, motion, guide[write], guide[read],
-		// history[read].
+		// Accumulation SRV runs, one per phase: direct radiance, indirect radiance, motion,
+		// guide[write], guide[read], direct history[read], indirect history[read].
 		for (int phase = 0; phase < 2; ++phase)
 		{
 			claim(&m_accumulateSrvCpu[phase], &m_accumulateSrvTable[phase]);
+			claim(nullptr, nullptr); // indirect radiance
 			claim(nullptr, nullptr); // motion
 			claim(nullptr, nullptr); // guide[write]
 			claim(nullptr, nullptr); // guide[read]
-			claim(nullptr, nullptr); // history[read]
+			claim(nullptr, nullptr); // direct history[read]
+			claim(nullptr, nullptr); // indirect history[read]
+		}
+
+		// Accumulation UAV runs, one per phase: direct history[phase], indirect history[phase].
+		for (int phase = 0; phase < 2; ++phase)
+		{
+			claim(&m_accumulateUavCpu[phase], &m_accumulateUavTable[phase]);
+			claim(nullptr, nullptr); // indirect history[phase]
 		}
 
 		claim(&m_motionCpuSrv, &m_motionGpuSrv);
@@ -504,14 +572,26 @@ namespace udsdx
 		{
 			claim(&m_guideDepthCpuSrv[i], &m_guideDepthGpuSrv[i]);
 		}
+		for (int i = 0; i < 2; ++i)
+		{
+			claim(&m_guideCpuSrv[i], &m_guideGpuSrv[i]);
+		}
 
 		for (int i = 0; i < 2; ++i)
 		{
-			claim(&m_historyCpuUav[i], &m_historyGpuUav[i]);
+			claim(&m_historyCpuSrv[i], &m_historyGpuSrv[i]);
 		}
 		for (int i = 0; i < 2; ++i)
 		{
-			claim(&m_historyCpuSrv[i], &m_historyGpuSrv[i]);
+			claim(&m_indirectHistoryCpuSrv[i], &m_indirectHistoryGpuSrv[i]);
+		}
+		for (int i = 0; i < 2; ++i)
+		{
+			claim(&m_filterCpuSrv[i], &m_filterGpuSrv[i]);
+		}
+		for (int i = 0; i < 2; ++i)
+		{
+			claim(&m_filterCpuUav[i], &m_filterGpuUav[i]);
 		}
 
 		claim(&m_dummyEnvironmentCpuSrv, &m_dummyEnvironmentGpuSrv);
@@ -552,14 +632,18 @@ namespace udsdx
 			CD3DX12_CPU_DESCRIPTOR_HANDLE uav = m_raygenUavCpu[phase];
 			makeUav(m_radianceBuffer.Get(), RADIANCE_FORMAT, uav);
 			uav.Offset(1, descriptorSize);
+			makeUav(m_indirectRadianceBuffer.Get(), RADIANCE_FORMAT, uav);
+			uav.Offset(1, descriptorSize);
 			makeUav(m_motionBuffer.Get(), MOTION_FORMAT, uav);
 			uav.Offset(1, descriptorSize);
 			makeUav(m_guideBuffers[phase].Get(), GUIDE_FORMAT, uav);
 
 			// phase is the write index: guide[phase] is this frame's, guide[1 - phase] last
-			// frame's, and history[1 - phase] the history being reprojected.
+			// frame's, and the [1 - phase] histories are the ones being reprojected.
 			CD3DX12_CPU_DESCRIPTOR_HANDLE srv = m_accumulateSrvCpu[phase];
 			makeSrv(m_radianceBuffer.Get(), RADIANCE_FORMAT, srv);
+			srv.Offset(1, descriptorSize);
+			makeSrv(m_indirectRadianceBuffer.Get(), RADIANCE_FORMAT, srv);
 			srv.Offset(1, descriptorSize);
 			makeSrv(m_motionBuffer.Get(), MOTION_FORMAT, srv);
 			srv.Offset(1, descriptorSize);
@@ -568,6 +652,13 @@ namespace udsdx
 			makeSrv(m_guideBuffers[1 - phase].Get(), GUIDE_FORMAT, srv);
 			srv.Offset(1, descriptorSize);
 			makeSrv(m_historyBuffers[1 - phase].Get(), HISTORY_FORMAT, srv);
+			srv.Offset(1, descriptorSize);
+			makeSrv(m_indirectHistoryBuffers[1 - phase].Get(), HISTORY_FORMAT, srv);
+
+			CD3DX12_CPU_DESCRIPTOR_HANDLE accumulateUav = m_accumulateUavCpu[phase];
+			makeUav(m_historyBuffers[phase].Get(), HISTORY_FORMAT, accumulateUav);
+			accumulateUav.Offset(1, descriptorSize);
+			makeUav(m_indirectHistoryBuffers[phase].Get(), HISTORY_FORMAT, accumulateUav);
 		}
 
 		makeSrv(m_motionBuffer.Get(), MOTION_FORMAT, m_motionCpuSrv);
@@ -584,8 +675,11 @@ namespace udsdx
 			depthDesc.Texture2D.MipLevels = 1;
 			m_device->CreateShaderResourceView(m_guideBuffers[i].Get(), &depthDesc, m_guideDepthCpuSrv[i]);
 
-			makeUav(m_historyBuffers[i].Get(), HISTORY_FORMAT, m_historyCpuUav[i]);
+			makeSrv(m_guideBuffers[i].Get(), GUIDE_FORMAT, m_guideCpuSrv[i]);
 			makeSrv(m_historyBuffers[i].Get(), HISTORY_FORMAT, m_historyCpuSrv[i]);
+			makeSrv(m_indirectHistoryBuffers[i].Get(), HISTORY_FORMAT, m_indirectHistoryCpuSrv[i]);
+			makeSrv(m_filterBuffers[i].Get(), RADIANCE_FORMAT, m_filterCpuSrv[i]);
+			makeUav(m_filterBuffers[i].Get(), RADIANCE_FORMAT, m_filterCpuUav[i]);
 		}
 
 		if (m_dummyEnvironmentCube != nullptr && m_dummyEnvironmentCpuSrv.ptr != 0)
@@ -720,17 +814,79 @@ namespace udsdx
 		const int frameResourceIndex = param.FrameResourceIndex;
 
 		TransitionForWrite(commandList, m_historyBuffers[m_historyWriteIndex].Get());
+		TransitionForWrite(commandList, m_indirectHistoryBuffers[m_historyWriteIndex].Get());
 
 		commandList->SetComputeRootSignature(m_accumulateRootSignature.Get());
 		commandList->SetPipelineState(m_accumulatePipelineState.Get());
 		commandList->SetComputeRootConstantBufferView(0,
 			m_accumulateConstantBuffers[frameResourceIndex]->Resource()->GetGPUVirtualAddress());
 		commandList->SetComputeRootDescriptorTable(1, m_accumulateSrvTable[m_historyWriteIndex]);
-		commandList->SetComputeRootDescriptorTable(2, m_historyGpuUav[m_historyWriteIndex]);
+		commandList->SetComputeRootDescriptorTable(2, m_accumulateUavTable[m_historyWriteIndex]);
 
 		commandList->Dispatch((m_width + 7u) / 8u, (m_height + 7u) / 8u, 1u);
 
 		TransitionForRead(commandList, m_historyBuffers[m_historyWriteIndex].Get());
+		TransitionForRead(commandList, m_indirectHistoryBuffers[m_historyWriteIndex].Get());
+	}
+
+	void RaytracingRenderer::AtrousFilter(RenderParam& param)
+	{
+		// The temporal feedback path is untouched by design: next frame reprojects the UNFILTERED
+		// indirect history, so smoothing applies once per displayed frame and never compounds.
+		const UINT iterations = std::min(param.RenderOptions->RaytracingAtrousIterations, 5u);
+		if (iterations == 0u)
+		{
+			m_resolveIndirectSrv = m_indirectHistoryGpuSrv[m_historyWriteIndex];
+			return;
+		}
+
+		ZoneScopedN("Raytracing Atrous");
+		TracyD3D12Zone(*param.TracyQueueContext, param.CommandList, "Raytracing Atrous");
+
+		auto* commandList = param.CommandList;
+
+		struct AtrousConstants
+		{
+			float RenderTargetWidth;
+			float RenderTargetHeight;
+			UINT StepSize;
+			float LuminanceSigma;
+			float NormalPower;
+			float DepthTolerance;
+			float Pad0;
+			float Pad1;
+		};
+
+		commandList->SetComputeRootSignature(m_atrousRootSignature.Get());
+		commandList->SetPipelineState(m_atrousPipelineState.Get());
+
+		for (UINT i = 0; i < iterations; ++i)
+		{
+			const int destination = static_cast<int>(i & 1u);
+
+			AtrousConstants constants = {};
+			constants.RenderTargetWidth = static_cast<float>(m_width);
+			constants.RenderTargetHeight = static_cast<float>(m_height);
+			constants.StepSize = 1u << i;
+			constants.LuminanceSigma = std::max(0.01f, param.RenderOptions->RaytracingAtrousLuminanceSigma);
+			constants.NormalPower = 32.0f;
+			constants.DepthTolerance = 0.1f;
+
+			TransitionForWrite(commandList, m_filterBuffers[destination].Get());
+
+			commandList->SetComputeRoot32BitConstants(0, 8, &constants, 0);
+			commandList->SetComputeRootDescriptorTable(1, i == 0u
+				? m_indirectHistoryGpuSrv[m_historyWriteIndex]
+				: m_filterGpuSrv[1 - destination]);
+			commandList->SetComputeRootDescriptorTable(2, m_guideGpuSrv[m_historyWriteIndex]);
+			commandList->SetComputeRootDescriptorTable(3, m_filterGpuUav[destination]);
+
+			commandList->Dispatch((m_width + 7u) / 8u, (m_height + 7u) / 8u, 1u);
+
+			TransitionForRead(commandList, m_filterBuffers[destination].Get());
+		}
+
+		m_resolveIndirectSrv = m_filterGpuSrv[(iterations - 1u) & 1u];
 	}
 
 	void RaytracingRenderer::ResolveToTarget(RenderParam& param)
@@ -753,6 +909,7 @@ namespace udsdx
 		commandList->SetGraphicsRoot32BitConstants(0, 1, &debugMode, 0);
 		commandList->SetGraphicsRoot32BitConstants(0, 1, &heatmapMax, 1);
 		commandList->SetGraphicsRootDescriptorTable(1, m_historyGpuSrv[m_historyWriteIndex]);
+		commandList->SetGraphicsRootDescriptorTable(2, m_resolveIndirectSrv);
 		commandList->DrawInstanced(6, 1, 0, 0);
 	}
 
@@ -834,6 +991,7 @@ namespace udsdx
 		UploadConstants(param, camera, light, hasEnvironmentMap);
 
 		TransitionForWrite(dxrCommandList, m_radianceBuffer.Get());
+		TransitionForWrite(dxrCommandList, m_indirectRadianceBuffer.Get());
 		TransitionForWrite(dxrCommandList, m_motionBuffer.Get());
 		TransitionForWrite(dxrCommandList, m_guideBuffers[m_historyWriteIndex].Get());
 
@@ -853,12 +1011,14 @@ namespace udsdx
 		dxrCommandList->SetPipelineState1(m_stateObject.Get());
 		dxrCommandList->DispatchRays(&m_dispatchDesc);
 
-		// Real state transitions, not UAV barriers: the accumulation pass reads all three as SRVs.
+		// Real state transitions, not UAV barriers: the accumulation pass reads them all as SRVs.
 		TransitionForRead(dxrCommandList, m_radianceBuffer.Get());
+		TransitionForRead(dxrCommandList, m_indirectRadianceBuffer.Get());
 		TransitionForRead(dxrCommandList, m_motionBuffer.Get());
 		TransitionForRead(dxrCommandList, m_guideBuffers[m_historyWriteIndex].Get());
 
 		AccumulateTemporal(param);
+		AtrousFilter(param);
 		ResolveToTarget(param);
 
 		// Guide and history share the index: this frame's write becomes next frame's read.

@@ -43,4 +43,24 @@ float3 DecodeOctahedral(float2 e)
     return normalize(n);
 }
 
+// Per-pixel geometric identity written by the ray generation shader and consumed by both the
+// temporal validation and the spatial filter's edge-stopping weights.
+struct Guide
+{
+    float3 Normal;
+    // Distance from the camera, not view-space Z: a fisheye sees past 90 degrees off-axis, where
+    // view Z turns negative and stops ordering surfaces.
+    float  Distance;
+    uint   InstanceIndex;
+};
+
+Guide UnpackGuide(float4 packed)
+{
+    Guide g;
+    g.Normal = DecodeOctahedral(packed.xy);
+    g.Distance = packed.z;
+    g.InstanceIndex = asuint(packed.w);
+    return g;
+}
+
 #endif // INC_RAYTRACING_COMMON_HLSL

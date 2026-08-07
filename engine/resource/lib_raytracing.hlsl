@@ -180,8 +180,15 @@ float3 DirectSun(float3 position, float3 normal, float3 albedo, inout uint rng)
     return albedo * gSunColor.rgb * gSunIntensity * ndotl;
 }
 
-float3 TracePath(RayDesc ray, inout uint rng)
+// Emits the direct term (sun + primary sky + fog in-scatter) and the indirect term (the one
+// diffuse bounce) separately. Indirect carries nearly all of the estimator's variance -- indoors
+// it is a lottery over which bounce rays find a lit patch -- so the spatial filter downstream
+// smooths only that channel and the crisp sun shapes in the direct channel stay sharp.
+void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 indirectOut)
 {
+    directOut = 0.0f;
+    indirectOut = 0.0f;
+
     SurfacePayload primary = TraceSurface(ray);
 
     if (primary.HitT < 0.0f)
@@ -189,16 +196,21 @@ float3 TracePath(RayDesc ray, inout uint rng)
         // Primary sky hits stay unclamped so open sky matches the rasterized skybox exactly.
         // Deliberately unfogged: ps_skybox.hlsl does not fog the sky either, and fogging it would
         // desaturate the horizon relative to the raster path.
-        return primary.Emission;
+        directOut = primary.Emission;
+        return;
     }
 
+    // Debug views ride the direct channel with indirect zeroed: the resolve displays their sum,
+    // and a zeroed indirect stays zero through the spatial filter.
     if (gDebugMode == RT_DEBUG_ALBEDO)
     {
-        return primary.Albedo;
+        directOut = primary.Albedo;
+        return;
     }
     if (gDebugMode == RT_DEBUG_NORMAL)
     {
-        return primary.Normal * 0.5f + 0.5f;
+        directOut = primary.Normal * 0.5f + 0.5f;
+        return;
     }
 
     float3 position = ray.Origin + ray.Direction * primary.HitT;
@@ -234,21 +246,28 @@ float3 TracePath(RayDesc ray, inout uint rng)
     // Debug views stay unfogged so they show the raw quantity being inspected.
     if (gDebugMode == RT_DEBUG_DIRECT)
     {
-        return direct;
+        directOut = direct;
+        return;
     }
     if (gDebugMode == RT_DEBUG_INDIRECT)
     {
-        return indirect;
+        directOut = indirect;
+        return;
     }
 
     // Fog is applied only to the camera-to-first-hit segment, matching the raster path, which
-    // fogs the shaded pixel in PSDeferredDefault. Secondary rays are left unattenuated: this is
-    // an analytic height fog, not a participating medium the path tracer integrates through.
+    // fogs the shaded pixel in PSDeferredDefault. lerp(col, fogColor, f) is affine in col, so the
+    // split distributes exactly: both channels attenuate by (1 - f) and the in-scattered fog
+    // constant joins the direct channel, keeping direct + indirect equal to the unsplit result.
     //
     // Evaluating it per sample rather than once at resolve time is deliberate -- sub-pixel jitter
     // moves the hit point, so the fog term gets antialiased along with everything else. It is a
     // deterministic function of that hit point, so averaging it over samples is exact.
-    return ApplyFog(direct + indirect, position);
+    float fogAmount;
+    float3 fogColor;
+    EvaluateFog(position, fogAmount, fogColor);
+    directOut = direct * (1.0f - fogAmount) + fogColor * fogAmount;
+    indirectOut = indirect * (1.0f - fogAmount);
 }
 
 // Primary ray for a screen UV, through whichever projection is active.
@@ -299,17 +318,24 @@ void RayGenMain()
     RayDesc guideRay = BuildPrimaryRay((float2(pixel) + 0.5f) / float2(dimensions));
     SurfacePayload guide = TraceSurface(guideRay);
 
-    float3 sum = 0.0f;
+    float3 directSum = 0.0f;
+    float3 indirectSum = 0.0f;
     for (uint sample = 0u; sample < gSamplesPerPixel; ++sample)
     {
         RayDesc ray = BuildPrimaryRay((float2(pixel) + NextFloat2(rng)) / float2(dimensions));
-        sum += TracePath(ray, rng);
+        float3 sampleDirect;
+        float3 sampleIndirect;
+        TracePath(ray, rng, sampleDirect, sampleIndirect);
+        directSum += sampleDirect;
+        indirectSum += sampleIndirect;
     }
 
     // This shader no longer accumulates: it emits one frame's estimate plus everything the
     // temporal pass needs to reproject it. Accumulation happens there, where a 3x3 neighbourhood
     // is reachable (ray generation shaders have no groupshared memory).
-    gRadianceOut[pixel] = float4(sum / float(max(gSamplesPerPixel, 1u)), guide.HitT < 0.0f ? 0.0f : 1.0f);
+    float invSpp = 1.0f / float(max(gSamplesPerPixel, 1u));
+    gRadianceOut[pixel] = float4(directSum * invSpp, guide.HitT < 0.0f ? 0.0f : 1.0f);
+    gIndirectOut[pixel] = float4(indirectSum * invSpp, 0.0f);
 
     if (guide.HitT < 0.0f)
     {

@@ -28,31 +28,19 @@ cbuffer cbAccumulate : register(b0)
     float gDepthThreshold;
 };
 
-Texture2D<float4>   gRadiance   : register(t0); // this frame, rgb radiance / a = hit
-Texture2D<float4>   gMotion     : register(t1); // xy = currentUV - previousUV, z = previous camera distance
-Texture2D<float4>   gGuide      : register(t2); // this frame: octNormal.xy, camera distance, instanceIndex
-Texture2D<float4>   gPrevGuide  : register(t3); // same, previous frame
-Texture2D<float4>   gHistory    : register(t4); // rgb running mean, a = effective sample count
+Texture2D<float4>   gRadiance         : register(t0); // this frame, rgb DIRECT radiance / a = hit
+Texture2D<float4>   gIndirectRadiance : register(t1); // this frame, rgb INDIRECT radiance
+Texture2D<float4>   gMotion           : register(t2); // xy = currentUV - previousUV, z = previous camera distance
+Texture2D<float4>   gGuide            : register(t3); // this frame: octNormal.xy, camera distance, instanceIndex
+Texture2D<float4>   gPrevGuide        : register(t4); // same, previous frame
+Texture2D<float4>   gHistory          : register(t5); // direct: rgb running mean, a = effective sample count
+Texture2D<float4>   gIndirectHistory  : register(t6); // indirect: rgb running mean, a = same count
 
-RWTexture2D<float4> gHistoryOut : register(u0);
-
-struct Guide
-{
-    float3 Normal;
-    // Distance from the camera, not view-space Z: a fisheye sees past 90 degrees off-axis, where
-    // view Z turns negative and stops ordering surfaces.
-    float  Distance;
-    uint   InstanceIndex;
-};
-
-Guide UnpackGuide(float4 packed)
-{
-    Guide g;
-    g.Normal = DecodeOctahedral(packed.xy);
-    g.Distance = packed.z;
-    g.InstanceIndex = asuint(packed.w);
-    return g;
-}
+// Both channels reproject through the same motion vector, validate against the same guide and
+// share one sample count; only the radiance being averaged differs. Keeping them separate is what
+// lets the spatial filter smooth the noisy indirect estimate without touching sharp direct light.
+RWTexture2D<float4> gHistoryOut         : register(u0);
+RWTexture2D<float4> gIndirectHistoryOut : register(u1);
 
 // Salvi's AABB clip: walk from the box centre toward the history colour and stop at the boundary.
 // Ported from ClipColor in ps_taa.hlsl.
@@ -111,6 +99,7 @@ void CS(uint3 dispatchThreadId : SV_DispatchThreadID)
     }
 
     const float3 currentColor = gRadiance.Load(int3(pixel, 0)).rgb;
+    const float3 currentIndirect = gIndirectRadiance.Load(int3(pixel, 0)).rgb;
     const float4 motionSample = gMotion.Load(int3(pixel, 0));
     const float2 motion = motionSample.xy;
     const float expectedPrevDistance = motionSample.z;
@@ -125,11 +114,14 @@ void CS(uint3 dispatchThreadId : SV_DispatchThreadID)
         // motion. At a few hundred FPS the per-frame displacement is well under a pixel, so a
         // smaller factor would render every realistic camera move as flat grey.
         gHistoryOut[pixel] = float4(motion * gRenderTargetSize * 0.5f + 0.5f, 0.5f, sampleCount);
+        gIndirectHistoryOut[pixel] = float4(0.0f, 0.0f, 0.0f, sampleCount);
         return;
     }
     if (gDebugMode != RT_DEBUG_NONE && gDebugMode != RT_DEBUG_HEATMAP)
     {
+        // Debug values arrive through the direct channel; indirect is zeroed at the source.
         gHistoryOut[pixel] = float4(currentColor, sampleCount);
+        gIndirectHistoryOut[pixel] = float4(0.0f, 0.0f, 0.0f, sampleCount);
         return;
     }
 
@@ -137,6 +129,7 @@ void CS(uint3 dispatchThreadId : SV_DispatchThreadID)
     const float2 historyUv = uv - motion;
 
     float3 historyColor = 0.0f;
+    float3 historyIndirect = 0.0f;
     float  historyCount = 0.0f;
     bool   historyUsable = false;
 
@@ -158,6 +151,7 @@ void CS(uint3 dispatchThreadId : SV_DispatchThreadID)
 
         float totalWeight = 0.0f;
         float3 colorSum = 0.0f;
+        float3 indirectSum = 0.0f;
         float countSum = 0.0f;
 
         [unroll]
@@ -170,6 +164,7 @@ void CS(uint3 dispatchThreadId : SV_DispatchThreadID)
             }
             const float4 sampled = gHistory.Load(int3(tap, 0));
             colorSum += sampled.rgb * weights[i];
+            indirectSum += gIndirectHistory.Load(int3(tap, 0)).rgb * weights[i];
             countSum += sampled.a * weights[i];
             totalWeight += weights[i];
         }
@@ -177,6 +172,7 @@ void CS(uint3 dispatchThreadId : SV_DispatchThreadID)
         if (totalWeight > 1e-4f)
         {
             historyColor = colorSum / totalWeight;
+            historyIndirect = indirectSum / totalWeight;
             historyCount = countSum / totalWeight;
             historyUsable = true;
         }
@@ -185,6 +181,7 @@ void CS(uint3 dispatchThreadId : SV_DispatchThreadID)
     if (!historyUsable)
     {
         gHistoryOut[pixel] = float4(currentColor, sampleCount);
+        gIndirectHistoryOut[pixel] = float4(currentIndirect, sampleCount);
         return;
     }
 
@@ -193,6 +190,8 @@ void CS(uint3 dispatchThreadId : SV_DispatchThreadID)
     // a flat surface, where normal and depth are unchanged.
     float3 moment1 = 0.0f;
     float3 moment2 = 0.0f;
+    float3 indirectMoment1 = 0.0f;
+    float3 indirectMoment2 = 0.0f;
     [unroll]
     for (int y = -1; y <= 1; ++y)
     {
@@ -203,10 +202,15 @@ void CS(uint3 dispatchThreadId : SV_DispatchThreadID)
             const float3 neighbour = gRadiance.Load(int3(tap, 0)).rgb;
             moment1 += neighbour;
             moment2 += neighbour * neighbour;
+            const float3 neighbourIndirect = gIndirectRadiance.Load(int3(tap, 0)).rgb;
+            indirectMoment1 += neighbourIndirect;
+            indirectMoment2 += neighbourIndirect * neighbourIndirect;
         }
     }
     const float3 mean = moment1 / 9.0f;
     const float3 sigma = sqrt(max(moment2 / 9.0f - mean * mean, 0.0f));
+    const float3 indirectMean = indirectMoment1 / 9.0f;
+    const float3 indirectSigma = sqrt(max(indirectMoment2 / 9.0f - indirectMean * indirectMean, 0.0f));
 
     // Two guards keep the clip from fighting a converged estimate, while a genuine lighting
     // change (which shifts the box centre itself by a large factor) still clips and gets followed.
@@ -223,6 +227,10 @@ void CS(uint3 dispatchThreadId : SV_DispatchThreadID)
     const float clipGamma = gVarianceClipGamma * sqrt(1.0f + historyCount / 64.0f);
     const float3 slack = 0.5f * historyColor;
     historyColor = ClipColor(historyColor, mean - clipGamma * sigma - slack, mean + clipGamma * sigma + slack);
+    const float3 indirectSlack = 0.5f * historyIndirect;
+    historyIndirect = ClipColor(historyIndirect,
+        indirectMean - clipGamma * indirectSigma - indirectSlack,
+        indirectMean + clipGamma * indirectSigma + indirectSlack);
 
     // A pixel that barely moved reprojected almost exactly, so let it keep accumulating. One that
     // is sweeping across the screen accumulates reprojection error every frame, so cap its
@@ -235,4 +243,5 @@ void CS(uint3 dispatchThreadId : SV_DispatchThreadID)
     const float alpha = sampleCount / max(newCount, sampleCount);
 
     gHistoryOut[pixel] = float4(lerp(historyColor, currentColor, alpha), newCount);
+    gIndirectHistoryOut[pixel] = float4(lerp(historyIndirect, currentIndirect, alpha), newCount);
 }

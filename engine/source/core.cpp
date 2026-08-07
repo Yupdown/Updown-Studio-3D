@@ -317,7 +317,7 @@ namespace udsdx
 		// A shader-visible heap cannot be the source of CopyDescriptors, so it cannot be grown after
 		// the fact -- the reserve has to cover the worst case up front. Descriptors are ~32 bytes,
 		// so this costs a few hundred kilobytes.
-		static constexpr UINT kPostInitSrvReserve = 8192;
+		static constexpr UINT kPostInitSrvReserve = 65536;
 		D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc;
 		srvHeapDesc.NumDescriptors = static_cast<UINT>(textures.size() + kPostInitSrvReserve);
 		srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
@@ -1121,6 +1121,14 @@ namespace udsdx
 				ImGui::SliderFloat("Variance Clip Gamma", &options.RaytracingVarianceClipGamma, 0.5f, 16.0f, "%.2f");
 				ImGui::SliderFloat("Normal Tolerance (cos)", &options.RaytracingNormalThreshold, 0.5f, 0.999f, "%.3f");
 				ImGui::SliderFloat("Depth Tolerance", &options.RaytracingDepthThreshold, 0.001f, 0.5f, "%.4f", ImGuiSliderFlags_Logarithmic);
+
+				ImGui::SeparatorText("Denoiser");
+				int atrousIterations = static_cast<int>(options.RaytracingAtrousIterations);
+				if (ImGui::SliderInt("A-Trous Iterations", &atrousIterations, 0, 5))
+				{
+					options.RaytracingAtrousIterations = static_cast<unsigned int>(atrousIterations);
+				}
+				ImGui::SliderFloat("A-Trous Luminance Sigma", &options.RaytracingAtrousLuminanceSigma, 0.1f, 4.0f, "%.2f");
 
 				ImGui::SeparatorText("Fisheye");
 				ImGui::Checkbox("Fisheye Projection", &options.RaytracingFisheye);

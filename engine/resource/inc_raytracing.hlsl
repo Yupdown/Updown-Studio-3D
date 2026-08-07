@@ -84,9 +84,10 @@ StructuredBuffer<GeometryInfo>  gGeometryInfo   : register(t1, space0);
 StructuredBuffer<InstanceInfo>  gInstanceInfo   : register(t2, space0);
 
 // Ray generation outputs. The temporal accumulation pass consumes all three.
-RWTexture2D<float4>             gRadianceOut    : register(u0, space0);  // rgb radiance, a = hit
-RWTexture2D<float4>             gMotionOut      : register(u1, space0);  // xy = currentUV - previousUV, z = previous view Z
-RWTexture2D<float4>             gGuideOut       : register(u2, space0);  // octNormal.xy, view Z, instanceIndex
+RWTexture2D<float4>             gRadianceOut    : register(u0, space0);  // rgb DIRECT radiance, a = hit
+RWTexture2D<float4>             gIndirectOut    : register(u1, space0);  // rgb INDIRECT radiance (spatially filtered later)
+RWTexture2D<float4>             gMotionOut      : register(u2, space0);  // xy = currentUV - previousUV, z = previous view Z
+RWTexture2D<float4>             gGuideOut       : register(u3, space0);  // octNormal.xy, view Z, instanceIndex
 
 // Two separate unbounded tables over the same shader-visible SRV heap, so a heap index is the
 // bindless lookup index in both cases -- the same convention Texture::GetSrvIndex already uses.
@@ -382,7 +383,10 @@ float3 TransformPoint3x4(float4 m[3], float3 p)
 //
 // The identifiers below (gEyePosW, gDirLight, gFog*) are deliberately named to match the raster
 // cbuffer, so the function body is a byte-for-byte copy.
-float3 ApplyFog(float3 col, float3 worldPos)
+// Factored so the direct/indirect split can distribute the fog term across its two channels:
+// lerp(col, fogColor, amount) is affine in col, so attenuation applies per channel and the
+// in-scattered fogColor constant rides with the direct channel, which is never blurred.
+void EvaluateFog(float3 worldPos, out float fogAmount, out float3 fogColor)
 {
     float distance = max(0.0f, length(worldPos - gEyePosW.xyz) - gFogDistanceStart);
     float3 direction = normalize(worldPos - gEyePosW.xyz);
@@ -404,9 +408,15 @@ float3 ApplyFog(float3 col, float3 worldPos)
         lineIntegral = (1.0f - exp(-x)) / falloff;
     }
 
-    float fogAmount = saturate(gFogDensity * exp(-gFogHeightFalloff * (gEyePosW.y + gFogDistanceStart * direction.y)) * lineIntegral);
-    float3 fogColor = lerp(gFogColor.rgb, gFogSunColor.rgb, pow(sunAmount, 2.0f));
+    fogAmount = saturate(gFogDensity * exp(-gFogHeightFalloff * (gEyePosW.y + gFogDistanceStart * direction.y)) * lineIntegral);
+    fogColor = lerp(gFogColor.rgb, gFogSunColor.rgb, pow(sunAmount, 2.0f));
+}
 
+float3 ApplyFog(float3 col, float3 worldPos)
+{
+    float fogAmount;
+    float3 fogColor;
+    EvaluateFog(worldPos, fogAmount, fogColor);
     return lerp(col, fogColor, fogAmount);
 }
 

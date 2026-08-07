@@ -70,6 +70,7 @@ namespace udsdx
 		void BuildShaderTables();
 		void EnsureHitGroupTable(UINT geometryCount);
 		void BuildAccumulatePipelineState();
+		void BuildAtrousPipelineState();
 		void BuildResolvePipelineState();
 		void BuildResources();
 		void BuildDescriptors(DescriptorParam& descriptorParam);
@@ -103,6 +104,7 @@ namespace udsdx
 		void CreateDummyEnvironmentCube();
 		void UploadConstants(RenderParam& param, Camera* camera, LightDirectional* light, bool hasEnvironmentMap);
 		void AccumulateTemporal(RenderParam& param);
+		void AtrousFilter(RenderParam& param);
 		void ResolveToTarget(RenderParam& param);
 		void TransitionForWrite(ID3D12GraphicsCommandList* commandList, ID3D12Resource* resource);
 		void TransitionForRead(ID3D12GraphicsCommandList* commandList, ID3D12Resource* resource);
@@ -128,22 +130,34 @@ namespace udsdx
 
 		ComPtr<ID3D12RootSignature> m_accumulateRootSignature;
 		ComPtr<ID3D12PipelineState> m_accumulatePipelineState;
+		ComPtr<ID3D12RootSignature> m_atrousRootSignature;
+		ComPtr<ID3D12PipelineState> m_atrousPipelineState;
 		ComPtr<ID3D12RootSignature> m_resolveRootSignature;
 		ComPtr<ID3D12PipelineState> m_resolvePipelineState;
 
-		// Ray generation outputs, consumed by the accumulation pass in the same frame.
+		// Ray generation outputs, consumed by the accumulation pass in the same frame. Direct and
+		// indirect radiance are separate so the a-trous filter can smooth only the indirect term.
 		ComPtr<ID3D12Resource> m_radianceBuffer;
+		ComPtr<ID3D12Resource> m_indirectRadianceBuffer;
 		ComPtr<ID3D12Resource> m_motionBuffer;
 		// Guide and history ping-pong together on the same index: this frame's write becomes next
 		// frame's read, and validation compares the current guide against the previous one.
 		std::array<ComPtr<ID3D12Resource>, 2> m_guideBuffers;
 		std::array<ComPtr<ID3D12Resource>, 2> m_historyBuffers;
+		std::array<ComPtr<ID3D12Resource>, 2> m_indirectHistoryBuffers;
+		// A-trous ping-pong targets. Display-side only: the temporal feedback always reads the
+		// unfiltered indirect history, so filtering never compounds across frames.
+		std::array<ComPtr<ID3D12Resource>, 2> m_filterBuffers;
 
-		// The three ray generation UAVs are allocated consecutively so one descriptor range covers
-		// radiance, motion and the write-side guide. One run per ping-pong phase, because the
-		// guide it points at alternates.
+		// The four ray generation UAVs are allocated consecutively so one descriptor range covers
+		// direct radiance, indirect radiance, motion and the write-side guide. One run per
+		// ping-pong phase, because the guide it points at alternates.
 		std::array<CD3DX12_CPU_DESCRIPTOR_HANDLE, 2> m_raygenUavCpu{};
 		std::array<CD3DX12_GPU_DESCRIPTOR_HANDLE, 2> m_raygenUavTable{};
+
+		// Accumulation output run per phase: direct history[phase], indirect history[phase].
+		std::array<CD3DX12_CPU_DESCRIPTOR_HANDLE, 2> m_accumulateUavCpu{};
+		std::array<CD3DX12_GPU_DESCRIPTOR_HANDLE, 2> m_accumulateUavTable{};
 
 		CD3DX12_CPU_DESCRIPTOR_HANDLE m_motionCpuSrv{};
 		CD3DX12_GPU_DESCRIPTOR_HANDLE m_motionGpuSrv{};
@@ -153,8 +167,18 @@ namespace udsdx
 
 		std::array<CD3DX12_CPU_DESCRIPTOR_HANDLE, 2> m_historyCpuSrv{};
 		std::array<CD3DX12_GPU_DESCRIPTOR_HANDLE, 2> m_historyGpuSrv{};
-		std::array<CD3DX12_CPU_DESCRIPTOR_HANDLE, 2> m_historyCpuUav{};
-		std::array<CD3DX12_GPU_DESCRIPTOR_HANDLE, 2> m_historyGpuUav{};
+		std::array<CD3DX12_CPU_DESCRIPTOR_HANDLE, 2> m_indirectHistoryCpuSrv{};
+		std::array<CD3DX12_GPU_DESCRIPTOR_HANDLE, 2> m_indirectHistoryGpuSrv{};
+		// Plain per-phase guide SRVs for the a-trous passes' edge weights.
+		std::array<CD3DX12_CPU_DESCRIPTOR_HANDLE, 2> m_guideCpuSrv{};
+		std::array<CD3DX12_GPU_DESCRIPTOR_HANDLE, 2> m_guideGpuSrv{};
+		std::array<CD3DX12_CPU_DESCRIPTOR_HANDLE, 2> m_filterCpuSrv{};
+		std::array<CD3DX12_GPU_DESCRIPTOR_HANDLE, 2> m_filterGpuSrv{};
+		std::array<CD3DX12_CPU_DESCRIPTOR_HANDLE, 2> m_filterCpuUav{};
+		std::array<CD3DX12_GPU_DESCRIPTOR_HANDLE, 2> m_filterGpuUav{};
+		// Where the resolve reads its indirect term this frame: the last a-trous target, or the raw
+		// indirect history when the filter is disabled.
+		D3D12_GPU_DESCRIPTOR_HANDLE m_resolveIndirectSrv{};
 
 		// Contiguous SRV run the accumulation pass binds as one table:
 		// radiance, motion, guide[write], guide[read], history[read].
