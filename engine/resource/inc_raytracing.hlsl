@@ -88,6 +88,7 @@ RWTexture2D<float4>             gRadianceOut    : register(u0, space0);  // rgb 
 RWTexture2D<float4>             gIndirectOut    : register(u1, space0);  // rgb INDIRECT radiance (spatially filtered later)
 RWTexture2D<float4>             gMotionOut      : register(u2, space0);  // xy = currentUV - previousUV, z = previous view Z
 RWTexture2D<float4>             gGuideOut       : register(u3, space0);  // octNormal.xy, view Z, instanceIndex
+RWTexture2D<float4>             gAlbedoOut      : register(u4, space0);  // primary albedo, for re-modulation at resolve
 
 // Two separate unbounded tables over the same shader-visible SRV heap, so a heap index is the
 // bindless lookup index in both cases -- the same convention Texture::GetSrvIndex already uses.

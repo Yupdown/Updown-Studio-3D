@@ -240,9 +240,6 @@ void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 ind
         incoming = DirectSun(bouncePosition, secondary.Normal, secondary.Albedo, rng);
     }
 
-    // Cosine pdf and the 1/pi Lambert term cancel, leaving a plain albedo multiply.
-    float3 indirect = primary.Albedo * incoming;
-
     // Debug views stay unfogged so they show the raw quantity being inspected.
     if (gDebugMode == RT_DEBUG_DIRECT)
     {
@@ -251,7 +248,8 @@ void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 ind
     }
     if (gDebugMode == RT_DEBUG_INDIRECT)
     {
-        directOut = indirect;
+        // Cosine pdf and the 1/pi Lambert term cancel, leaving a plain albedo multiply.
+        directOut = primary.Albedo * incoming;
         return;
     }
 
@@ -267,7 +265,12 @@ void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 ind
     float3 fogColor;
     EvaluateFog(position, fogAmount, fogColor);
     directOut = direct * (1.0f - fogAmount) + fogColor * fogAmount;
-    indirectOut = indirect * (1.0f - fogAmount);
+    // DEMODULATED: the primary albedo is deliberately absent. The spatial filter smooths this
+    // channel, and albedo baked into it would smear texture detail along with the noise -- the
+    // resolve re-multiplies the full-resolution albedo AFTER filtering, so texture stays sharp
+    // while irradiance (which really is spatially smooth) takes the blur. The bounce surface's
+    // own albedo stays inside `incoming`: it is genuinely part of the incident light's colour.
+    indirectOut = incoming * (1.0f - fogAmount);
 }
 
 // Primary ray for a screen UV, through whichever projection is active.
@@ -336,6 +339,9 @@ void RayGenMain()
     float invSpp = 1.0f / float(max(gSamplesPerPixel, 1u));
     gRadianceOut[pixel] = float4(directSum * invSpp, guide.HitT < 0.0f ? 0.0f : 1.0f);
     gIndirectOut[pixel] = float4(indirectSum * invSpp, 0.0f);
+    // From the deterministic centre ray, like the rest of the guide data: no jitter, so the
+    // re-modulated texture never shimmers.
+    gAlbedoOut[pixel] = float4(guide.HitT < 0.0f ? 1.0f.xxx : guide.Albedo, 1.0f);
 
     if (guide.HitT < 0.0f)
     {

@@ -95,10 +95,10 @@ namespace udsdx
 		// does not accept stage-specific visibility, and ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT must not
 		// be set. Total cost is 10 of the 64 available DWORDs.
 		{
-			// Four consecutive UAVs: direct radiance, indirect radiance, motion and the
-			// write-side guide.
+			// Five consecutive UAVs: direct radiance, indirect radiance, motion, the write-side
+			// guide and the primary albedo.
 			CD3DX12_DESCRIPTOR_RANGE raygenUavRange;
-			raygenUavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 4, 0, 0);
+			raygenUavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 5, 0, 0);
 
 			// Unbounded ranges over the whole shader-visible SRV heap, in separate spaces so a
 			// Texture2D array and a ByteAddressBuffer array can both address it by heap index.
@@ -242,11 +242,14 @@ namespace udsdx
 			accumulationRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
 			CD3DX12_DESCRIPTOR_RANGE indirectRange;
 			indirectRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
+			CD3DX12_DESCRIPTOR_RANGE albedoRange;
+			albedoRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2);
 
-			CD3DX12_ROOT_PARAMETER slotRootParameter[3]{};
+			CD3DX12_ROOT_PARAMETER slotRootParameter[4]{};
 			slotRootParameter[0].InitAsConstants(4, 0);
 			slotRootParameter[1].InitAsDescriptorTable(1, &accumulationRange, D3D12_SHADER_VISIBILITY_PIXEL);
 			slotRootParameter[2].InitAsDescriptorTable(1, &indirectRange, D3D12_SHADER_VISIBILITY_PIXEL);
+			slotRootParameter[3].InitAsDescriptorTable(1, &albedoRange, D3D12_SHADER_VISIBILITY_PIXEL);
 
 			CD3DX12_STATIC_SAMPLER_DESC samplerDesc[] = {
 				CD3DX12_STATIC_SAMPLER_DESC(0, D3D12_FILTER_MIN_MAG_MIP_POINT,
@@ -511,6 +514,7 @@ namespace udsdx
 
 		createTarget(m_radianceBuffer, RADIANCE_FORMAT, L"RaytracingRenderer::Radiance");
 		createTarget(m_indirectRadianceBuffer, RADIANCE_FORMAT, L"RaytracingRenderer::IndirectRadiance");
+		createTarget(m_albedoBuffer, ALBEDO_FORMAT, L"RaytracingRenderer::Albedo");
 		createTarget(m_motionBuffer, MOTION_FORMAT, L"RaytracingRenderer::Motion");
 		createTarget(m_guideBuffers[0], GUIDE_FORMAT, L"RaytracingRenderer::Guide0");
 		createTarget(m_guideBuffers[1], GUIDE_FORMAT, L"RaytracingRenderer::Guide1");
@@ -545,6 +549,7 @@ namespace udsdx
 			claim(nullptr, nullptr); // indirect radiance UAV
 			claim(nullptr, nullptr); // motion UAV
 			claim(nullptr, nullptr); // guide[phase] UAV
+			claim(nullptr, nullptr); // albedo UAV
 		}
 
 		// Accumulation SRV runs, one per phase: direct radiance, indirect radiance, motion,
@@ -568,6 +573,7 @@ namespace udsdx
 		}
 
 		claim(&m_motionCpuSrv, &m_motionGpuSrv);
+		claim(&m_albedoCpuSrv, &m_albedoGpuSrv);
 		for (int i = 0; i < 2; ++i)
 		{
 			claim(&m_guideDepthCpuSrv[i], &m_guideDepthGpuSrv[i]);
@@ -637,6 +643,8 @@ namespace udsdx
 			makeUav(m_motionBuffer.Get(), MOTION_FORMAT, uav);
 			uav.Offset(1, descriptorSize);
 			makeUav(m_guideBuffers[phase].Get(), GUIDE_FORMAT, uav);
+			uav.Offset(1, descriptorSize);
+			makeUav(m_albedoBuffer.Get(), ALBEDO_FORMAT, uav);
 
 			// phase is the write index: guide[phase] is this frame's, guide[1 - phase] last
 			// frame's, and the [1 - phase] histories are the ones being reprojected.
@@ -662,6 +670,7 @@ namespace udsdx
 		}
 
 		makeSrv(m_motionBuffer.Get(), MOTION_FORMAT, m_motionCpuSrv);
+		makeSrv(m_albedoBuffer.Get(), ALBEDO_FORMAT, m_albedoCpuSrv);
 
 		for (int i = 0; i < 2; ++i)
 		{
@@ -910,6 +919,7 @@ namespace udsdx
 		commandList->SetGraphicsRoot32BitConstants(0, 1, &heatmapMax, 1);
 		commandList->SetGraphicsRootDescriptorTable(1, m_historyGpuSrv[m_historyWriteIndex]);
 		commandList->SetGraphicsRootDescriptorTable(2, m_resolveIndirectSrv);
+		commandList->SetGraphicsRootDescriptorTable(3, m_albedoGpuSrv);
 		commandList->DrawInstanced(6, 1, 0, 0);
 	}
 
@@ -992,6 +1002,7 @@ namespace udsdx
 
 		TransitionForWrite(dxrCommandList, m_radianceBuffer.Get());
 		TransitionForWrite(dxrCommandList, m_indirectRadianceBuffer.Get());
+		TransitionForWrite(dxrCommandList, m_albedoBuffer.Get());
 		TransitionForWrite(dxrCommandList, m_motionBuffer.Get());
 		TransitionForWrite(dxrCommandList, m_guideBuffers[m_historyWriteIndex].Get());
 
@@ -1014,6 +1025,7 @@ namespace udsdx
 		// Real state transitions, not UAV barriers: the accumulation pass reads them all as SRVs.
 		TransitionForRead(dxrCommandList, m_radianceBuffer.Get());
 		TransitionForRead(dxrCommandList, m_indirectRadianceBuffer.Get());
+		TransitionForRead(dxrCommandList, m_albedoBuffer.Get());
 		TransitionForRead(dxrCommandList, m_motionBuffer.Get());
 		TransitionForRead(dxrCommandList, m_guideBuffers[m_historyWriteIndex].Get());
 

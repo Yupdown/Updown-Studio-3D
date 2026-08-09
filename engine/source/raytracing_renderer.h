@@ -58,6 +58,7 @@ namespace udsdx
 		static constexpr DXGI_FORMAT MOTION_FORMAT = DXGI_FORMAT_R16G16B16A16_FLOAT;
 		// Instance indices past 2048 would not survive a half float, so the guide stays FP32.
 		static constexpr DXGI_FORMAT GUIDE_FORMAT = DXGI_FORMAT_R32G32B32A32_FLOAT;
+		static constexpr DXGI_FORMAT ALBEDO_FORMAT = DXGI_FORMAT_R8G8B8A8_UNORM;
 		static constexpr DXGI_FORMAT RESOLVE_FORMAT = DXGI_FORMAT_R11G11B10_FLOAT;
 
 		RaytracingRenderer(ID3D12Device5* device, ID3D12GraphicsCommandList4* commandList);
@@ -139,6 +140,10 @@ namespace udsdx
 		// indirect radiance are separate so the a-trous filter can smooth only the indirect term.
 		ComPtr<ID3D12Resource> m_radianceBuffer;
 		ComPtr<ID3D12Resource> m_indirectRadianceBuffer;
+		// Primary-surface albedo from the centre guide ray. The indirect channel accumulates and
+		// filters demodulated irradiance; the resolve multiplies this back in per pixel, so texture
+		// detail never passes through the a-trous blur.
+		ComPtr<ID3D12Resource> m_albedoBuffer;
 		ComPtr<ID3D12Resource> m_motionBuffer;
 		// Guide and history ping-pong together on the same index: this frame's write becomes next
 		// frame's read, and validation compares the current guide against the previous one.
@@ -149,9 +154,9 @@ namespace udsdx
 		// unfiltered indirect history, so filtering never compounds across frames.
 		std::array<ComPtr<ID3D12Resource>, 2> m_filterBuffers;
 
-		// The four ray generation UAVs are allocated consecutively so one descriptor range covers
-		// direct radiance, indirect radiance, motion and the write-side guide. One run per
-		// ping-pong phase, because the guide it points at alternates.
+		// The five ray generation UAVs are allocated consecutively so one descriptor range covers
+		// direct radiance, indirect radiance, motion, the write-side guide and the albedo. One run
+		// per ping-pong phase, because the guide it points at alternates.
 		std::array<CD3DX12_CPU_DESCRIPTOR_HANDLE, 2> m_raygenUavCpu{};
 		std::array<CD3DX12_GPU_DESCRIPTOR_HANDLE, 2> m_raygenUavTable{};
 
@@ -179,6 +184,8 @@ namespace udsdx
 		// Where the resolve reads its indirect term this frame: the last a-trous target, or the raw
 		// indirect history when the filter is disabled.
 		D3D12_GPU_DESCRIPTOR_HANDLE m_resolveIndirectSrv{};
+		CD3DX12_CPU_DESCRIPTOR_HANDLE m_albedoCpuSrv{};
+		CD3DX12_GPU_DESCRIPTOR_HANDLE m_albedoGpuSrv{};
 
 		// Contiguous SRV run the accumulation pass binds as one table:
 		// radiance, motion, guide[write], guide[read], history[read].
