@@ -25,9 +25,10 @@ cbuffer cbAtrous : register(b0)
     float2 gAtrousPad;
 };
 
-Texture2D<float4>   gSource   : register(t0); // rgb indirect mean, a = effective sample count
-Texture2D<float4>   gGuideTex : register(t1); // octNormal.xy, camera distance, instanceIndex
-RWTexture2D<float4> gFiltered : register(u0);
+Texture2D<float4>   gSource          : register(t0); // rgb indirect mean, a = effective sample count
+Texture2D<float4>   gGuideTex        : register(t1); // prevCamDist, -, camera distance, instanceIndex
+Texture2D<float4>   gNormalRoughness : register(t2); // world normal.xyz, linear roughness.w
+RWTexture2D<float4> gFiltered        : register(u0);
 
 static const float kKernel[5] = { 0.0625f, 0.25f, 0.375f, 0.25f, 0.0625f };
 
@@ -47,6 +48,7 @@ void CS(uint3 dispatchThreadId : SV_DispatchThreadID)
 
     const float4 center = gSource.Load(int3(pixel, 0));
     const Guide centerGuide = UnpackGuide(gGuideTex.Load(int3(pixel, 0)));
+    const float3 centerNormal = UnpackNormalRoughness(gNormalRoughness.Load(int3(pixel, 0))).Normal;
 
     // Sky has no surface to smooth over and its indirect channel is zero by construction.
     if (centerGuide.InstanceIndex == RT_INVALID_INSTANCE)
@@ -85,8 +87,9 @@ void CS(uint3 dispatchThreadId : SV_DispatchThreadID)
             }
 
             const float4 sample = gSource.Load(int3(tap, 0));
+            const float3 tapNormal = UnpackNormalRoughness(gNormalRoughness.Load(int3(tap, 0))).Normal;
 
-            const float weightNormal = pow(saturate(dot(centerGuide.Normal, tapGuide.Normal)), gNormalPower);
+            const float weightNormal = pow(saturate(dot(centerNormal, tapNormal)), gNormalPower);
             const float weightDepth = exp(-abs(centerGuide.Distance - tapGuide.Distance)
                 / (gDepthTolerance * max(centerGuide.Distance, tapGuide.Distance) + 1e-3f));
             const float weightLuminance = exp(-abs(Luminance(sample.rgb) - centerLuminance) / luminanceSigma);

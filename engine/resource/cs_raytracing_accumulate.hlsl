@@ -30,11 +30,15 @@ cbuffer cbAccumulate : register(b0)
 
 Texture2D<float4>   gRadiance         : register(t0); // this frame, rgb DIRECT radiance / a = hit
 Texture2D<float4>   gIndirectRadiance : register(t1); // this frame, rgb INDIRECT radiance
-Texture2D<float4>   gMotion           : register(t2); // xy = currentUV - previousUV, z = previous camera distance
-Texture2D<float4>   gGuide            : register(t3); // this frame: octNormal.xy, camera distance, instanceIndex
+Texture2D<float2>   gMotion           : register(t2); // currentUV - previousUV
+Texture2D<float4>   gGuide            : register(t3); // this frame: prevCamDist, -, camDist, instanceIndex
 Texture2D<float4>   gPrevGuide        : register(t4); // same, previous frame
 Texture2D<float4>   gHistory          : register(t5); // direct: rgb running mean, a = effective sample count
 Texture2D<float4>   gIndirectHistory  : register(t6); // indirect: rgb running mean, a = same count
+// Normals live in the DLSS-shaped normal/roughness texture rather than in the guide. This one
+// ping-pongs alongside the guide because validation compares against the previous frame's normal.
+Texture2D<float4>   gNormalRoughness     : register(t7); // this frame
+Texture2D<float4>   gPrevNormalRoughness : register(t8); // previous frame
 
 // Both channels reproject through the same motion vector, validate against the same guide and
 // share one sample count; only the radiance being averaged differs. Keeping them separate is what
@@ -59,7 +63,7 @@ float3 ClipColor(float3 color, float3 boxMin, float3 boxMax)
 // expectedPrevDistance is this pixel's surface measured from the PREVIOUS camera, not its current
 // distance. Comparing current distance against stored previous distance would reject history on
 // every camera translation, since the two are measured from different origins.
-bool IsHistoryTapValid(Guide current, float expectedPrevDistance, int2 tapCoord)
+bool IsHistoryTapValid(Guide current, float3 currentNormal, float expectedPrevDistance, int2 tapCoord)
 {
     if (any(tapCoord < int2(0, 0)) || any(tapCoord >= int2(gRenderTargetSize)))
     {
@@ -81,7 +85,8 @@ bool IsHistoryTapValid(Guide current, float expectedPrevDistance, int2 tapCoord)
     {
         return false;
     }
-    if (dot(current.Normal, prev.Normal) < gNormalThreshold)
+    const float3 prevNormal = UnpackNormalRoughness(gPrevNormalRoughness.Load(int3(tapCoord, 0))).Normal;
+    if (dot(currentNormal, prevNormal) < gNormalThreshold)
     {
         return false;
     }
@@ -100,10 +105,10 @@ void CS(uint3 dispatchThreadId : SV_DispatchThreadID)
 
     const float3 currentColor = gRadiance.Load(int3(pixel, 0)).rgb;
     const float3 currentIndirect = gIndirectRadiance.Load(int3(pixel, 0)).rgb;
-    const float4 motionSample = gMotion.Load(int3(pixel, 0));
-    const float2 motion = motionSample.xy;
-    const float expectedPrevDistance = motionSample.z;
+    const float2 motion = gMotion.Load(int3(pixel, 0));
     const Guide current = UnpackGuide(gGuide.Load(int3(pixel, 0)));
+    const float expectedPrevDistance = current.PrevDistance;
+    const float3 currentNormal = UnpackNormalRoughness(gNormalRoughness.Load(int3(pixel, 0))).Normal;
     const float sampleCount = float(max(gSamplesPerPixel, 1u));
 
     // Debug views show the raw quantity for this frame only, so they bypass accumulation
@@ -158,7 +163,7 @@ void CS(uint3 dispatchThreadId : SV_DispatchThreadID)
         for (int i = 0; i < 4; ++i)
         {
             const int2 tap = baseCoord + offsets[i];
-            if (weights[i] <= 0.0f || !IsHistoryTapValid(current, expectedPrevDistance, tap))
+            if (weights[i] <= 0.0f || !IsHistoryTapValid(current, currentNormal, expectedPrevDistance, tap))
             {
                 continue;
             }

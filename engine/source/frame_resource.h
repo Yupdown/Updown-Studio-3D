@@ -102,8 +102,10 @@ namespace udsdx
 
 		UINT FisheyeEnabled = 0;
 		float FisheyeThetaMax = 0.0f; // half the fisheye field of view, in radians
-		float FisheyePad0 = 0.0f;
-		float FisheyePad1 = 0.0f;
+		// Sub-pixel offset of the primary sample, in pixels, within [-0.5, 0.5]. Chosen on the CPU
+		// so the host can report the same value to DLSS as sl::Constants::jitterOffset.
+		float JitterOffsetX = 0.0f;
+		float JitterOffsetY = 0.0f;
 	};
 
 	// Mirrors cbAccumulate in cs_raytracing_accumulate.hlsl. Drives the temporal reprojection pass

@@ -325,7 +325,10 @@ void RayGenMain()
     float3 indirectSum = 0.0f;
     for (uint sample = 0u; sample < gSamplesPerPixel; ++sample)
     {
-        RayDesc ray = BuildPrimaryRay((float2(pixel) + NextFloat2(rng)) / float2(dimensions));
+        // The first sample sits at the jitter offset the host chose and will report to DLSS;
+        // any further samples stay random, so raising spp still antialiases.
+        float2 offset = sample == 0u ? (0.5f + gJitterOffset) : NextFloat2(rng);
+        RayDesc ray = BuildPrimaryRay((float2(pixel) + offset) / float2(dimensions));
         float3 sampleDirect;
         float3 sampleIndirect;
         TracePath(ray, rng, sampleDirect, sampleIndirect);
@@ -337,17 +340,36 @@ void RayGenMain()
     // temporal pass needs to reproject it. Accumulation happens there, where a 3x3 neighbourhood
     // is reachable (ray generation shaders have no groupshared memory).
     float invSpp = 1.0f / float(max(gSamplesPerPixel, 1u));
-    gRadianceOut[pixel] = float4(directSum * invSpp, guide.HitT < 0.0f ? 0.0f : 1.0f);
-    gIndirectOut[pixel] = float4(indirectSum * invSpp, 0.0f);
+    float3 direct = directSum * invSpp;
+    float3 indirect = indirectSum * invSpp;
     // From the deterministic centre ray, like the rest of the guide data: no jitter, so the
     // re-modulated texture never shimmers.
-    gAlbedoOut[pixel] = float4(guide.HitT < 0.0f ? 1.0f.xxx : guide.Albedo, 1.0f);
+    float3 albedo = guide.HitT < 0.0f ? 1.0f.xxx : guide.Albedo;
+
+    gRadianceOut[pixel] = float4(direct, guide.HitT < 0.0f ? 0.0f : 1.0f);
+    gIndirectOut[pixel] = float4(indirect, 0.0f);
+    gAlbedoOut[pixel] = float4(albedo, 1.0f);
+
+    // Ray Reconstruction denoises the full noisy signal and demodulates internally using the
+    // albedo guide, so it wants the composed radiance rather than the split the engine's own
+    // denoiser consumes. Re-applying albedo here is the same product the resolve forms; it is
+    // written unaccumulated because RR expects raw per-frame samples, not a pre-averaged estimate.
+    gNoisyColorOut[pixel] = float4(direct + albedo * indirect, 1.0f);
+
+    // Lambert only: no specular lobe means F0 is zero, and the reference EnvBRDFApprox2 in the
+    // DLSS-RR guide returns zero for a zero specular colour. Written rather than cleared once so
+    // there is already a place to put a real value if materials ever grow one.
+    gSpecularAlbedoOut[pixel] = float4(0.0f, 0.0f, 0.0f, 1.0f);
 
     if (guide.HitT < 0.0f)
     {
         // Sky: only camera rotation moves it, and there is no surface to validate against.
-        gMotionOut[pixel] = float4(MotionFromDirection(guideRay.Direction), RT_SKY_VIEW_Z, 0.0f);
-        gGuideOut[pixel] = float4(0.0f, 0.0f, RT_SKY_VIEW_Z, asfloat(RT_INVALID_INSTANCE));
+        gMotionOut[pixel] = MotionFromDirection(guideRay.Direction);
+        gGuideOut[pixel] = float4(RT_SKY_VIEW_Z, 0.0f, RT_SKY_VIEW_Z, asfloat(RT_INVALID_INSTANCE));
+        gNormalRoughnessOut[pixel] = float4(0.0f, 0.0f, 0.0f, 1.0f);
+        // A finite far value, not the guide's 1e30 sentinel: that is fine for a comparison the
+        // engine does itself, but it is not a depth a denoiser can reason about.
+        gLinearDepthOut[pixel] = gRayMaxDistance;
     }
     else
     {
@@ -355,9 +377,16 @@ void RayGenMain()
         float prevDistance;
         float2 motion = MotionFromWorld(currentWorld, guide.PrevWorldPos, prevDistance);
 
-        gMotionOut[pixel] = float4(motion, prevDistance, 0.0f);
-        gGuideOut[pixel] = float4(EncodeOctahedral(guide.Normal),
+        gMotionOut[pixel] = motion;
+        gGuideOut[pixel] = float4(prevDistance,
+                                  0.0f,
                                   CameraDistance(currentWorld, gEyePosW.xyz),
                                   asfloat(guide.InstanceIdx));
+        // Roughness is 1 for the same reason specular albedo is 0.
+        gNormalRoughnessOut[pixel] = float4(guide.Normal, 1.0f);
+        // View-space Z, which is what kBufferTypeLinearDepth means -- deliberately not the
+        // camera distance the guide stores, since the two are different quantities.
+        gLinearDepthOut[pixel] = mul(float4(currentWorld, 1.0f), gView).z;
     }
+
 }

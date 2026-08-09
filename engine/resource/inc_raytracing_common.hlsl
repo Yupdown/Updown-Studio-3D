@@ -20,47 +20,49 @@
 
 #define RT_INVALID_INSTANCE     0xFFFFFFFFu
 
-// Octahedral normal encoding: two channels instead of three, so the temporal guide texture holds
-// normal, hit distance and instance id in a single RGBA32F.
-float2 EncodeOctahedral(float3 n)
-{
-    n /= (abs(n.x) + abs(n.y) + abs(n.z));
-    float2 e = n.xy;
-    if (n.z < 0.0f)
-    {
-        e = (1.0f - abs(n.yx)) * float2(n.x >= 0.0f ? 1.0f : -1.0f, n.y >= 0.0f ? 1.0f : -1.0f);
-    }
-    return e;
-}
-
-float3 DecodeOctahedral(float2 e)
-{
-    float3 n = float3(e.xy, 1.0f - abs(e.x) - abs(e.y));
-    if (n.z < 0.0f)
-    {
-        n.xy = (1.0f - abs(n.yx)) * float2(n.x >= 0.0f ? 1.0f : -1.0f, n.y >= 0.0f ? 1.0f : -1.0f);
-    }
-    return normalize(n);
-}
-
 // Per-pixel geometric identity written by the ray generation shader and consumed by both the
 // temporal validation and the spatial filter's edge-stopping weights.
+//
+// Normals used to live here octahedral-encoded, which was a concession to fitting everything in
+// one RGBA32F. DLSS Ray Reconstruction wants an uncompressed 3-channel normal anyway, so the
+// normal moved to its own texture and both consumers read it from there; the freed channel now
+// carries the previous-frame distance that used to ride along in the motion buffer.
+//
+// Channel order is load-bearing: the motion blur pass reads this texture through an SRV that
+// broadcasts channel 2, so the camera distance has to stay at .z.
 struct Guide
 {
-    float3 Normal;
     // Distance from the camera, not view-space Z: a fisheye sees past 90 degrees off-axis, where
     // view Z turns negative and stops ordering surfaces.
     float  Distance;
+    // This pixel's surface measured from the PREVIOUS camera, for history validation.
+    float  PrevDistance;
     uint   InstanceIndex;
 };
 
 Guide UnpackGuide(float4 packed)
 {
     Guide g;
-    g.Normal = DecodeOctahedral(packed.xy);
+    g.PrevDistance = packed.x;
     g.Distance = packed.z;
     g.InstanceIndex = asuint(packed.w);
     return g;
+}
+
+// Shading normal and linear roughness, in the layout DLSS-RR expects for
+// kBufferTypeNormalRoughness with DLSSDNormalRoughnessMode::ePacked.
+struct NormalRoughness
+{
+    float3 Normal;
+    float  Roughness;
+};
+
+NormalRoughness UnpackNormalRoughness(float4 packed)
+{
+    NormalRoughness n;
+    n.Normal = packed.xyz;
+    n.Roughness = packed.w;
+    return n;
 }
 
 #endif // INC_RAYTRACING_COMMON_HLSL

@@ -55,7 +55,12 @@ namespace udsdx
 		static constexpr DXGI_FORMAT RADIANCE_FORMAT = DXGI_FORMAT_R16G16B16A16_FLOAT;
 		// xy is the UV velocity; z carries the hit point's distance from the previous camera, which
 		// the accumulation pass compares against the stored previous depth.
-		static constexpr DXGI_FORMAT MOTION_FORMAT = DXGI_FORMAT_R16G16B16A16_FLOAT;
+		static constexpr DXGI_FORMAT MOTION_FORMAT = DXGI_FORMAT_R16G16_FLOAT;
+		// Shapes dictated by DLSS Ray Reconstruction's guide buffer requirements. They are the
+		// only copy of each quantity: the engine's own passes read them too.
+		static constexpr DXGI_FORMAT NORMAL_ROUGHNESS_FORMAT = DXGI_FORMAT_R16G16B16A16_FLOAT;
+		static constexpr DXGI_FORMAT LINEAR_DEPTH_FORMAT = DXGI_FORMAT_R32_FLOAT;
+		static constexpr DXGI_FORMAT NOISY_COLOR_FORMAT = DXGI_FORMAT_R16G16B16A16_FLOAT;
 		// Instance indices past 2048 would not survive a half float, so the guide stays FP32.
 		static constexpr DXGI_FORMAT GUIDE_FORMAT = DXGI_FORMAT_R32G32B32A32_FLOAT;
 		static constexpr DXGI_FORMAT ALBEDO_FORMAT = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -145,6 +150,15 @@ namespace udsdx
 		// detail never passes through the a-trous blur.
 		ComPtr<ID3D12Resource> m_albedoBuffer;
 		ComPtr<ID3D12Resource> m_motionBuffer;
+		// Written for DLSS Ray Reconstruction, and read by the engine's own denoiser wherever the
+		// same quantity is needed -- the normal in particular, which used to be octahedral-packed
+		// into the guide. Ping-ponged with the guide because history validation compares this
+		// frame's normal against the previous frame's.
+		std::array<ComPtr<ID3D12Resource>, 2> m_normalRoughnessBuffers;
+		// Pure DLSS inputs: nothing in the fallback path reads these.
+		ComPtr<ID3D12Resource> m_linearDepthBuffer;
+		ComPtr<ID3D12Resource> m_specularAlbedoBuffer;
+		ComPtr<ID3D12Resource> m_noisyColorBuffer;
 		// Guide and history ping-pong together on the same index: this frame's write becomes next
 		// frame's read, and validation compares the current guide against the previous one.
 		std::array<ComPtr<ID3D12Resource>, 2> m_guideBuffers;
@@ -186,6 +200,10 @@ namespace udsdx
 		D3D12_GPU_DESCRIPTOR_HANDLE m_resolveIndirectSrv{};
 		CD3DX12_CPU_DESCRIPTOR_HANDLE m_albedoCpuSrv{};
 		CD3DX12_GPU_DESCRIPTOR_HANDLE m_albedoGpuSrv{};
+		// For the a-trous passes' normal edge stop. The accumulation pass reads its own pair out
+		// of the contiguous SRV run below.
+		std::array<CD3DX12_CPU_DESCRIPTOR_HANDLE, 2> m_normalRoughnessCpuSrv{};
+		std::array<CD3DX12_GPU_DESCRIPTOR_HANDLE, 2> m_normalRoughnessGpuSrv{};
 
 		// Contiguous SRV run the accumulation pass binds as one table:
 		// radiance, motion, guide[write], guide[read], history[read].
@@ -219,6 +237,10 @@ namespace udsdx
 		// matters because the resolve reads whichever history slot the swap just produced.
 		static constexpr D3D12_RESOURCE_STATES kRestingState =
 			D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+
+		// This frame's sub-pixel offset, in pixels within [-0.5, 0.5]. Halton(2,3) rather than the
+		// shader's RNG: DLSS has to be told exactly where the sample sat.
+		DirectX::XMFLOAT2 m_jitterOffset{};
 
 		int m_historyReadIndex = 0;
 		int m_historyWriteIndex = 1;

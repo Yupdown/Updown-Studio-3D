@@ -68,8 +68,10 @@ cbuffer cbRaytracing : register(b0, space0)
 
     uint     gFisheyeEnabled;
     float    gFisheyeThetaMax;   // half the fisheye field of view, in radians
-    float    gFisheyePad0;
-    float    gFisheyePad1;
+    // Sub-pixel offset of this frame's primary sample, in pixels, within [-0.5, 0.5]. Halton on
+    // the CPU rather than the shader's RNG, so the host knows the exact value it has to report to
+    // DLSS as sl::Constants::jitterOffset.
+    float2   gJitterOffset;
 };
 
 // Per-instance previous object-to-world, indexed by InstanceIndex(). Column-vector 3x4, matching
@@ -83,12 +85,21 @@ RaytracingAccelerationStructure gScene          : register(t0, space0);
 StructuredBuffer<GeometryInfo>  gGeometryInfo   : register(t1, space0);
 StructuredBuffer<InstanceInfo>  gInstanceInfo   : register(t2, space0);
 
-// Ray generation outputs. The temporal accumulation pass consumes all three.
-RWTexture2D<float4>             gRadianceOut    : register(u0, space0);  // rgb DIRECT radiance, a = hit
-RWTexture2D<float4>             gIndirectOut    : register(u1, space0);  // rgb INDIRECT radiance (spatially filtered later)
-RWTexture2D<float4>             gMotionOut      : register(u2, space0);  // xy = currentUV - previousUV, z = previous view Z
-RWTexture2D<float4>             gGuideOut       : register(u3, space0);  // octNormal.xy, view Z, instanceIndex
-RWTexture2D<float4>             gAlbedoOut      : register(u4, space0);  // primary albedo, for re-modulation at resolve
+// Ray generation outputs.
+//
+// u0..u4 feed the engine's own denoiser; u5..u8 exist in the layout DLSS Ray Reconstruction
+// requires for its guide buffers. They are not two parallel sets: the normal, the motion vector
+// and the albedo are each stored exactly once, in whichever shape RR dictates, and the engine
+// passes read them from there.
+RWTexture2D<float4>             gRadianceOut         : register(u0, space0);  // rgb DIRECT radiance, a = hit
+RWTexture2D<float4>             gIndirectOut         : register(u1, space0);  // rgb INDIRECT irradiance, albedo demodulated
+RWTexture2D<float2>             gMotionOut           : register(u2, space0);  // currentUV - previousUV
+RWTexture2D<float4>             gGuideOut            : register(u3, space0);  // prevCamDist, -, camDist, instanceIndex
+RWTexture2D<float4>             gAlbedoOut           : register(u4, space0);  // diffuse albedo
+RWTexture2D<float4>             gNormalRoughnessOut  : register(u5, space0);  // world normal.xyz, linear roughness.w
+RWTexture2D<float>              gLinearDepthOut      : register(u6, space0);  // view-space Z
+RWTexture2D<float4>             gNoisyColorOut       : register(u7, space0);  // un-accumulated direct + albedo * indirect
+RWTexture2D<float4>             gSpecularAlbedoOut   : register(u8, space0);  // zero: this path is Lambert-only
 
 // Two separate unbounded tables over the same shader-visible SRV heap, so a heap index is the
 // bindless lookup index in both cases -- the same convention Texture::GetSrvIndex already uses.

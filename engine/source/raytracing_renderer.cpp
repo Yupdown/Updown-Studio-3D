@@ -19,6 +19,24 @@ namespace udsdx
 {
 	namespace
 	{
+		// Van der Corput radical inverse: digits of `index` in `base`, mirrored about the decimal
+		// point. Halton(2,3) is the pair of these for bases 2 and 3.
+		float RadicalInverse(uint32_t index, uint32_t base)
+		{
+			float result = 0.0f;
+			float fraction = 1.0f / static_cast<float>(base);
+			while (index > 0u)
+			{
+				result += static_cast<float>(index % base) * fraction;
+				index /= base;
+				fraction /= static_cast<float>(base);
+			}
+			return result;
+		}
+	}
+
+	namespace
+	{
 		const wchar_t* kRayGenName = L"RayGenMain";
 		const wchar_t* kMissRadianceName = L"MissRadiance";
 		const wchar_t* kMissShadowName = L"MissShadow";
@@ -95,10 +113,11 @@ namespace udsdx
 		// does not accept stage-specific visibility, and ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT must not
 		// be set. Total cost is 10 of the 64 available DWORDs.
 		{
-			// Five consecutive UAVs: direct radiance, indirect radiance, motion, the write-side
-			// guide and the primary albedo.
+			// Nine consecutive UAVs: direct radiance, indirect radiance, motion, the write-side
+			// guide, albedo, the write-side normal/roughness, linear depth, the composed noisy
+			// colour and specular albedo.
 			CD3DX12_DESCRIPTOR_RANGE raygenUavRange;
-			raygenUavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 5, 0, 0);
+			raygenUavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 9, 0, 0);
 
 			// Unbounded ranges over the whole shader-visible SRV heap, in separate spaces so a
 			// Texture2D array and a ByteAddressBuffer array can both address it by heap index.
@@ -175,7 +194,7 @@ namespace udsdx
 			// direct radiance, indirect radiance, motion, guide[write], guide[read],
 			// direct history[read], indirect history[read] -- one contiguous run.
 			CD3DX12_DESCRIPTOR_RANGE srvRange;
-			srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 7, 0);
+			srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 9, 0);
 			// direct history[write], indirect history[write].
 			CD3DX12_DESCRIPTOR_RANGE uavRange;
 			uavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 2, 0);
@@ -209,14 +228,17 @@ namespace udsdx
 			sourceRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
 			CD3DX12_DESCRIPTOR_RANGE guideRange;
 			guideRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
+			CD3DX12_DESCRIPTOR_RANGE normalRoughnessRange;
+			normalRoughnessRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2);
 			CD3DX12_DESCRIPTOR_RANGE destinationRange;
 			destinationRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
 
-			CD3DX12_ROOT_PARAMETER slotRootParameter[4]{};
+			CD3DX12_ROOT_PARAMETER slotRootParameter[5]{};
 			slotRootParameter[0].InitAsConstants(8, 0);
 			slotRootParameter[1].InitAsDescriptorTable(1, &sourceRange);
 			slotRootParameter[2].InitAsDescriptorTable(1, &guideRange);
-			slotRootParameter[3].InitAsDescriptorTable(1, &destinationRange);
+			slotRootParameter[3].InitAsDescriptorTable(1, &normalRoughnessRange);
+			slotRootParameter[4].InitAsDescriptorTable(1, &destinationRange);
 
 			CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(_countof(slotRootParameter), slotRootParameter,
 				0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_NONE);
@@ -516,6 +538,11 @@ namespace udsdx
 		createTarget(m_indirectRadianceBuffer, RADIANCE_FORMAT, L"RaytracingRenderer::IndirectRadiance");
 		createTarget(m_albedoBuffer, ALBEDO_FORMAT, L"RaytracingRenderer::Albedo");
 		createTarget(m_motionBuffer, MOTION_FORMAT, L"RaytracingRenderer::Motion");
+		createTarget(m_normalRoughnessBuffers[0], NORMAL_ROUGHNESS_FORMAT, L"RaytracingRenderer::NormalRoughness0");
+		createTarget(m_normalRoughnessBuffers[1], NORMAL_ROUGHNESS_FORMAT, L"RaytracingRenderer::NormalRoughness1");
+		createTarget(m_linearDepthBuffer, LINEAR_DEPTH_FORMAT, L"RaytracingRenderer::LinearDepth");
+		createTarget(m_specularAlbedoBuffer, ALBEDO_FORMAT, L"RaytracingRenderer::SpecularAlbedo");
+		createTarget(m_noisyColorBuffer, NOISY_COLOR_FORMAT, L"RaytracingRenderer::NoisyColor");
 		createTarget(m_guideBuffers[0], GUIDE_FORMAT, L"RaytracingRenderer::Guide0");
 		createTarget(m_guideBuffers[1], GUIDE_FORMAT, L"RaytracingRenderer::Guide1");
 		createTarget(m_historyBuffers[0], HISTORY_FORMAT, L"RaytracingRenderer::History0");
@@ -550,6 +577,10 @@ namespace udsdx
 			claim(nullptr, nullptr); // motion UAV
 			claim(nullptr, nullptr); // guide[phase] UAV
 			claim(nullptr, nullptr); // albedo UAV
+			claim(nullptr, nullptr); // normal/roughness[phase] UAV
+			claim(nullptr, nullptr); // linear depth UAV
+			claim(nullptr, nullptr); // noisy colour UAV
+			claim(nullptr, nullptr); // specular albedo UAV
 		}
 
 		// Accumulation SRV runs, one per phase: direct radiance, indirect radiance, motion,
@@ -563,6 +594,8 @@ namespace udsdx
 			claim(nullptr, nullptr); // guide[read]
 			claim(nullptr, nullptr); // direct history[read]
 			claim(nullptr, nullptr); // indirect history[read]
+			claim(nullptr, nullptr); // normal/roughness[write]
+			claim(nullptr, nullptr); // normal/roughness[read]
 		}
 
 		// Accumulation UAV runs, one per phase: direct history[phase], indirect history[phase].
@@ -581,6 +614,10 @@ namespace udsdx
 		for (int i = 0; i < 2; ++i)
 		{
 			claim(&m_guideCpuSrv[i], &m_guideGpuSrv[i]);
+		}
+		for (int i = 0; i < 2; ++i)
+		{
+			claim(&m_normalRoughnessCpuSrv[i], &m_normalRoughnessGpuSrv[i]);
 		}
 
 		for (int i = 0; i < 2; ++i)
@@ -645,6 +682,14 @@ namespace udsdx
 			makeUav(m_guideBuffers[phase].Get(), GUIDE_FORMAT, uav);
 			uav.Offset(1, descriptorSize);
 			makeUav(m_albedoBuffer.Get(), ALBEDO_FORMAT, uav);
+			uav.Offset(1, descriptorSize);
+			makeUav(m_normalRoughnessBuffers[phase].Get(), NORMAL_ROUGHNESS_FORMAT, uav);
+			uav.Offset(1, descriptorSize);
+			makeUav(m_linearDepthBuffer.Get(), LINEAR_DEPTH_FORMAT, uav);
+			uav.Offset(1, descriptorSize);
+			makeUav(m_noisyColorBuffer.Get(), NOISY_COLOR_FORMAT, uav);
+			uav.Offset(1, descriptorSize);
+			makeUav(m_specularAlbedoBuffer.Get(), ALBEDO_FORMAT, uav);
 
 			// phase is the write index: guide[phase] is this frame's, guide[1 - phase] last
 			// frame's, and the [1 - phase] histories are the ones being reprojected.
@@ -662,6 +707,10 @@ namespace udsdx
 			makeSrv(m_historyBuffers[1 - phase].Get(), HISTORY_FORMAT, srv);
 			srv.Offset(1, descriptorSize);
 			makeSrv(m_indirectHistoryBuffers[1 - phase].Get(), HISTORY_FORMAT, srv);
+			srv.Offset(1, descriptorSize);
+			makeSrv(m_normalRoughnessBuffers[phase].Get(), NORMAL_ROUGHNESS_FORMAT, srv);
+			srv.Offset(1, descriptorSize);
+			makeSrv(m_normalRoughnessBuffers[1 - phase].Get(), NORMAL_ROUGHNESS_FORMAT, srv);
 
 			CD3DX12_CPU_DESCRIPTOR_HANDLE accumulateUav = m_accumulateUavCpu[phase];
 			makeUav(m_historyBuffers[phase].Get(), HISTORY_FORMAT, accumulateUav);
@@ -685,6 +734,7 @@ namespace udsdx
 			m_device->CreateShaderResourceView(m_guideBuffers[i].Get(), &depthDesc, m_guideDepthCpuSrv[i]);
 
 			makeSrv(m_guideBuffers[i].Get(), GUIDE_FORMAT, m_guideCpuSrv[i]);
+			makeSrv(m_normalRoughnessBuffers[i].Get(), NORMAL_ROUGHNESS_FORMAT, m_normalRoughnessCpuSrv[i]);
 			makeSrv(m_historyBuffers[i].Get(), HISTORY_FORMAT, m_historyCpuSrv[i]);
 			makeSrv(m_indirectHistoryBuffers[i].Get(), HISTORY_FORMAT, m_indirectHistoryCpuSrv[i]);
 			makeSrv(m_filterBuffers[i].Get(), RADIANCE_FORMAT, m_filterCpuSrv[i]);
@@ -778,6 +828,8 @@ namespace udsdx
 		// The stored angle is the half-field: a 180 degree fisheye puts the corners 90 degrees
 		// off the optical axis.
 		constants.FisheyeThetaMax = 0.5f * options.RaytracingFisheyeFov * DEG2RAD;
+		constants.JitterOffsetX = m_jitterOffset.x;
+		constants.JitterOffsetY = m_jitterOffset.y;
 
 		m_constantBuffers[param.FrameResourceIndex]->CopyData(0, constants);
 		m_prevViewProj = viewProj;
@@ -888,7 +940,8 @@ namespace udsdx
 				? m_indirectHistoryGpuSrv[m_historyWriteIndex]
 				: m_filterGpuSrv[1 - destination]);
 			commandList->SetComputeRootDescriptorTable(2, m_guideGpuSrv[m_historyWriteIndex]);
-			commandList->SetComputeRootDescriptorTable(3, m_filterGpuUav[destination]);
+			commandList->SetComputeRootDescriptorTable(3, m_normalRoughnessGpuSrv[m_historyWriteIndex]);
+			commandList->SetComputeRootDescriptorTable(4, m_filterGpuUav[destination]);
 
 			commandList->Dispatch((m_width + 7u) / 8u, (m_height + 7u) / 8u, 1u);
 
@@ -943,6 +996,18 @@ namespace udsdx
 		++m_frameCounter;
 		std::erase_if(m_retiredHitGroupTables, [this](const auto& retired)
 			{ return m_frameCounter - retired.second > kRetireFrames; });
+
+		// Halton(2,3) sub-pixel offset for this frame's primary sample. The ray generation shader
+		// used to draw that offset from its own RNG, which antialiases just as well but leaves the
+		// host with no idea where the sample landed -- and DLSS has to be told, exactly, as
+		// sl::Constants::jitterOffset. A low-discrepancy sequence also stratifies better than
+		// uniform noise over the frames a static view accumulates across.
+		//
+		// The sequence restarts every 16 frames, matching the phase count DLSS documents for its
+		// own jitter, and the +1 keeps index 0 (which Halton maps to 0,0) out of the cycle.
+		const uint32_t jitterIndex = static_cast<uint32_t>(m_frameCounter % 16u) + 1u;
+		m_jitterOffset.x = RadicalInverse(jitterIndex, 2u) - 0.5f;
+		m_jitterOffset.y = RadicalInverse(jitterIndex, 3u) - 0.5f;
 
 		// Acceleration structure builds are recorded into the frame command list. Mesh vertex and
 		// index buffers stay in GENERIC_READ, which already subsumes NON_PIXEL_SHADER_RESOURCE, so
@@ -1005,6 +1070,10 @@ namespace udsdx
 		TransitionForWrite(dxrCommandList, m_albedoBuffer.Get());
 		TransitionForWrite(dxrCommandList, m_motionBuffer.Get());
 		TransitionForWrite(dxrCommandList, m_guideBuffers[m_historyWriteIndex].Get());
+		TransitionForWrite(dxrCommandList, m_normalRoughnessBuffers[m_historyWriteIndex].Get());
+		TransitionForWrite(dxrCommandList, m_linearDepthBuffer.Get());
+		TransitionForWrite(dxrCommandList, m_specularAlbedoBuffer.Get());
+		TransitionForWrite(dxrCommandList, m_noisyColorBuffer.Get());
 
 		const CD3DX12_GPU_DESCRIPTOR_HANDLE heapStart(param.SRVDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 
@@ -1028,6 +1097,10 @@ namespace udsdx
 		TransitionForRead(dxrCommandList, m_albedoBuffer.Get());
 		TransitionForRead(dxrCommandList, m_motionBuffer.Get());
 		TransitionForRead(dxrCommandList, m_guideBuffers[m_historyWriteIndex].Get());
+		TransitionForRead(dxrCommandList, m_normalRoughnessBuffers[m_historyWriteIndex].Get());
+		TransitionForRead(dxrCommandList, m_linearDepthBuffer.Get());
+		TransitionForRead(dxrCommandList, m_specularAlbedoBuffer.Get());
+		TransitionForRead(dxrCommandList, m_noisyColorBuffer.Get());
 
 		AccumulateTemporal(param);
 		AtrousFilter(param);
