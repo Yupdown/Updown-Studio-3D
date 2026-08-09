@@ -49,6 +49,7 @@ set(ENGINE_SOURCES
     source/shader.cpp
     source/shader_compile.cpp
     source/shadow_map.cpp
+    source/streamline.cpp
     source/texture.cpp
     source/time_measure.cpp
     source/transform.cpp
@@ -141,6 +142,13 @@ link_first_available(engine PUBLIC
     assimp
 )
 target_link_libraries(engine PUBLIC updown::imgui)
+
+# Streamline is an INTERFACE target: headers and the UPDOWN_STREAMLINE define only. Nothing is
+# linked, because manual hooking loads sl.interposer.dll at runtime -- that is what lets the engine
+# keep its own denoiser path on adapters where DLSS does not exist.
+if(TARGET NVIDIA::Streamline)
+    target_link_libraries(engine PUBLIC NVIDIA::Streamline)
+endif()
 
 if(NOT UPDOWN_DXC_EXECUTABLE)
     message(FATAL_ERROR "UPDOWN_DXC_EXECUTABLE is not set. Check FetchContent DXC setup.")

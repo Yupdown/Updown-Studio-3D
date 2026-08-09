@@ -15,6 +15,7 @@ namespace udsdx
 	class PostProcessBloom;
 	class PostProcessTAA;
 	class PostProcessOutline;
+	class Streamline;
 	class Texture;
 
 	class Core
@@ -169,6 +170,11 @@ namespace udsdx
 		// requires OPTIONS3::ViewInstancingTier >= 1 and shader model 6.1 (SV_ViewID)
 		D3D12_VIEW_INSTANCING_TIER m_viewInstancingTier = D3D12_VIEW_INSTANCING_TIER_NOT_SUPPORTED;
 		bool m_shadowViewInstancingSupported = false;
+
+		// NVIDIA Streamline, loaded at runtime. Present on every build; inert unless the SDK was
+		// fetched, the signed interposer sits next to the executable and the adapter supports the
+		// requested feature.
+		std::unique_ptr<Streamline> m_streamline;
 
 		// DXR: promoted views of m_d3dDevice / m_commandList, valid only when m_raytracingSupported.
 		D3D12_RAYTRACING_TIER m_raytracingTier = D3D12_RAYTRACING_TIER_NOT_SUPPORTED;

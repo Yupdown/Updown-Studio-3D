@@ -24,6 +24,7 @@
 #include "post_process_outline.h"
 #include "raytracing_renderer.h"
 #include "light_directional.h"
+#include "streamline.h"
 
 // Forward declare message handler from imgui_impl_win32.cpp
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -100,6 +101,11 @@ namespace udsdx
 		EnableDebugLayer();
 		factoryFlags |= DXGI_CREATE_FACTORY_DEBUG;
 #endif
+		// Streamline wants slInit to run before the device exists, so it goes ahead of everything
+		// else here. It never throws: an adapter or a machine without DLSS just leaves it inert.
+		m_streamline = std::make_unique<Streamline>();
+		m_streamline->Initialize();
+
 		// Create DXGI Factory
 		ThrowIfFailed(::CreateDXGIFactory2(factoryFlags, IID_PPV_ARGS(&m_dxgiFactory)));
 
@@ -133,6 +139,10 @@ namespace udsdx
 			ThrowIfFailed(::D3D12CreateDevice(dxgiAdapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&m_d3dDevice)));
 			m_isSoftwareAdapter = true;
 		}
+
+		// dxgiAdapter is whichever adapter the device was actually created on, including the WARP
+		// fallback -- Streamline answers support per LUID, so it needs that exact one.
+		m_streamline->OnDeviceCreated(m_d3dDevice.Get(), dxgiAdapter.Get());
 
 		// Check view instancing support for the cascaded shadow map pass.
 		// The tier and shader model 6.1 (SV_ViewID) are independent caps; both must pass.
@@ -360,6 +370,12 @@ namespace udsdx
 			ReleaseImGui();
 
 			m_graphicsMemory.reset();
+		}
+
+		// After the queue is flushed: Streamline holds a reference to the device.
+		if (m_streamline != nullptr)
+		{
+			m_streamline->Shutdown();
 		}
 	}
 
@@ -1097,6 +1113,24 @@ namespace udsdx
 			else if (raytracing != nullptr && !raytracing->IsAvailable())
 			{
 				ImGui::TextDisabled("The raytracing pipeline failed to initialize.");
+			}
+
+			// Streamline / DLSS Ray Reconstruction availability. Read-only for now: the SDK is
+			// loaded and queried, but nothing in the render graph consumes it yet.
+			if (m_streamline != nullptr)
+			{
+				if (m_streamline->IsRayReconstructionSupported())
+				{
+					ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "DLSS Ray Reconstruction: available");
+				}
+				else if (m_streamline->IsAvailable())
+				{
+					ImGui::TextDisabled("DLSS Ray Reconstruction: unsupported (%s)", m_streamline->GetStatusMessage().c_str());
+				}
+				else
+				{
+					ImGui::TextDisabled("Streamline: unavailable (%s)", m_streamline->GetStatusMessage().c_str());
+				}
 			}
 
 			if (raytracing != nullptr)

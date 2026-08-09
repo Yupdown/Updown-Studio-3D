@@ -2,6 +2,10 @@ include(FetchContent)
 
 set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL "Disable automatic dependency updates" FORCE)
 
+# The Streamline package is a ~220 MB download, so it is a switch rather than an unconditional
+# dependency. Off means the engine builds without any DLSS code path at all.
+option(UPDOWN_ENABLE_STREAMLINE "Fetch the NVIDIA Streamline SDK (DLSS Super Resolution / Ray Reconstruction)" ON)
+
 # Captured at include time so the patch script resolves relative to this file.
 set(UPDOWN_DEPS_PATCH_SCRIPT "${CMAKE_CURRENT_LIST_DIR}/patches/fix_compileshaders_cwd.cmake")
 
@@ -60,9 +64,24 @@ function(updown_setup_dependencies)
     set(ASSIMP_BUILD_ZLIB ON CACHE BOOL "" FORCE)
     set(ASSIMP_INSTALL OFF CACHE BOOL "" FORCE)
 
+    # NVIDIA Streamline. Binary artifacts were removed from the git repository in 2.7.32, so the
+    # release zip is the only distribution channel. SOURCE_SUBDIR names a directory that does not
+    # exist on purpose: the package ships a CMakeLists.txt at its root for building SL from source,
+    # and without this MakeAvailable would add_subdirectory the entire SDK.
+    if(UPDOWN_ENABLE_STREAMLINE)
+        FetchContent_Declare(
+            streamline
+            URL https://github.com/NVIDIA-RTX/Streamline/releases/download/v2.12.0/streamline-sdk-v2.12.0.zip
+            SOURCE_SUBDIR updown_no_cmake_here
+        )
+    endif()
+
     FetchContent_MakeAvailable(directx_headers directxtk12 directxtex tracy assimp)
     FetchContent_MakeAvailable(imgui)
     FetchContent_MakeAvailable(dxc_bin)
+    if(UPDOWN_ENABLE_STREAMLINE)
+        FetchContent_MakeAvailable(streamline)
+    endif()
 
     # Tracy's upstream CMake exports TRACY_ENABLE as a public definition.
     # Keep profiling opt-in at project targets (Profile config only).
@@ -148,6 +167,41 @@ function(updown_setup_dependencies)
             INTERFACE_INCLUDE_DIRECTORIES "${UPDOWN_DXC_INCLUDE_DIR}"
             INTERFACE_LINK_LIBRARIES "Microsoft::DXIL"
         )
+    endif()
+
+    # Streamline package wiring. Manual hooking (sl.interposer.dll is loaded at runtime) means
+    # nothing here is linked: the engine needs the headers to compile and the DLLs to sit next to
+    # the executable, and sl.interposer.lib is deliberately not used.
+    if(UPDOWN_ENABLE_STREAMLINE)
+        find_path(UPDOWN_STREAMLINE_INCLUDE_DIR
+            NAMES sl.h
+            PATHS "${streamline_SOURCE_DIR}"
+            PATH_SUFFIXES include inc
+        )
+        # Production binaries are dual-signed by NVIDIA; the package also carries unsigned
+        # development builds under a separate directory. Only the signed set is located here,
+        # because loading the unsigned ones requires disabling SL's own signature check.
+        find_path(UPDOWN_STREAMLINE_BIN_DIR
+            NAMES sl.interposer.dll
+            PATHS "${streamline_SOURCE_DIR}"
+            PATH_SUFFIXES bin/x64 bin
+            NO_DEFAULT_PATH
+        )
+
+        if(NOT UPDOWN_STREAMLINE_INCLUDE_DIR OR NOT UPDOWN_STREAMLINE_BIN_DIR)
+            message(FATAL_ERROR "Failed to locate Streamline assets from FetchContent package. "
+                "Set UPDOWN_ENABLE_STREAMLINE=OFF to build without DLSS support.")
+        endif()
+
+        if(NOT TARGET NVIDIA::Streamline)
+            add_library(NVIDIA::Streamline INTERFACE IMPORTED GLOBAL)
+            set_target_properties(NVIDIA::Streamline PROPERTIES
+                INTERFACE_INCLUDE_DIRECTORIES "${UPDOWN_STREAMLINE_INCLUDE_DIR}"
+                INTERFACE_COMPILE_DEFINITIONS "UPDOWN_STREAMLINE"
+            )
+        endif()
+
+        set(UPDOWN_STREAMLINE_BIN_DIR "${UPDOWN_STREAMLINE_BIN_DIR}" CACHE PATH "Streamline signed runtime DLL directory")
     endif()
 
     set(UPDOWN_DXC_EXECUTABLE "${UPDOWN_DXC_EXECUTABLE}" CACHE FILEPATH "DXC executable path")
