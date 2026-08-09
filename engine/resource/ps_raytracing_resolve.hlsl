@@ -10,7 +10,11 @@ cbuffer cbResolve : register(b0)
 {
 	uint gDebugMode;
 	float gHeatmapMax;
-	float2 gResolvePad;
+	// Non-zero when gHistory already holds a finished image -- the un-denoised per-frame estimate,
+	// or whatever DLSS Ray Reconstruction produced. Both are complete colour, with the albedo
+	// already applied, so the demodulated indirect term below must not be added a second time.
+	uint gPassthrough;
+	float gResolvePad;
 };
 
 // Direct history: rgb running mean, a = effective sample count. Never spatially filtered, so sun
@@ -44,6 +48,11 @@ float4 PS(VertexOut pin) : SV_Target
 		// Now a genuinely per-pixel count: disocclusions and rejected history show up dark, which
 		// is exactly where reprojection is failing.
 		return float4(Heatmap(history.a / max(gHeatmapMax, 1.0f)), 1.0f);
+	}
+
+	if (gPassthrough != 0u)
+	{
+		return float4(history.rgb, 1.0f);
 	}
 
 	float3 indirect = gIndirect.SampleLevel(gsamPointClamp, pin.TexC, 0.0f).rgb

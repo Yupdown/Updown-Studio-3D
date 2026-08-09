@@ -143,6 +143,7 @@ namespace udsdx
 		// dxgiAdapter is whichever adapter the device was actually created on, including the WARP
 		// fallback -- Streamline answers support per LUID, so it needs that exact one.
 		m_streamline->OnDeviceCreated(m_d3dDevice.Get(), dxgiAdapter.Get());
+		CreateStreamlineProxies();
 
 		// Check view instancing support for the cascaded shadow map pass.
 		// The tier and shader model 6.1 (SV_ViewID) are independent caps; both must pass.
@@ -240,7 +241,10 @@ namespace udsdx
 		queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
 		queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
 
-		ThrowIfFailed(m_d3dDevice->CreateCommandQueue(
+		// Streamline hooks CreateCommandQueue, so this one call goes through the proxy when it
+		// exists. Everything else on this device stays native.
+		ID3D12Device* queueDevice = m_d3dDeviceProxy != nullptr ? m_d3dDeviceProxy.Get() : m_d3dDevice.Get();
+		ThrowIfFailed(queueDevice->CreateCommandQueue(
 			&queueDesc,
 			IID_PPV_ARGS(&m_commandQueue)
 		));
@@ -275,6 +279,37 @@ namespace udsdx
 		m_updateCallback = callback;
 	}
 
+	void Core::CreateStreamlineProxies()
+	{ ZoneScoped;
+		m_d3dDeviceProxy.Reset();
+		m_dxgiFactoryProxy.Reset();
+
+		if (m_streamline == nullptr || !m_streamline->IsAvailable())
+		{
+			return;
+		}
+
+		// slUpgradeInterface returns a freshly allocated proxy that has taken its own reference to
+		// the base, so Attach claims that reference and the native pointer keeps its own.
+		auto upgrade = [this](IUnknown* native, auto& destination)
+		{
+			void* raw = native;
+			if (!m_streamline->UpgradeInterface(&raw))
+			{
+				return;
+			}
+			ComPtr<IUnknown> upgraded;
+			upgraded.Attach(static_cast<IUnknown*>(raw));
+			upgraded.As(&destination);
+		};
+
+		upgrade(m_d3dDevice.Get(), m_d3dDeviceProxy);
+		upgrade(m_dxgiFactory.Get(), m_dxgiFactoryProxy);
+
+		DebugConsole::Log(std::string("Streamline: proxies ")
+			+ ((m_d3dDeviceProxy != nullptr && m_dxgiFactoryProxy != nullptr) ? "created" : "PARTIALLY created"));
+	}
+
 	void Core::CreateSwapChain()
 	{ ZoneScoped;
 		// Release the previous swapchain we will be recreating.
@@ -296,7 +331,13 @@ namespace udsdx
 		ComPtr<IDXGISwapChain1> swapChain1;
 
 		// Note: Swap chain uses queue to perform flush.
-		ThrowIfFailed(m_dxgiFactory->CreateSwapChainForHwnd(m_commandQueue.Get(), m_hMainWnd, &desc, nullptr, nullptr, &swapChain1));
+		// Created through the Streamline proxy factory when there is one: SL hooks swap chain
+		// creation, and its per-frame bookkeeping runs off the Present it installs there.
+		IDXGIFactory6* swapChainFactory = m_dxgiFactoryProxy != nullptr ? m_dxgiFactoryProxy.Get() : m_dxgiFactory.Get();
+		ThrowIfFailed(swapChainFactory->CreateSwapChainForHwnd(m_commandQueue.Get(), m_hMainWnd, &desc, nullptr, nullptr, &swapChain1));
+		// Created through the proxy factory above, so this IS already an SL proxy -- upgrading it
+		// a second time is an error, and there is nothing left to do. When Streamline is absent
+		// the factory was native and so is this.
 		ThrowIfFailed(swapChain1.As(&m_swapChain));
 
 		// Suppress the Alt+Enter fullscreen toggle for tearing support.
@@ -371,6 +412,10 @@ namespace udsdx
 
 			m_graphicsMemory.reset();
 		}
+
+		// Proxies first: they hold references to the objects SL is about to stop tracking.
+		m_dxgiFactoryProxy.Reset();
+		m_d3dDeviceProxy.Reset();
 
 		// After the queue is flushed: Streamline holds a reference to the device.
 		if (m_streamline != nullptr)
@@ -657,8 +702,16 @@ namespace udsdx
 			.TracyQueueContext = &m_tracyQueueCtx,
 
 			.DXRCommandList = m_dxrCommandList.Get(),
-			.RaytracingSupported = m_raytracingSupported
+			.RaytracingSupported = m_raytracingSupported,
+			.StreamlineRuntime = m_streamline.get()
 		};
+
+		// Streamline counts frames by this token, and every tag, constant upload and evaluate has
+		// to quote the same one, so it is minted before any pass runs.
+		if (m_streamline != nullptr)
+		{
+			m_streamline->BeginFrame(static_cast<UINT>(m_currentFence));
+		}
 
 		// Command list allocators can only be reset when the associated 
 		// command lists have finished execution on the GPU; apps should use 
@@ -722,6 +775,8 @@ namespace udsdx
 			// Sync interval: the way in which the presentation waits for the vertical sync period.
 			// 0: No sync interval, the present occurs immediately. May cause tearing.
 			// 1: Sync with the next vertical blanking period(V-Sync). May cause latency.
+			// m_swapChain is Streamline's proxy whenever SL is running, so this is also where its
+			// per-frame work happens -- the SDK warns that missing it leaks across resizes.
 			ThrowIfFailed(m_swapChain->Present(0, presentFlags));
 			// Swap the back and front buffers
 			m_currBackBuffer = (m_currBackBuffer + 1) % SwapChainBufferCount;
@@ -1115,22 +1170,45 @@ namespace udsdx
 				ImGui::TextDisabled("The raytracing pipeline failed to initialize.");
 			}
 
-			// Streamline / DLSS Ray Reconstruction availability. Read-only for now: the SDK is
-			// loaded and queried, but nothing in the render graph consumes it yet.
-			if (m_streamline != nullptr)
+			// Denoiser selection. Ray Reconstruction is only offered when it can actually run:
+			// it needs an RTX adapter with Streamline loaded, and it assumes a projective camera,
+			// which the fisheye projection is not. Because fisheye is a runtime toggle, the mode
+			// can stop being valid while it is selected -- in that case it reverts here rather
+			// than silently rendering through a path the user did not choose.
+			const char* denoiserNames[] = { "Off (raw 1spp)", "Built-in", "DLSS Ray Reconstruction" };
+			const bool rayReconstructionSupported = m_streamline != nullptr && m_streamline->IsRayReconstructionSupported();
+			const bool rayReconstructionAvailable = rayReconstructionSupported && !options.RaytracingFisheye;
+
+			if (!rayReconstructionAvailable && options.RaytracingDenoiser == RaytracingDenoiserMode::DlssRayReconstruction)
 			{
-				if (m_streamline->IsRayReconstructionSupported())
+				options.RaytracingDenoiser = RaytracingDenoiserMode::Builtin;
+			}
+
+			int denoiser = static_cast<int>(options.RaytracingDenoiser);
+			if (ImGui::BeginCombo("Denoiser", denoiserNames[denoiser]))
+			{
+				for (int i = 0; i < static_cast<int>(RaytracingDenoiserMode::Count); ++i)
 				{
-					ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "DLSS Ray Reconstruction: available");
+					const bool selectable = i != static_cast<int>(RaytracingDenoiserMode::DlssRayReconstruction)
+						|| rayReconstructionAvailable;
+					ImGui::BeginDisabled(!selectable);
+					if (ImGui::Selectable(denoiserNames[i], denoiser == i) && selectable)
+					{
+						options.RaytracingDenoiser = static_cast<RaytracingDenoiserMode>(i);
+					}
+					ImGui::EndDisabled();
 				}
-				else if (m_streamline->IsAvailable())
-				{
-					ImGui::TextDisabled("DLSS Ray Reconstruction: unsupported (%s)", m_streamline->GetStatusMessage().c_str());
-				}
-				else
-				{
-					ImGui::TextDisabled("Streamline: unavailable (%s)", m_streamline->GetStatusMessage().c_str());
-				}
+				ImGui::EndCombo();
+			}
+
+			if (!rayReconstructionSupported)
+			{
+				ImGui::TextDisabled("DLSS RR unavailable: %s", m_streamline != nullptr
+					? m_streamline->GetStatusMessage().c_str() : "Streamline is not loaded");
+			}
+			else if (options.RaytracingFisheye)
+			{
+				ImGui::TextDisabled("DLSS RR unavailable: it assumes a projective camera, fisheye is not one.");
 			}
 
 			if (raytracing != nullptr)

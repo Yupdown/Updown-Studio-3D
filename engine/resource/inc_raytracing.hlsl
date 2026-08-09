@@ -72,6 +72,9 @@ cbuffer cbRaytracing : register(b0, space0)
     // the CPU rather than the shader's RNG, so the host knows the exact value it has to report to
     // DLSS as sl::Constants::jitterOffset.
     float2   gJitterOffset;
+
+    uint     gJitterGuideRay;
+    float3   gJitterPad;
 };
 
 // Per-instance previous object-to-world, indexed by InstanceIndex(). Column-vector 3x4, matching

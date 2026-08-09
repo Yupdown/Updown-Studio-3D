@@ -104,6 +104,9 @@ namespace udsdx
 
 		// Create Direct3D 12 Swap Chain using DXGI Factory
 		void CreateSwapChain();
+		// Wraps the handful of DXGI/D3D12 objects Streamline insists on seeing. No-op without
+		// Streamline, in which case every call site below falls back to the native object.
+		void CreateStreamlineProxies();
 
 		// Create Direct3D 12 Descriptor Heaps for
 		// * Constant Buffer View (CBV)
@@ -175,6 +178,18 @@ namespace udsdx
 		// fetched, the signed interposer sits next to the executable and the adapter supports the
 		// requested feature.
 		std::unique_ptr<Streamline> m_streamline;
+
+		// Streamline proxies. Manual hooking means SL only observes the calls listed in
+		// sl_hooks.h, so the host keeps using native interfaces everywhere else -- necessary,
+		// not merely tidy, because DirectXTK12, DirectXTex and ImGui all receive the device and
+		// none of them expect a proxy. These stay null when Streamline is unavailable.
+		//
+		// Both the native object and its proxy are held: the proxy takes its own reference to the
+		// base, so the two lifetimes are independent and nothing has to be handed over.
+		ComPtr<ID3D12Device> m_d3dDeviceProxy;          // CreateCommandQueue only
+		ComPtr<IDXGIFactory6> m_dxgiFactoryProxy;       // CreateSwapChainForHwnd only
+		// No swap chain entry: one created through the proxy factory is already a proxy, so
+		// m_swapChain itself carries the Present / ResizeBuffers / GetBuffer hooks.
 
 		// DXR: promoted views of m_d3dDevice / m_commandList, valid only when m_raytracingSupported.
 		D3D12_RAYTRACING_TIER m_raytracingTier = D3D12_RAYTRACING_TIER_NOT_SUPPORTED;

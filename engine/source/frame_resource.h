@@ -106,6 +106,15 @@ namespace udsdx
 		// so the host can report the same value to DLSS as sl::Constants::jitterOffset.
 		float JitterOffsetX = 0.0f;
 		float JitterOffsetY = 0.0f;
+
+		// Set while DLSS Ray Reconstruction is the active denoiser. The guide ray is normally
+		// pinned to the pixel centre so the temporal pass sees a stable per-pixel identity; that
+		// pass does not run under Ray Reconstruction, which instead assumes the guides sit on the
+		// same sub-pixel position as the colour it is told about.
+		UINT JitterGuideRay = 0;
+		float JitterPad0 = 0.0f;
+		float JitterPad1 = 0.0f;
+		float JitterPad2 = 0.0f;
 	};
 
 	// Mirrors cbAccumulate in cs_raytracing_accumulate.hlsl. Drives the temporal reprojection pass

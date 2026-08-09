@@ -318,7 +318,11 @@ void RayGenMain()
     // stay pinned at a handful of samples forever -- visible as permanent silhouette shimmer.
     // A fixed centre sample makes the identity deterministic while radiance stays jittered for
     // antialiasing. Surface attributes only: no light transport runs on this ray.
-    RayDesc guideRay = BuildPrimaryRay((float2(pixel) + 0.5f) / float2(dimensions));
+    // Pixel centre for the engine's own denoiser; the colour sample's own offset when DLSS Ray
+    // Reconstruction is running, because it expects guides aligned with the jittered colour and
+    // the pass that wanted a fixed centre is switched off in that mode.
+    float2 guideOffset = gJitterGuideRay != 0u ? (0.5f + gJitterOffset) : 0.5f.xx;
+    RayDesc guideRay = BuildPrimaryRay((float2(pixel) + guideOffset) / float2(dimensions));
     SurfacePayload guide = TraceSurface(guideRay);
 
     float3 directSum = 0.0f;

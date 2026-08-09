@@ -32,9 +32,23 @@ namespace udsdx
 	class BoundingCamera;
 	class EnvironmentMap;
 	class RaytracingRenderer;
+	class Streamline;
 
 	// Visualisation modes for the raytracing renderer. Anything other than None bypasses the
 	// progressive accumulator so the buffer shows the current frame only.
+	// Which denoiser consumes the raytracer's output.
+	//
+	// Off is not just a debug curiosity: it shows the raw per-frame estimate, which is exactly the
+	// signal Ray Reconstruction is fed, so it is the honest baseline to judge either denoiser
+	// against.
+	enum class RaytracingDenoiserMode : UINT
+	{
+		Off = 0,
+		Builtin,
+		DlssRayReconstruction,
+		Count
+	};
+
 	enum class RaytracingDebugMode : UINT
 	{
 		None = 0,
@@ -67,6 +81,7 @@ namespace udsdx
 		// deferred lighting, forward, TAA, motion blur, outline) is replaced by a full-screen DXR
 		// pass; only the bloom pass still runs, because it owns tonemapping and the back-buffer write.
 		bool DrawRaytracing = false;
+		RaytracingDenoiserMode RaytracingDenoiser = RaytracingDenoiserMode::Builtin;
 		unsigned int RaytracingSamplesPerPixel = 1u;
 		// Temporal reprojection: history is capped at MaxSamplesMoving while a pixel is in motion
 		// and allowed up to MaxSamplesStatic once it reprojects exactly.
@@ -149,6 +164,9 @@ namespace udsdx
 		ID3D12GraphicsCommandList4* DXRCommandList = nullptr;
 		bool RaytracingSupported = false;
 		RaytracingRenderer* RenderRaytracing = nullptr;
+		// Null unless Streamline loaded. The raytracing renderer asks it whether Ray
+		// Reconstruction can run before committing to that path.
+		Streamline* StreamlineRuntime = nullptr;
 		// True when the raytracer replaces the raster path this frame. Distinct from
 		// RenderOptions::DrawRaytracing, which is the user's request rather than the resolved state.
 		bool RaytracingActive = false;

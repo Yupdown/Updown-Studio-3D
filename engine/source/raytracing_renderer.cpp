@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "raytracing_renderer.h"
+#include "streamline.h"
 #include "acceleration_structure.h"
 #include "raytracing_mesh_renderer.h"
 #include "deferred_renderer.h"
@@ -543,6 +544,7 @@ namespace udsdx
 		createTarget(m_linearDepthBuffer, LINEAR_DEPTH_FORMAT, L"RaytracingRenderer::LinearDepth");
 		createTarget(m_specularAlbedoBuffer, ALBEDO_FORMAT, L"RaytracingRenderer::SpecularAlbedo");
 		createTarget(m_noisyColorBuffer, NOISY_COLOR_FORMAT, L"RaytracingRenderer::NoisyColor");
+		createTarget(m_dlssOutputBuffer, DLSS_OUTPUT_FORMAT, L"RaytracingRenderer::DlssOutput");
 		createTarget(m_guideBuffers[0], GUIDE_FORMAT, L"RaytracingRenderer::Guide0");
 		createTarget(m_guideBuffers[1], GUIDE_FORMAT, L"RaytracingRenderer::Guide1");
 		createTarget(m_historyBuffers[0], HISTORY_FORMAT, L"RaytracingRenderer::History0");
@@ -607,6 +609,8 @@ namespace udsdx
 
 		claim(&m_motionCpuSrv, &m_motionGpuSrv);
 		claim(&m_albedoCpuSrv, &m_albedoGpuSrv);
+		claim(&m_noisyColorCpuSrv, &m_noisyColorGpuSrv);
+		claim(&m_dlssOutputCpuSrv, &m_dlssOutputGpuSrv);
 		for (int i = 0; i < 2; ++i)
 		{
 			claim(&m_guideDepthCpuSrv[i], &m_guideDepthGpuSrv[i]);
@@ -720,6 +724,8 @@ namespace udsdx
 
 		makeSrv(m_motionBuffer.Get(), MOTION_FORMAT, m_motionCpuSrv);
 		makeSrv(m_albedoBuffer.Get(), ALBEDO_FORMAT, m_albedoCpuSrv);
+		makeSrv(m_noisyColorBuffer.Get(), NOISY_COLOR_FORMAT, m_noisyColorCpuSrv);
+		makeSrv(m_dlssOutputBuffer.Get(), DLSS_OUTPUT_FORMAT, m_dlssOutputCpuSrv);
 
 		for (int i = 0; i < 2; ++i)
 		{
@@ -788,6 +794,30 @@ namespace udsdx
 
 			m_pendingView = view;
 			m_pendingEyePosition = eye;
+
+			// Streamline shares the engine's row-vector convention, so it gets these as they are
+			// -- not the transposes uploaded above. clipToPrevClip takes a clip-space point back
+			// through the world and forward into last frame's clip space.
+			m_slViewToClip = proj;
+			m_slClipToView = proj.Invert();
+			Matrix4x4 viewProjInverse = Matrix4x4::Identity;
+			XMStoreFloat4x4(&viewProjInverse, XMMatrixInverse(nullptr, viewProjMatrix));
+			m_slClipToPrevClip = viewProjInverse * m_prevViewProj;
+			m_slPrevClipToClip = m_slClipToPrevClip.Invert();
+
+			// Rows of the inverse view matrix are the camera basis in world space.
+			const Matrix4x4 worldFromView = view.Invert();
+			m_slCameraRight = Vector3(worldFromView._11, worldFromView._12, worldFromView._13);
+			m_slCameraUp = Vector3(worldFromView._21, worldFromView._22, worldFromView._23);
+			m_slCameraForward = Vector3(worldFromView._31, worldFromView._32, worldFromView._33);
+			m_slCameraPosition = eye;
+			m_slCameraAspect = param.AspectRatio;
+			if (const auto* perspective = dynamic_cast<const CameraPerspective*>(camera))
+			{
+				m_slCameraFovY = perspective->GetFov();
+				m_slCameraNear = perspective->GetNear();
+				m_slCameraFar = perspective->GetFar();
+			}
 		}
 
 		constants.RenderTargetSize = Vector2(static_cast<float>(m_width), static_cast<float>(m_height));
@@ -830,6 +860,7 @@ namespace udsdx
 		constants.FisheyeThetaMax = 0.5f * options.RaytracingFisheyeFov * DEG2RAD;
 		constants.JitterOffsetX = m_jitterOffset.x;
 		constants.JitterOffsetY = m_jitterOffset.y;
+		constants.JitterGuideRay = m_activeDenoiser == RaytracingDenoiserMode::DlssRayReconstruction ? 1u : 0u;
 
 		m_constantBuffers[param.FrameResourceIndex]->CopyData(0, constants);
 		m_prevViewProj = viewProj;
@@ -888,6 +919,61 @@ namespace udsdx
 
 		TransitionForRead(commandList, m_historyBuffers[m_historyWriteIndex].Get());
 		TransitionForRead(commandList, m_indirectHistoryBuffers[m_historyWriteIndex].Get());
+	}
+
+	bool RaytracingRenderer::DenoiseWithRayReconstruction(RenderParam& param)
+	{
+		ZoneScopedN("Raytracing DLSS-RR");
+		TracyD3D12Zone(*param.TracyQueueContext, param.CommandList, "Raytracing DLSS-RR");
+
+		Streamline* streamline = param.StreamlineRuntime;
+		if (streamline == nullptr || !streamline->SetRayReconstructionOptions(m_width, m_height))
+		{
+			return false;
+		}
+
+		auto* commandList = param.CommandList;
+
+		RayReconstructionFrame frame{};
+		frame.NoisyColor = m_noisyColorBuffer.Get();
+		frame.Output = m_dlssOutputBuffer.Get();
+		frame.LinearDepth = m_linearDepthBuffer.Get();
+		frame.MotionVectors = m_motionBuffer.Get();
+		frame.Albedo = m_albedoBuffer.Get();
+		frame.SpecularAlbedo = m_specularAlbedoBuffer.Get();
+		frame.NormalRoughness = m_normalRoughnessBuffers[m_historyWriteIndex].Get();
+		// Every input is back in the resting state by now; the output is the one thing SL writes.
+		frame.InputState = kRestingState;
+		frame.OutputState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+		frame.Width = m_width;
+		frame.Height = m_height;
+
+		frame.ViewToClip = m_slViewToClip;
+		frame.ClipToView = m_slClipToView;
+		frame.ClipToPrevClip = m_slClipToPrevClip;
+		frame.PrevClipToClip = m_slPrevClipToClip;
+		frame.JitterOffset = Vector2(m_jitterOffset.x, m_jitterOffset.y);
+		frame.CameraPosition = m_slCameraPosition;
+		frame.CameraRight = m_slCameraRight;
+		frame.CameraUp = m_slCameraUp;
+		frame.CameraForward = m_slCameraForward;
+		frame.CameraNear = m_slCameraNear;
+		frame.CameraFar = m_slCameraFar;
+		frame.CameraFovY = m_slCameraFovY;
+		frame.CameraAspectRatio = m_slCameraAspect;
+		frame.ResetHistory = !m_historyValid;
+
+		TransitionForWrite(commandList, m_dlssOutputBuffer.Get());
+		const bool evaluated = streamline->EvaluateRayReconstruction(commandList, frame);
+		TransitionForRead(commandList, m_dlssOutputBuffer.Get());
+
+		// Manual hooking means SL never wrapped the command list, so it cannot put back what it
+		// changed. Only the descriptor heap needs restoring by hand -- every pass that follows
+		// sets its own root signature and pipeline state, but none of them re-bind the heap.
+		ID3D12DescriptorHeap* heaps[] = { param.SRVDescriptorHeap };
+		commandList->SetDescriptorHeaps(_countof(heaps), heaps);
+
+		return evaluated;
 	}
 
 	void RaytracingRenderer::AtrousFilter(RenderParam& param)
@@ -968,10 +1054,31 @@ namespace udsdx
 
 		const UINT debugMode = static_cast<UINT>(param.RenderOptions->RaytracingDebug);
 		const float heatmapMax = std::max(1.0f, param.RenderOptions->RaytracingMaxSamplesStatic);
+		const UINT passthrough = m_activeDenoiser == RaytracingDenoiserMode::Builtin ? 0u : 1u;
 		commandList->SetGraphicsRoot32BitConstants(0, 1, &debugMode, 0);
 		commandList->SetGraphicsRoot32BitConstants(0, 1, &heatmapMax, 1);
-		commandList->SetGraphicsRootDescriptorTable(1, m_historyGpuSrv[m_historyWriteIndex]);
-		commandList->SetGraphicsRootDescriptorTable(2, m_resolveIndirectSrv);
+		commandList->SetGraphicsRoot32BitConstants(0, 1, &passthrough, 2);
+		// Off and Ray Reconstruction both hand the resolve a finished image, so they bind it where
+		// the built-in path binds its direct history and let the shader skip the indirect add.
+		D3D12_GPU_DESCRIPTOR_HANDLE primary = m_historyGpuSrv[m_historyWriteIndex];
+		if (m_activeDenoiser == RaytracingDenoiserMode::DlssRayReconstruction)
+		{
+			primary = m_dlssOutputGpuSrv;
+		}
+		else if (m_activeDenoiser == RaytracingDenoiserMode::Off)
+		{
+			primary = m_noisyColorGpuSrv;
+		}
+
+		// Only the built-in path leaves a filtered indirect term behind. The other modes still have
+		// to bind something real here: the shader ignores it, but a root descriptor table cannot be
+		// left pointing at nothing.
+		const D3D12_GPU_DESCRIPTOR_HANDLE indirect = m_activeDenoiser == RaytracingDenoiserMode::Builtin
+			? m_resolveIndirectSrv
+			: m_indirectHistoryGpuSrv[m_historyWriteIndex];
+
+		commandList->SetGraphicsRootDescriptorTable(1, primary);
+		commandList->SetGraphicsRootDescriptorTable(2, indirect);
 		commandList->SetGraphicsRootDescriptorTable(3, m_albedoGpuSrv);
 		commandList->DrawInstanced(6, 1, 0, 0);
 	}
@@ -1063,6 +1170,34 @@ namespace udsdx
 			m_lastSettings = settings;
 		}
 
+		// Resolve which denoiser actually runs this frame. The dropdown already refuses to select
+		// Ray Reconstruction when it cannot run, but the debug views are a separate matter: they
+		// push raw per-pixel quantities through the history buffer and expect the built-in path's
+		// plumbing, so they pin the mode regardless of what is selected.
+		RaytracingDenoiserMode requested = param.RenderOptions->RaytracingDenoiser;
+		if (param.RenderOptions->RaytracingDebug != RaytracingDebugMode::None)
+		{
+			requested = RaytracingDenoiserMode::Builtin;
+		}
+		if (requested == RaytracingDenoiserMode::DlssRayReconstruction
+			&& (param.StreamlineRuntime == nullptr
+				|| !param.StreamlineRuntime->IsRayReconstructionSupported()
+				|| param.RenderOptions->RaytracingFisheye))
+		{
+			requested = RaytracingDenoiserMode::Builtin;
+		}
+		if (requested != m_activeDenoiser)
+		{
+			// The built-in accumulator and the DLSS one each hold history the other never wrote.
+			m_historyValid = false;
+			if (m_activeDenoiser == RaytracingDenoiserMode::DlssRayReconstruction
+				&& param.StreamlineRuntime != nullptr)
+			{
+				param.StreamlineRuntime->FreeRayReconstructionResources();
+			}
+			m_activeDenoiser = requested;
+		}
+
 		UploadConstants(param, camera, light, hasEnvironmentMap);
 
 		TransitionForWrite(dxrCommandList, m_radianceBuffer.Get());
@@ -1102,8 +1237,21 @@ namespace udsdx
 		TransitionForRead(dxrCommandList, m_specularAlbedoBuffer.Get());
 		TransitionForRead(dxrCommandList, m_noisyColorBuffer.Get());
 
-		AccumulateTemporal(param);
-		AtrousFilter(param);
+		if (m_activeDenoiser == RaytracingDenoiserMode::DlssRayReconstruction)
+		{
+			if (!DenoiseWithRayReconstruction(param))
+			{
+				// Evaluate failed mid-frame. Showing the un-denoised estimate for one frame beats
+				// presenting whatever stale contents the output buffer happens to hold.
+				m_activeDenoiser = RaytracingDenoiserMode::Off;
+			}
+		}
+		else if (m_activeDenoiser == RaytracingDenoiserMode::Builtin)
+		{
+			AccumulateTemporal(param);
+			AtrousFilter(param);
+		}
+
 		ResolveToTarget(param);
 
 		// Guide and history share the index: this frame's write becomes next frame's read.
