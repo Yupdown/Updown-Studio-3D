@@ -1163,9 +1163,17 @@ namespace udsdx
 		// sl::Constants::jitterOffset. A low-discrepancy sequence also stratifies better than
 		// uniform noise over the frames a static view accumulates across.
 		//
-		// The sequence restarts every 16 frames, matching the phase count DLSS documents for its
-		// own jitter, and the +1 keeps index 0 (which Halton maps to 0,0) out of the cycle.
-		const uint32_t jitterIndex = static_cast<uint32_t>(m_frameCounter % 16u) + 1u;
+		// The sequence length scales with the upscale ratio: NVIDIA's DLSS guideline is at least
+		// 8 * ratio^2 phases, because each render pixel spreads over ratio^2 display pixels and a
+		// shorter cycle revisits the same sub-pixel positions before the display grid is covered --
+		// the uncovered positions never converge and high-contrast polygon edges quantize into
+		// visible bands. 16 was correct for DLAA (ratio 1) and silently became 3x too few the
+		// moment the renderer could run at 540p under a 1321-tall display. The +1 keeps index 0
+		// (which Halton maps to 0,0) out of the cycle.
+		const float upscaleRatio = static_cast<float>(m_height) / static_cast<float>(std::max(1u, m_renderHeight));
+		const uint32_t jitterPhases = std::max(16u,
+			static_cast<uint32_t>(std::lround(8.0f * upscaleRatio * upscaleRatio)));
+		const uint32_t jitterIndex = static_cast<uint32_t>(m_frameCounter % jitterPhases) + 1u;
 		m_jitterOffset.x = RadicalInverse(jitterIndex, 2u) - 0.5f;
 		m_jitterOffset.y = RadicalInverse(jitterIndex, 3u) - 0.5f;
 

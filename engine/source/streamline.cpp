@@ -351,6 +351,41 @@ namespace udsdx
 #endif
 	}
 
+	UINT Streamline::ClampRenderHeightForRayReconstruction(UINT requestedHeight, UINT outputWidth, UINT outputHeight)
+	{
+#ifndef UPDOWN_STREAMLINE
+		(void)outputWidth;
+		(void)outputHeight;
+		return requestedHeight;
+#else
+		if (!m_rayReconstructionSupported || m_functions->DLSSDGetOptimalSettings == nullptr
+			|| requestedHeight == 0u || outputHeight == 0u || requestedHeight >= outputHeight)
+		{
+			return requestedHeight;
+		}
+
+		// Same mode selection SetRayReconstructionOptions will make for this size.
+		const float ratio = static_cast<float>(requestedHeight) / static_cast<float>(outputHeight);
+		sl::DLSSDOptions probe{};
+		if (ratio >= 0.63f)       probe.mode = sl::DLSSMode::eMaxQuality;
+		else if (ratio >= 0.55f)  probe.mode = sl::DLSSMode::eBalanced;
+		else if (ratio >= 0.45f)  probe.mode = sl::DLSSMode::eMaxPerformance;
+		else                      probe.mode = sl::DLSSMode::eUltraPerformance;
+		probe.outputWidth = outputWidth;
+		probe.outputHeight = outputHeight;
+
+		sl::DLSSDOptimalSettings settings{};
+		if (m_functions->DLSSDGetOptimalSettings(probe, settings) != sl::Result::eOk)
+		{
+			return requestedHeight;
+		}
+
+		const UINT minHeight = settings.renderHeightMin != 0u ? settings.renderHeightMin : settings.optimalRenderHeight;
+		const UINT maxHeight = settings.renderHeightMax != 0u ? settings.renderHeightMax : settings.optimalRenderHeight;
+		return std::clamp(requestedHeight, minHeight, maxHeight);
+#endif
+	}
+
 	bool Streamline::SetRayReconstructionOptions(UINT renderWidth, UINT renderHeight, UINT outputWidth, UINT outputHeight)
 	{
 #ifndef UPDOWN_STREAMLINE

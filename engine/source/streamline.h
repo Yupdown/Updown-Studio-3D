@@ -112,6 +112,14 @@ namespace udsdx
 		// scales the SDK would simply reject -- roughly a 3x upscale limit.
 		UINT GetMinimumRenderHeight(UINT outputWidth, UINT outputHeight);
 
+		// Snaps a requested render height to the nearest one Ray Reconstruction will actually
+		// evaluate. RR has no dynamic resolution: each quality mode accepts a fixed window of
+		// render sizes around its own optimal (UltraPerformance exactly its optimal), and a size
+		// outside that window fails every evaluate with InvalidParameter -- the output buffer is
+		// never written and the screen holds black. Returns the input unchanged when RR is
+		// unavailable or the request is native.
+		UINT ClampRenderHeightForRayReconstruction(UINT requestedHeight, UINT outputWidth, UINT outputHeight);
+
 		// Tags the inputs, uploads the camera constants and runs the denoiser into frame.Output.
 		// The caller owns restoring command list state afterwards.
 		bool EvaluateRayReconstruction(ID3D12GraphicsCommandList* commandList, const RayReconstructionFrame& frame);

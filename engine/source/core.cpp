@@ -671,7 +671,19 @@ namespace udsdx
 		// the descriptors that referenced them, which is only safe before the frame is recorded.
 		if (RaytracingRenderer* raytracing = m_deferredRenderer->GetRaytracingRenderer())
 		{
-			const unsigned int requested = m_deferredRenderer->GetRenderOptionsRef().RaytracingRenderHeight;
+			const RenderOptions& renderOptions = m_deferredRenderer->GetRenderOptionsRef();
+			unsigned int requested = renderOptions.RaytracingRenderHeight;
+			// Ray Reconstruction only evaluates render sizes inside the selected quality mode's
+			// window; anything else fails every frame and presents black. Snapping here -- where
+			// the buffers are actually sized -- also re-runs when the denoiser choice changes,
+			// since the same height can be valid for one denoiser and not the other.
+			if (requested != 0u
+				&& renderOptions.RaytracingDenoiser == RaytracingDenoiserMode::DlssRayReconstruction
+				&& m_streamline != nullptr)
+			{
+				requested = m_streamline->ClampRenderHeightForRayReconstruction(
+					requested, static_cast<UINT>(m_clientWidth), static_cast<UINT>(m_clientHeight));
+			}
 			if (raytracing->GetRequestedRenderHeight() != requested)
 			{
 				FlushCommandQueue();
