@@ -1168,188 +1168,9 @@ namespace udsdx
 		ImGui::SliderFloat("Fog Height Falloff", &m_deferredRenderer->GetRenderOptionsRef().FogHeightFalloff, 0.0f, 10000.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_Logarithmic);
 		ImGui::SliderFloat("Fog Distance Start", &m_deferredRenderer->GetRenderOptionsRef().FogDistanceStart, 0.0f, 100.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
 
-		if (ImGui::CollapsingHeader("Raytracing (DXR)"))
-		{
-			RenderOptions& options = m_deferredRenderer->GetRenderOptionsRef();
-			RaytracingRenderer* raytracing = m_deferredRenderer->GetRaytracingRenderer();
+		ImGui::Separator();
+		ImGui::Checkbox("Raytracing (DXR) window", &m_showRaytracingWindow);
 
-			ImGui::BeginDisabled(!m_raytracingSupported);
-			ImGui::Checkbox("Use Raytracing", &options.DrawRaytracing);
-			ImGui::EndDisabled();
-			if (!m_raytracingSupported)
-			{
-				ImGui::TextDisabled("DXR 1.0 is unsupported on this adapter.");
-			}
-			else if (raytracing != nullptr && !raytracing->IsAvailable())
-			{
-				ImGui::TextDisabled("The raytracing pipeline failed to initialize.");
-			}
-
-			// Denoiser selection. Ray Reconstruction is only offered when it can actually run:
-			// it needs an RTX adapter with Streamline loaded, and it assumes a projective camera,
-			// which the fisheye projection is not. Because fisheye is a runtime toggle, the mode
-			// can stop being valid while it is selected -- in that case it reverts here rather
-			// than silently rendering through a path the user did not choose.
-			const char* denoiserNames[] = { "Off (raw 1spp)", "Built-in", "DLSS Ray Reconstruction" };
-			const bool rayReconstructionSupported = m_streamline != nullptr && m_streamline->IsRayReconstructionSupported();
-			const bool rayReconstructionAvailable = rayReconstructionSupported && !options.RaytracingFisheye;
-
-			if (!rayReconstructionAvailable && options.RaytracingDenoiser == RaytracingDenoiserMode::DlssRayReconstruction)
-			{
-				options.RaytracingDenoiser = RaytracingDenoiserMode::Builtin;
-			}
-
-			int denoiser = static_cast<int>(options.RaytracingDenoiser);
-			if (ImGui::BeginCombo("Denoiser", denoiserNames[denoiser]))
-			{
-				for (int i = 0; i < static_cast<int>(RaytracingDenoiserMode::Count); ++i)
-				{
-					const bool selectable = i != static_cast<int>(RaytracingDenoiserMode::DlssRayReconstruction)
-						|| rayReconstructionAvailable;
-					ImGui::BeginDisabled(!selectable);
-					if (ImGui::Selectable(denoiserNames[i], denoiser == i) && selectable)
-					{
-						options.RaytracingDenoiser = static_cast<RaytracingDenoiserMode>(i);
-					}
-					ImGui::EndDisabled();
-				}
-				ImGui::EndCombo();
-			}
-
-			// Internal raytracing resolution. Only DLSS reconstructs a smaller buffer back to the
-			// display; the other modes just get a cheaper image stretched at the resolve, which is
-			// still the honest way to compare what the reconstruction is buying.
-			{
-				static const unsigned int kRenderHeights[] = { 0u, 270u, 360u, 540u, 720u, 1080u };
-				static const char* kRenderHeightNames[] = { "Native", "270p", "360p", "540p", "720p", "1080p" };
-
-				// DLSS refuses inputs below roughly a third of the output; those entries would only
-				// ever fail, so they are shown greyed rather than silently doing nothing.
-				const unsigned int minHeight = (m_streamline != nullptr && raytracing != nullptr)
-					? m_streamline->GetMinimumRenderHeight(m_clientWidth, m_clientHeight) : 0u;
-
-				int current = 0;
-				for (int i = 0; i < IM_ARRAYSIZE(kRenderHeights); ++i)
-				{
-					if (kRenderHeights[i] == options.RaytracingRenderHeight) { current = i; }
-				}
-
-				if (ImGui::BeginCombo("Render Resolution", kRenderHeightNames[current]))
-				{
-					for (int i = 0; i < IM_ARRAYSIZE(kRenderHeights); ++i)
-					{
-						const bool tooSmall = options.RaytracingDenoiser == RaytracingDenoiserMode::DlssRayReconstruction
-							&& kRenderHeights[i] != 0u && minHeight != 0u && kRenderHeights[i] < minHeight;
-						const bool aboveNative = kRenderHeights[i] != 0u
-							&& kRenderHeights[i] >= static_cast<unsigned int>(m_clientHeight);
-						ImGui::BeginDisabled(tooSmall || aboveNative);
-						// Only records the choice; Core::Render applies it at a point where the
-						// buffers can safely be rebuilt.
-						if (ImGui::Selectable(kRenderHeightNames[i], current == i) && !tooSmall && !aboveNative)
-						{
-							options.RaytracingRenderHeight = kRenderHeights[i];
-						}
-						ImGui::EndDisabled();
-					}
-					ImGui::EndCombo();
-				}
-
-				if (raytracing != nullptr && raytracing->GetRenderHeight() != 0u)
-				{
-					ImGui::TextDisabled("Raytracing at %u x %u -> %d x %d",
-						raytracing->GetRenderWidth(), raytracing->GetRenderHeight(),
-						m_clientWidth, m_clientHeight);
-				}
-				if (minHeight != 0u)
-				{
-					ImGui::TextDisabled("DLSS accepts down to %up for this output.", minHeight);
-				}
-			}
-
-			if (!rayReconstructionSupported)
-			{
-				ImGui::TextDisabled("DLSS RR unavailable: %s", m_streamline != nullptr
-					? m_streamline->GetStatusMessage().c_str() : "Streamline is not loaded");
-			}
-			else if (options.RaytracingFisheye)
-			{
-				ImGui::TextDisabled("DLSS RR unavailable: it assumes a projective camera, fisheye is not one.");
-			}
-
-			if (raytracing != nullptr)
-			{
-				ImGui::Text("Instances: %u   Geometries: %u   BLAS: %u",
-					raytracing->GetInstanceCount(), raytracing->GetGeometryCount(), raytracing->GetBlasCount());
-				ImGui::TextDisabled("Per-pixel sample counts: Debug Output -> Sample Heatmap");
-				if (ImGui::Button("Reset History"))
-				{
-					raytracing->InvalidateHistory();
-				}
-
-				int samplesPerPixel = static_cast<int>(options.RaytracingSamplesPerPixel);
-				if (ImGui::SliderInt("Samples Per Pixel", &samplesPerPixel, 1, 16))
-				{
-					options.RaytracingSamplesPerPixel = static_cast<unsigned int>(samplesPerPixel);
-				}
-
-				ImGui::SeparatorText("Temporal Accumulation");
-				ImGui::SliderFloat("Max Samples (static)", &options.RaytracingMaxSamplesStatic, 1.0f, 4096.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
-				ImGui::SliderFloat("Max Samples (in motion)", &options.RaytracingMaxSamplesMoving, 1.0f, 256.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
-				ImGui::SliderFloat("Variance Clip Gamma", &options.RaytracingVarianceClipGamma, 0.5f, 16.0f, "%.2f");
-				ImGui::SliderFloat("Normal Tolerance (cos)", &options.RaytracingNormalThreshold, 0.5f, 0.999f, "%.3f");
-				ImGui::SliderFloat("Depth Tolerance", &options.RaytracingDepthThreshold, 0.001f, 0.5f, "%.4f", ImGuiSliderFlags_Logarithmic);
-
-				ImGui::SeparatorText("Denoiser");
-				int atrousIterations = static_cast<int>(options.RaytracingAtrousIterations);
-				if (ImGui::SliderInt("A-Trous Iterations", &atrousIterations, 0, 5))
-				{
-					options.RaytracingAtrousIterations = static_cast<unsigned int>(atrousIterations);
-				}
-				ImGui::SliderFloat("A-Trous Luminance Sigma", &options.RaytracingAtrousLuminanceSigma, 0.1f, 4.0f, "%.2f");
-
-				ImGui::SeparatorText("Fisheye");
-				ImGui::Checkbox("Fisheye Projection", &options.RaytracingFisheye);
-				ImGui::BeginDisabled(!options.RaytracingFisheye);
-				ImGui::SliderFloat("Fisheye FOV (deg)", &options.RaytracingFisheyeFov, 20.0f, 180.0f, "%.1f");
-				ImGui::EndDisabled();
-				ImGui::TextDisabled("Equidistant, full-frame. Raytracing only.");
-
-				ImGui::SeparatorText("Rays");
-				ImGui::SliderFloat("Ray Max Distance", &options.RaytracingRayMaxDistance, 10.0f, 20000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
-				ImGui::SliderFloat("Shadow Ray Offset", &options.RaytracingShadowRayOffset, 1e-4f, 0.1f, "%.5f", ImGuiSliderFlags_Logarithmic);
-				ImGui::SliderFloat("Indirect Sky Clamp", &options.RaytracingSkyMaxRadiance, 1.0f, 64.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
-
-				static const char* debugModeNames[] = { "None", "Albedo", "Normal", "Direct Only", "Indirect Only", "Motion Vector", "Sample Heatmap" };
-				int debugMode = static_cast<int>(options.RaytracingDebug);
-				if (ImGui::Combo("Debug Output", &debugMode, debugModeNames, IM_ARRAYSIZE(debugModeNames)))
-				{
-					options.RaytracingDebug = static_cast<RaytracingDebugMode>(debugMode);
-				}
-
-				// The sun's angular diameter lives on the light, not in RenderOptions, because the
-				// deferred path reads the same values through ShadowConstants.
-				const auto& lights = m_scene != nullptr ? m_scene->GetRenderLights() : std::vector<LightDirectional*>{};
-				if (!lights.empty())
-				{
-					LightDirectional* sun = lights.front();
-					float angularDiameter = sun->GetAngularDiameter();
-					if (ImGui::SliderFloat("Sun Angular Diameter (deg)", &angularDiameter, 0.0f, 20.0f, "%.3f"))
-					{
-						sun->SetAngularDiameter(angularDiameter);
-					}
-					Color sunColor = sun->GetColor();
-					if (ImGui::ColorEdit3("Sun Color", reinterpret_cast<float*>(&sunColor)))
-					{
-						sun->SetColor(sunColor);
-					}
-					float sunIntensity = sun->GetIntensity();
-					if (ImGui::SliderFloat("Sun Intensity", &sunIntensity, 0.0f, 20.0f, "%.3f"))
-					{
-						sun->SetIntensity(sunIntensity);
-					}
-				}
-			}
-		}
 
 		// Set window position to top left corner
 		ImGui::SetWindowPos(ImVec2(0, 0));
@@ -1358,7 +1179,212 @@ namespace udsdx
 
 		ImGui::End();
 
+		ImGuiRaytracingWindow();
+
 		m_scene->OnDrawGizmos();
+	}
+
+	// The raytracing controls outgrew the debug window -- denoiser, render scale, temporal and
+	// spatial filter tuning, fisheye and the sun all live here now. Its own window means it can be
+	// moved and sized independently, which matters when comparing two settings side by side.
+	void Core::ImGuiRaytracingWindow()
+	{ ZoneScoped;
+		if (!m_showRaytracingWindow)
+		{
+			return;
+		}
+
+		ImGui::SetNextWindowSize(ImVec2(680, 680), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowPos(ImVec2(410, 0), ImGuiCond_FirstUseEver);
+		if (ImGui::Begin("Raytracing (DXR)", &m_showRaytracingWindow))
+		{
+			// Several labels here are long ("Max Samples (in motion)", "A-Trous Luminance Sigma"),
+			// so the widgets are given a fixed share and the rest is left for text.
+			ImGui::PushItemWidth(300.0f);
+
+		RenderOptions& options = m_deferredRenderer->GetRenderOptionsRef();
+		RaytracingRenderer* raytracing = m_deferredRenderer->GetRaytracingRenderer();
+
+		ImGui::BeginDisabled(!m_raytracingSupported);
+		ImGui::Checkbox("Use Raytracing", &options.DrawRaytracing);
+		ImGui::EndDisabled();
+		if (!m_raytracingSupported)
+		{
+			ImGui::TextDisabled("DXR 1.0 is unsupported on this adapter.");
+		}
+		else if (raytracing != nullptr && !raytracing->IsAvailable())
+		{
+			ImGui::TextDisabled("The raytracing pipeline failed to initialize.");
+		}
+
+		// Denoiser selection. Ray Reconstruction is only offered when it can actually run:
+		// it needs an RTX adapter with Streamline loaded, and it assumes a projective camera,
+		// which the fisheye projection is not. Because fisheye is a runtime toggle, the mode
+		// can stop being valid while it is selected -- in that case it reverts here rather
+		// than silently rendering through a path the user did not choose.
+		const char* denoiserNames[] = { "Off (raw 1spp)", "Built-in", "DLSS Ray Reconstruction" };
+		const bool rayReconstructionSupported = m_streamline != nullptr && m_streamline->IsRayReconstructionSupported();
+		const bool rayReconstructionAvailable = rayReconstructionSupported && !options.RaytracingFisheye;
+
+		if (!rayReconstructionAvailable && options.RaytracingDenoiser == RaytracingDenoiserMode::DlssRayReconstruction)
+		{
+			options.RaytracingDenoiser = RaytracingDenoiserMode::Builtin;
+		}
+
+		int denoiser = static_cast<int>(options.RaytracingDenoiser);
+		if (ImGui::BeginCombo("Denoiser", denoiserNames[denoiser]))
+		{
+			for (int i = 0; i < static_cast<int>(RaytracingDenoiserMode::Count); ++i)
+			{
+				const bool selectable = i != static_cast<int>(RaytracingDenoiserMode::DlssRayReconstruction)
+					|| rayReconstructionAvailable;
+				ImGui::BeginDisabled(!selectable);
+				if (ImGui::Selectable(denoiserNames[i], denoiser == i) && selectable)
+				{
+					options.RaytracingDenoiser = static_cast<RaytracingDenoiserMode>(i);
+				}
+				ImGui::EndDisabled();
+			}
+			ImGui::EndCombo();
+		}
+
+		// Internal raytracing resolution. Only DLSS reconstructs a smaller buffer back to the
+		// display; the other modes just get a cheaper image stretched at the resolve, which is
+		// still the honest way to compare what the reconstruction is buying.
+		{
+			static const unsigned int kRenderHeights[] = { 0u, 270u, 360u, 540u, 720u, 1080u };
+			static const char* kRenderHeightNames[] = { "Native", "270p", "360p", "540p", "720p", "1080p" };
+
+			// DLSS refuses inputs below roughly a third of the output; those entries would only
+			// ever fail, so they are shown greyed rather than silently doing nothing.
+			const unsigned int minHeight = (m_streamline != nullptr && raytracing != nullptr)
+				? m_streamline->GetMinimumRenderHeight(m_clientWidth, m_clientHeight) : 0u;
+
+			int current = 0;
+			for (int i = 0; i < IM_ARRAYSIZE(kRenderHeights); ++i)
+			{
+				if (kRenderHeights[i] == options.RaytracingRenderHeight) { current = i; }
+			}
+
+			if (ImGui::BeginCombo("Render Resolution", kRenderHeightNames[current]))
+			{
+				for (int i = 0; i < IM_ARRAYSIZE(kRenderHeights); ++i)
+				{
+					const bool tooSmall = options.RaytracingDenoiser == RaytracingDenoiserMode::DlssRayReconstruction
+						&& kRenderHeights[i] != 0u && minHeight != 0u && kRenderHeights[i] < minHeight;
+					const bool aboveNative = kRenderHeights[i] != 0u
+						&& kRenderHeights[i] >= static_cast<unsigned int>(m_clientHeight);
+					ImGui::BeginDisabled(tooSmall || aboveNative);
+					// Only records the choice; Core::Render applies it at a point where the
+					// buffers can safely be rebuilt.
+					if (ImGui::Selectable(kRenderHeightNames[i], current == i) && !tooSmall && !aboveNative)
+					{
+						options.RaytracingRenderHeight = kRenderHeights[i];
+					}
+					ImGui::EndDisabled();
+				}
+				ImGui::EndCombo();
+			}
+
+			if (raytracing != nullptr && raytracing->GetRenderHeight() != 0u)
+			{
+				ImGui::TextDisabled("Raytracing at %u x %u -> %d x %d",
+					raytracing->GetRenderWidth(), raytracing->GetRenderHeight(),
+					m_clientWidth, m_clientHeight);
+			}
+			if (minHeight != 0u)
+			{
+				ImGui::TextDisabled("DLSS accepts down to %up for this output.", minHeight);
+			}
+		}
+
+		if (!rayReconstructionSupported)
+		{
+			ImGui::TextDisabled("DLSS RR unavailable: %s", m_streamline != nullptr
+				? m_streamline->GetStatusMessage().c_str() : "Streamline is not loaded");
+		}
+		else if (options.RaytracingFisheye)
+		{
+			ImGui::TextDisabled("DLSS RR unavailable: it assumes a projective camera, fisheye is not one.");
+		}
+
+		if (raytracing != nullptr)
+		{
+			ImGui::Text("Instances: %u   Geometries: %u   BLAS: %u",
+				raytracing->GetInstanceCount(), raytracing->GetGeometryCount(), raytracing->GetBlasCount());
+			ImGui::TextDisabled("Per-pixel sample counts: Debug Output -> Sample Heatmap");
+			if (ImGui::Button("Reset History"))
+			{
+				raytracing->InvalidateHistory();
+			}
+
+			int samplesPerPixel = static_cast<int>(options.RaytracingSamplesPerPixel);
+			if (ImGui::SliderInt("Samples Per Pixel", &samplesPerPixel, 1, 16))
+			{
+				options.RaytracingSamplesPerPixel = static_cast<unsigned int>(samplesPerPixel);
+			}
+
+			ImGui::SeparatorText("Temporal Accumulation");
+			ImGui::SliderFloat("Max Samples (static)", &options.RaytracingMaxSamplesStatic, 1.0f, 4096.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+			ImGui::SliderFloat("Max Samples (in motion)", &options.RaytracingMaxSamplesMoving, 1.0f, 256.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+			ImGui::SliderFloat("Variance Clip Gamma", &options.RaytracingVarianceClipGamma, 0.5f, 16.0f, "%.2f");
+			ImGui::SliderFloat("Normal Tolerance (cos)", &options.RaytracingNormalThreshold, 0.5f, 0.999f, "%.3f");
+			ImGui::SliderFloat("Depth Tolerance", &options.RaytracingDepthThreshold, 0.001f, 0.5f, "%.4f", ImGuiSliderFlags_Logarithmic);
+
+			ImGui::SeparatorText("Denoiser");
+			int atrousIterations = static_cast<int>(options.RaytracingAtrousIterations);
+			if (ImGui::SliderInt("A-Trous Iterations", &atrousIterations, 0, 5))
+			{
+				options.RaytracingAtrousIterations = static_cast<unsigned int>(atrousIterations);
+			}
+			ImGui::SliderFloat("A-Trous Luminance Sigma", &options.RaytracingAtrousLuminanceSigma, 0.1f, 4.0f, "%.2f");
+
+			ImGui::SeparatorText("Fisheye");
+			ImGui::Checkbox("Fisheye Projection", &options.RaytracingFisheye);
+			ImGui::BeginDisabled(!options.RaytracingFisheye);
+			ImGui::SliderFloat("Fisheye FOV (deg)", &options.RaytracingFisheyeFov, 20.0f, 180.0f, "%.1f");
+			ImGui::EndDisabled();
+			ImGui::TextDisabled("Equidistant, full-frame. Raytracing only.");
+
+			ImGui::SeparatorText("Rays");
+			ImGui::SliderFloat("Ray Max Distance", &options.RaytracingRayMaxDistance, 10.0f, 20000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+			ImGui::SliderFloat("Shadow Ray Offset", &options.RaytracingShadowRayOffset, 1e-4f, 0.1f, "%.5f", ImGuiSliderFlags_Logarithmic);
+			ImGui::SliderFloat("Indirect Sky Clamp", &options.RaytracingSkyMaxRadiance, 1.0f, 64.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
+
+			static const char* debugModeNames[] = { "None", "Albedo", "Normal", "Direct Only", "Indirect Only", "Motion Vector", "Sample Heatmap" };
+			int debugMode = static_cast<int>(options.RaytracingDebug);
+			if (ImGui::Combo("Debug Output", &debugMode, debugModeNames, IM_ARRAYSIZE(debugModeNames)))
+			{
+				options.RaytracingDebug = static_cast<RaytracingDebugMode>(debugMode);
+			}
+
+			// The sun's angular diameter lives on the light, not in RenderOptions, because the
+			// deferred path reads the same values through ShadowConstants.
+			const auto& lights = m_scene != nullptr ? m_scene->GetRenderLights() : std::vector<LightDirectional*>{};
+			if (!lights.empty())
+			{
+				LightDirectional* sun = lights.front();
+				float angularDiameter = sun->GetAngularDiameter();
+				if (ImGui::SliderFloat("Sun Angular Diameter (deg)", &angularDiameter, 0.0f, 20.0f, "%.3f"))
+				{
+					sun->SetAngularDiameter(angularDiameter);
+				}
+				Color sunColor = sun->GetColor();
+				if (ImGui::ColorEdit3("Sun Color", reinterpret_cast<float*>(&sunColor)))
+				{
+					sun->SetColor(sunColor);
+				}
+				float sunIntensity = sun->GetIntensity();
+				if (ImGui::SliderFloat("Sun Intensity", &sunIntensity, 0.0f, 20.0f, "%.3f"))
+				{
+					sun->SetIntensity(sunIntensity);
+				}
+			}
+		}
+	
+			ImGui::PopItemWidth();
+		}
+		ImGui::End();
 	}
 
 	void Core::ImGuiRender()

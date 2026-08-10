@@ -54,6 +54,7 @@ namespace udsdx
 		void InitImGui();
 		void ImGuiNewFrame();
 		void ImGuiRender();
+		void ImGuiRaytracingWindow();
 		void ReleaseImGui();
 
 	public:
@@ -177,6 +178,8 @@ namespace udsdx
 		// NVIDIA Streamline, loaded at runtime. Present on every build; inert unless the SDK was
 		// fetched, the signed interposer sits next to the executable and the adapter supports the
 		// requested feature.
+		bool m_showRaytracingWindow = true;
+
 		std::unique_ptr<Streamline> m_streamline;
 
 		// Streamline proxies. Manual hooking means SL only observes the calls listed in
