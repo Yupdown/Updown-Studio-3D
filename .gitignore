@@ -6,6 +6,9 @@
 # Common build directories
 /build*/
 
+# Local CodeGraph index: a machine-specific SQLite database, rebuilt by `codegraph init`.
+/.codegraph/
+
 # CI jobs that run in symlinked trees produce these artifacts.
 /real_work/
 /work

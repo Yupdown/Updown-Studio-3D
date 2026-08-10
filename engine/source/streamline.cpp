@@ -420,9 +420,19 @@ namespace udsdx
 		constants.clipToPrevClip = ToStreamline(frame.ClipToPrevClip);
 		constants.prevClipToClip = ToStreamline(frame.PrevClipToClip);
 		constants.jitterOffset = ToStreamline(frame.JitterOffset);
-		// The motion buffer already holds currentUV - previousUV, which is exactly the space SL
-		// normalises to -- its own mvec shader computes the same quantity -- so no rescaling.
-		constants.mvecScale = { 1.0f, 1.0f };
+		// NGX wants the vector pointing at where the pixel WAS: previousUV - currentUV, in pixels.
+		// Streamline's own conversion kernel makes that explicit -- when it computes motion itself
+		// it writes -(uvCurrent - uvPrevious) * size and then sets MV_Scale to 1. On this path SL
+		// passes the buffer straight through with MV_Scale = mvecScale * renderSize, so the sign
+		// flip has to come from here: the buffer holds currentUV - previousUV.
+		//
+		// Getting this backwards is close to invisible under rotation, which is why it survived
+		// the first round of checks. A uniform error puts every pixel's history in the wrong place
+		// at once and the denoiser simply rejects all of it. Under translation the motion field is
+		// radial, so the error goes to zero at the focus of expansion and grows outward -- near the
+		// focus it is small enough to pass validation, and the mistake compounds every frame into
+		// trails that stream away from the direction of travel.
+		constants.mvecScale = { -1.0f, -1.0f };
 		// Defaults to INVALID_FLOAT and SL warns about it every frame, despite the header calling
 		// it optional. No pinhole offset here.
 		constants.cameraPinholeOffset = { 0.0f, 0.0f };

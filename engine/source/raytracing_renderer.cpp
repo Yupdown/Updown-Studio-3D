@@ -952,7 +952,15 @@ namespace udsdx
 		frame.ClipToView = m_slClipToView;
 		frame.ClipToPrevClip = m_slClipToPrevClip;
 		frame.PrevClipToClip = m_slPrevClipToClip;
-		frame.JitterOffset = Vector2(m_jitterOffset.x, m_jitterOffset.y);
+		// Y is negated on the way out: the ray generation shader offsets samples in y-DOWN pixel
+		// space (DispatchRaysIndex grows downward), while NGX wants the offset in the projection's
+		// y-UP convention -- the same axis flip ClipToUV performs. X needs no change, it points
+		// right in both.
+		//
+		// Reporting the wrong sign does not shift the image; it tells the reconstruction that each
+		// sample sits on the opposite side of the pixel centre from where it really is, so every
+		// frame lands slightly misplaced in the accumulation grid and the result shimmers.
+		frame.JitterOffset = Vector2(m_jitterOffset.x, -m_jitterOffset.y);
 		frame.CameraPosition = m_slCameraPosition;
 		frame.CameraRight = m_slCameraRight;
 		frame.CameraUp = m_slCameraUp;
