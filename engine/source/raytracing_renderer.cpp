@@ -274,8 +274,12 @@ namespace udsdx
 			slotRootParameter[2].InitAsDescriptorTable(1, &indirectRange, D3D12_SHADER_VISIBILITY_PIXEL);
 			slotRootParameter[3].InitAsDescriptorTable(1, &albedoRange, D3D12_SHADER_VISIBILITY_PIXEL);
 
+			// s1 filters: the raytracing buffers are smaller than the target whenever a render
+			// height is selected, and only DLSS produces its own full-size output.
 			CD3DX12_STATIC_SAMPLER_DESC samplerDesc[] = {
 				CD3DX12_STATIC_SAMPLER_DESC(0, D3D12_FILTER_MIN_MAG_MIP_POINT,
+					D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP),
+				CD3DX12_STATIC_SAMPLER_DESC(1, D3D12_FILTER_MIN_MAG_MIP_LINEAR,
 					D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP),
 			};
 
@@ -490,10 +494,40 @@ namespace udsdx
 		m_dummyEnvironmentCube->SetName(L"RaytracingRenderer::DummyEnvironmentCube");
 	}
 
+	void RaytracingRenderer::SetRenderHeight(UINT renderHeight)
+	{
+		if (renderHeight == m_requestedRenderHeight)
+		{
+			return;
+		}
+		m_requestedRenderHeight = renderHeight;
+
+		if (m_width == 0 || m_height == 0)
+		{
+			return;
+		}
+		OnResize(m_width, m_height);
+	}
+
 	void RaytracingRenderer::OnResize(UINT newWidth, UINT newHeight)
 	{
 		m_width = newWidth;
 		m_height = newHeight;
+
+		// A requested height taller than the display would be upsampling nothing, so it collapses
+		// to native. Width follows the display aspect so the reconstruction is not asked to change
+		// shape as well as size.
+		if (m_requestedRenderHeight == 0u || m_requestedRenderHeight >= m_height)
+		{
+			m_renderWidth = m_width;
+			m_renderHeight = m_height;
+		}
+		else
+		{
+			m_renderHeight = m_requestedRenderHeight;
+			m_renderWidth = std::max(1u, static_cast<UINT>(std::lround(
+				static_cast<double>(m_width) * m_renderHeight / static_cast<double>(m_height))));
+		}
 
 		BuildResources();
 		// The buffers were just recreated at a new size, so nothing can be reprojected into them.
@@ -504,22 +538,23 @@ namespace udsdx
 
 	void RaytracingRenderer::BuildResources()
 	{
-		if (m_width == 0 || m_height == 0)
+		if (m_width == 0 || m_height == 0 || m_renderWidth == 0 || m_renderHeight == 0)
 		{
 			return;
 		}
 
 		const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
 
-		auto createTarget = [&](ComPtr<ID3D12Resource>& target, DXGI_FORMAT format, const wchar_t* name)
+		auto createTargetSized = [&](ComPtr<ID3D12Resource>& target, DXGI_FORMAT format,
+			UINT width, UINT height, const wchar_t* name)
 		{
 			target.Reset();
 
 			D3D12_RESOURCE_DESC desc = {};
 			desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
 			desc.Alignment = 0;
-			desc.Width = m_width;
-			desc.Height = m_height;
+			desc.Width = width;
+			desc.Height = height;
 			desc.DepthOrArraySize = 1;
 			desc.MipLevels = 1;
 			desc.Format = format;
@@ -535,6 +570,13 @@ namespace udsdx
 			target->SetName(name);
 		};
 
+		// Everything the raytracer produces lives at render resolution; only what DLSS writes is
+		// display sized.
+		auto createTarget = [&](ComPtr<ID3D12Resource>& target, DXGI_FORMAT format, const wchar_t* name)
+		{
+			createTargetSized(target, format, m_renderWidth, m_renderHeight, name);
+		};
+
 		createTarget(m_radianceBuffer, RADIANCE_FORMAT, L"RaytracingRenderer::Radiance");
 		createTarget(m_indirectRadianceBuffer, RADIANCE_FORMAT, L"RaytracingRenderer::IndirectRadiance");
 		createTarget(m_albedoBuffer, ALBEDO_FORMAT, L"RaytracingRenderer::Albedo");
@@ -544,7 +586,7 @@ namespace udsdx
 		createTarget(m_linearDepthBuffer, LINEAR_DEPTH_FORMAT, L"RaytracingRenderer::LinearDepth");
 		createTarget(m_specularAlbedoBuffer, ALBEDO_FORMAT, L"RaytracingRenderer::SpecularAlbedo");
 		createTarget(m_noisyColorBuffer, NOISY_COLOR_FORMAT, L"RaytracingRenderer::NoisyColor");
-		createTarget(m_dlssOutputBuffer, DLSS_OUTPUT_FORMAT, L"RaytracingRenderer::DlssOutput");
+		createTargetSized(m_dlssOutputBuffer, DLSS_OUTPUT_FORMAT, m_width, m_height, L"RaytracingRenderer::DlssOutput");
 		createTarget(m_guideBuffers[0], GUIDE_FORMAT, L"RaytracingRenderer::Guide0");
 		createTarget(m_guideBuffers[1], GUIDE_FORMAT, L"RaytracingRenderer::Guide1");
 		createTarget(m_historyBuffers[0], HISTORY_FORMAT, L"RaytracingRenderer::History0");
@@ -554,8 +596,8 @@ namespace udsdx
 		createTarget(m_filterBuffers[0], RADIANCE_FORMAT, L"RaytracingRenderer::Filter0");
 		createTarget(m_filterBuffers[1], RADIANCE_FORMAT, L"RaytracingRenderer::Filter1");
 
-		m_dispatchDesc.Width = m_width;
-		m_dispatchDesc.Height = m_height;
+		m_dispatchDesc.Width = m_renderWidth;
+		m_dispatchDesc.Height = m_renderHeight;
 		m_dispatchDesc.Depth = 1;
 	}
 
@@ -820,7 +862,7 @@ namespace udsdx
 			}
 		}
 
-		constants.RenderTargetSize = Vector2(static_cast<float>(m_width), static_cast<float>(m_height));
+		constants.RenderTargetSize = Vector2(static_cast<float>(m_renderWidth), static_cast<float>(m_renderHeight));
 		constants.HistoryValid = m_historyValid ? 1u : 0u;
 		constants.SamplesPerPixel = std::max(1u, options.RaytracingSamplesPerPixel);
 
@@ -915,7 +957,7 @@ namespace udsdx
 		commandList->SetComputeRootDescriptorTable(1, m_accumulateSrvTable[m_historyWriteIndex]);
 		commandList->SetComputeRootDescriptorTable(2, m_accumulateUavTable[m_historyWriteIndex]);
 
-		commandList->Dispatch((m_width + 7u) / 8u, (m_height + 7u) / 8u, 1u);
+		commandList->Dispatch((m_renderWidth + 7u) / 8u, (m_renderHeight + 7u) / 8u, 1u);
 
 		TransitionForRead(commandList, m_historyBuffers[m_historyWriteIndex].Get());
 		TransitionForRead(commandList, m_indirectHistoryBuffers[m_historyWriteIndex].Get());
@@ -927,7 +969,8 @@ namespace udsdx
 		TracyD3D12Zone(*param.TracyQueueContext, param.CommandList, "Raytracing DLSS-RR");
 
 		Streamline* streamline = param.StreamlineRuntime;
-		if (streamline == nullptr || !streamline->SetRayReconstructionOptions(m_width, m_height))
+		if (streamline == nullptr
+			|| !streamline->SetRayReconstructionOptions(m_renderWidth, m_renderHeight, m_width, m_height))
 		{
 			return false;
 		}
@@ -945,8 +988,10 @@ namespace udsdx
 		// Every input is back in the resting state by now; the output is the one thing SL writes.
 		frame.InputState = kRestingState;
 		frame.OutputState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-		frame.Width = m_width;
-		frame.Height = m_height;
+		frame.Width = m_renderWidth;
+		frame.Height = m_renderHeight;
+		frame.OutputWidth = m_width;
+		frame.OutputHeight = m_height;
 
 		frame.ViewToClip = m_slViewToClip;
 		frame.ClipToView = m_slClipToView;
@@ -1020,8 +1065,8 @@ namespace udsdx
 			const int destination = static_cast<int>(i & 1u);
 
 			AtrousConstants constants = {};
-			constants.RenderTargetWidth = static_cast<float>(m_width);
-			constants.RenderTargetHeight = static_cast<float>(m_height);
+			constants.RenderTargetWidth = static_cast<float>(m_renderWidth);
+			constants.RenderTargetHeight = static_cast<float>(m_renderHeight);
 			constants.StepSize = 1u << i;
 			constants.LuminanceSigma = std::max(0.01f, param.RenderOptions->RaytracingAtrousLuminanceSigma);
 			constants.NormalPower = 32.0f;
@@ -1037,7 +1082,7 @@ namespace udsdx
 			commandList->SetComputeRootDescriptorTable(3, m_normalRoughnessGpuSrv[m_historyWriteIndex]);
 			commandList->SetComputeRootDescriptorTable(4, m_filterGpuUav[destination]);
 
-			commandList->Dispatch((m_width + 7u) / 8u, (m_height + 7u) / 8u, 1u);
+			commandList->Dispatch((m_renderWidth + 7u) / 8u, (m_renderHeight + 7u) / 8u, 1u);
 
 			TransitionForRead(commandList, m_filterBuffers[destination].Get());
 		}

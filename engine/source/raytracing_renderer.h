@@ -85,6 +85,12 @@ namespace udsdx
 		void BuildDescriptors(DescriptorParam& descriptorParam);
 		void RebuildDescriptors();
 		void OnResize(UINT newWidth, UINT newHeight);
+		// Selects the internal buffer height. 0 restores display resolution. Recreates every
+		// raytracing buffer, so it is only acted on when the value actually changes.
+		void SetRenderHeight(UINT renderHeight);
+		UINT GetRequestedRenderHeight() const { return m_requestedRenderHeight; }
+		UINT GetRenderWidth() const { return m_renderWidth; }
+		UINT GetRenderHeight() const { return m_renderHeight; }
 
 		// Builds the acceleration structure, dispatches rays, accumulates temporally and resolves
 		// into the HDR target.
@@ -126,6 +132,14 @@ namespace udsdx
 
 		UINT m_width = 0;
 		UINT m_height = 0;
+
+		// Resolution of every raytracing buffer. Equal to the display size unless a render height
+		// has been selected, in which case DLSS reconstructs the difference and the other two
+		// denoisers are simply stretched by the resolve.
+		UINT m_renderWidth = 0;
+		UINT m_renderHeight = 0;
+		UINT m_requestedRenderHeight = 0;
+
 
 		std::unique_ptr<AccelerationStructure> m_accelerationStructure;
 

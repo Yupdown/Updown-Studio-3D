@@ -81,6 +81,7 @@ namespace udsdx
 		PFun_slFreeResources* FreeResources = nullptr;
 
 		PFun_slDLSSDSetOptions* DLSSDSetOptions = nullptr;
+		PFun_slDLSSDGetOptimalSettings* DLSSDGetOptimalSettings = nullptr;
 
 		sl::FrameToken* FrameToken = nullptr;
 	};
@@ -270,6 +271,13 @@ namespace udsdx
 		}
 		m_functions->DLSSDSetOptions = reinterpret_cast<PFun_slDLSSDSetOptions*>(setOptions);
 
+		void* optimalSettings = nullptr;
+		if (m_functions->GetFeatureFunction(sl::kFeatureDLSS_RR, "slDLSSDGetOptimalSettings", optimalSettings) == sl::Result::eOk
+			&& optimalSettings != nullptr)
+		{
+			m_functions->DLSSDGetOptimalSettings = reinterpret_cast<PFun_slDLSSDGetOptimalSettings*>(optimalSettings);
+		}
+
 		m_statusMessage.clear();
 		DebugConsole::Log("Streamline: DLSS Ray Reconstruction is supported on this adapter");
 #endif
@@ -315,36 +323,74 @@ namespace udsdx
 #endif
 	}
 
-	bool Streamline::SetRayReconstructionOptions(UINT width, UINT height)
+	UINT Streamline::GetMinimumRenderHeight(UINT outputWidth, UINT outputHeight)
 	{
 #ifndef UPDOWN_STREAMLINE
-		(void)width;
-		(void)height;
+		(void)outputWidth;
+		(void)outputHeight;
+		return 0u;
+#else
+		if (!m_rayReconstructionSupported || m_functions->DLSSDGetOptimalSettings == nullptr
+			|| outputWidth == 0 || outputHeight == 0)
+		{
+			return 0u;
+		}
+
+		// The most aggressive mode reports the smallest input the SDK will accept for this output.
+		sl::DLSSDOptions probe{};
+		probe.mode = sl::DLSSMode::eUltraPerformance;
+		probe.outputWidth = outputWidth;
+		probe.outputHeight = outputHeight;
+
+		sl::DLSSDOptimalSettings settings{};
+		if (m_functions->DLSSDGetOptimalSettings(probe, settings) != sl::Result::eOk)
+		{
+			return 0u;
+		}
+		return settings.renderHeightMin != 0u ? settings.renderHeightMin : settings.optimalRenderHeight;
+#endif
+	}
+
+	bool Streamline::SetRayReconstructionOptions(UINT renderWidth, UINT renderHeight, UINT outputWidth, UINT outputHeight)
+	{
+#ifndef UPDOWN_STREAMLINE
+		(void)renderWidth;
+		(void)renderHeight;
+		(void)outputWidth;
+		(void)outputHeight;
 		return false;
 #else
-		if (!m_rayReconstructionSupported || width == 0 || height == 0)
+		if (!m_rayReconstructionSupported || renderWidth == 0 || renderHeight == 0
+			|| outputWidth == 0 || outputHeight == 0)
 		{
 			return false;
 		}
 
-		if (m_optionsValid && m_configuredWidth == width && m_configuredHeight == height)
+		if (m_optionsValid && m_configuredWidth == renderWidth && m_configuredHeight == renderHeight
+			&& m_configuredOutputWidth == outputWidth && m_configuredOutputHeight == outputHeight)
 		{
 			return true;
 		}
 
-		// A size change reinitialises the denoiser internally, so drop what the previous size
-		// allocated first rather than leaving a viewport's worth of VRAM behind per resize.
+		// Ray Reconstruction explicitly does not support changing input resolution while running,
+		// so a change tears the denoiser down rather than resizing it in place. That also avoids
+		// leaving a viewport's worth of VRAM behind per size the app has ever used.
 		if (m_optionsValid)
 		{
 			FreeRayReconstructionResources();
 		}
 
 		sl::DLSSDOptions options{};
-		// DLAA: input and output are the same size. Upscaling would mean splitting render and
-		// display resolution across every buffer and post pass, which this engine does not do.
-		options.mode = sl::DLSSMode::eDLAA;
-		options.outputWidth = width;
-		options.outputHeight = height;
+		// The mode drives which internal presets DLSS selects, so it should describe the upscale
+		// factor actually being asked for even though the real extents come from the resource tags.
+		const float ratio = static_cast<float>(renderHeight) / static_cast<float>(outputHeight);
+		if (ratio >= 0.99f)       options.mode = sl::DLSSMode::eDLAA;
+		else if (ratio >= 0.63f)  options.mode = sl::DLSSMode::eMaxQuality;
+		else if (ratio >= 0.55f)  options.mode = sl::DLSSMode::eBalanced;
+		else if (ratio >= 0.45f)  options.mode = sl::DLSSMode::eMaxPerformance;
+		else                      options.mode = sl::DLSSMode::eUltraPerformance;
+		options.outputWidth = outputWidth;
+		options.outputHeight = outputHeight;
 		// Mandatory for Ray Reconstruction, which only accepts an HDR pipeline.
 		options.colorBuffersHDR = sl::Boolean::eTrue;
 		// Linear roughness rides in the alpha channel of the normal texture.
@@ -360,8 +406,10 @@ namespace udsdx
 		}
 
 		m_optionsValid = true;
-		m_configuredWidth = width;
-		m_configuredHeight = height;
+		m_configuredWidth = renderWidth;
+		m_configuredHeight = renderHeight;
+		m_configuredOutputWidth = outputWidth;
+		m_configuredOutputHeight = outputHeight;
 		return true;
 #endif
 	}
@@ -380,6 +428,9 @@ namespace udsdx
 		}
 
 		const sl::Extent extent{ 0u, 0u, frame.Width, frame.Height };
+		const sl::Extent outputExtent{ 0u, 0u,
+			frame.OutputWidth != 0u ? frame.OutputWidth : frame.Width,
+			frame.OutputHeight != 0u ? frame.OutputHeight : frame.Height };
 		const uint32_t inputState = static_cast<uint32_t>(frame.InputState);
 
 		// Manual hooking means SL never saw these resources created and cannot track their states,
@@ -397,7 +448,7 @@ namespace udsdx
 		const sl::ResourceLifecycle lifecycle = sl::ResourceLifecycle::eValidUntilEvaluate;
 		sl::ResourceTag tags[] = {
 			sl::ResourceTag{ &noisyColor,      sl::kBufferTypeScalingInputColor,  lifecycle, &extent },
-			sl::ResourceTag{ &output,          sl::kBufferTypeScalingOutputColor, lifecycle, &extent },
+			sl::ResourceTag{ &output,          sl::kBufferTypeScalingOutputColor, lifecycle, &outputExtent },
 			sl::ResourceTag{ &linearDepth,     sl::kBufferTypeLinearDepth,        lifecycle, &extent },
 			sl::ResourceTag{ &motionVectors,   sl::kBufferTypeMotionVectors,      lifecycle, &extent },
 			sl::ResourceTag{ &albedo,          sl::kBufferTypeAlbedo,             lifecycle, &extent },
@@ -489,6 +540,8 @@ namespace udsdx
 		m_optionsValid = false;
 		m_configuredWidth = 0;
 		m_configuredHeight = 0;
+		m_configuredOutputWidth = 0;
+		m_configuredOutputHeight = 0;
 	}
 
 	void Streamline::Shutdown()

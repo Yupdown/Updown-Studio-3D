@@ -27,6 +27,10 @@ Texture2D gIndirect : register(t1);
 Texture2D gAlbedo : register(t2);
 
 SamplerState gsamPointClamp : register(s0);
+// The raytracing buffers may be smaller than the target: DLSS reconstructs its own output to full
+// size, but Off and the built-in denoiser have nothing of the sort, so their images are stretched
+// here and want filtering. Sampling a full-size buffer with it is identical to point sampling.
+SamplerState gsamLinearClamp : register(s1);
 
 // Black -> blue -> green -> red -> white ramp.
 float3 Heatmap(float t)
@@ -41,7 +45,7 @@ float3 Heatmap(float t)
 
 float4 PS(VertexOut pin) : SV_Target
 {
-	float4 history = gHistory.SampleLevel(gsamPointClamp, pin.TexC, 0.0f);
+	float4 history = gHistory.SampleLevel(gsamLinearClamp, pin.TexC, 0.0f);
 
 	if (gDebugMode == RT_DEBUG_HEATMAP)
 	{
@@ -52,10 +56,10 @@ float4 PS(VertexOut pin) : SV_Target
 
 	if (gPassthrough != 0u)
 	{
-		return float4(history.rgb, 1.0f);
+		return float4(gHistory.SampleLevel(gsamLinearClamp, pin.TexC, 0.0f).rgb, 1.0f);
 	}
 
-	float3 indirect = gIndirect.SampleLevel(gsamPointClamp, pin.TexC, 0.0f).rgb
-		* gAlbedo.SampleLevel(gsamPointClamp, pin.TexC, 0.0f).rgb;
+	float3 indirect = gIndirect.SampleLevel(gsamLinearClamp, pin.TexC, 0.0f).rgb
+		* gAlbedo.SampleLevel(gsamLinearClamp, pin.TexC, 0.0f).rgb;
 	return float4(history.rgb + indirect, 1.0f);
 }

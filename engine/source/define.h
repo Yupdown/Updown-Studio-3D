@@ -82,6 +82,11 @@ namespace udsdx
 		// pass; only the bloom pass still runs, because it owns tonemapping and the back-buffer write.
 		bool DrawRaytracing = false;
 		RaytracingDenoiserMode RaytracingDenoiser = RaytracingDenoiserMode::Builtin;
+		// Height of the raytracer's internal buffers. 0 means render at the display resolution,
+		// which is what DLAA wants; anything smaller is reconstructed up to the display size by
+		// DLSS Ray Reconstruction. The other two denoisers have no reconstruction of their own, so
+		// for them a smaller buffer is simply a cheaper image stretched at the resolve.
+		unsigned int RaytracingRenderHeight = 0u;
 		unsigned int RaytracingSamplesPerPixel = 1u;
 		// Temporal reprojection: history is capped at MaxSamplesMoving while a pixel is in motion
 		// and allowed up to MaxSamplesStatic once it reprojects exactly.

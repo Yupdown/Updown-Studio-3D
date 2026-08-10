@@ -26,8 +26,12 @@ namespace udsdx
 		D3D12_RESOURCE_STATES InputState = D3D12_RESOURCE_STATE_COMMON;
 		D3D12_RESOURCE_STATES OutputState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 
+		// Extent of every tagged input. The output is display sized and tagged separately -- DLSS
+		// reconstructs from one to the other.
 		UINT Width = 0;
 		UINT Height = 0;
+		UINT OutputWidth = 0;
+		UINT OutputHeight = 0;
 
 		Matrix4x4 ViewToClip = Matrix4x4::Identity;
 		Matrix4x4 ClipToView = Matrix4x4::Identity;
@@ -97,9 +101,16 @@ namespace udsdx
 		// to call unconditionally; does nothing when SL is unavailable.
 		void BeginFrame(UINT frameIndex);
 
-		// Configures Ray Reconstruction for this output size. Re-applying identical options is a
-		// no-op inside SL, so this can be called every frame.
-		bool SetRayReconstructionOptions(UINT width, UINT height);
+		// Configures Ray Reconstruction to reconstruct renderWidth x renderHeight input into
+		// outputWidth x outputHeight. Equal sizes select DLAA; anything smaller picks the quality
+		// mode whose ratio is closest, so DLSS uses presets tuned for that upscale factor.
+		// Re-applying identical sizes is a no-op, so this can be called every frame.
+		bool SetRayReconstructionOptions(UINT renderWidth, UINT renderHeight, UINT outputWidth, UINT outputHeight);
+
+		// Smallest input DLSS will reconstruct into this output size, from its most aggressive
+		// quality mode. Returns 0 when Ray Reconstruction is unavailable. Used to grey out render
+		// scales the SDK would simply reject -- roughly a 3x upscale limit.
+		UINT GetMinimumRenderHeight(UINT outputWidth, UINT outputHeight);
 
 		// Tags the inputs, uploads the camera constants and runs the denoiser into frame.Output.
 		// The caller owns restoring command list state afterwards.
@@ -127,6 +138,8 @@ namespace udsdx
 		bool m_optionsValid = false;
 		UINT m_configuredWidth = 0;
 		UINT m_configuredHeight = 0;
+		UINT m_configuredOutputWidth = 0;
+		UINT m_configuredOutputHeight = 0;
 		std::string m_statusMessage = "not built with Streamline support";
 	};
 }

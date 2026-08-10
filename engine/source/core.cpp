@@ -665,6 +665,21 @@ namespace udsdx
 		TracyD3D12Collect(m_tracyQueueCtx);
 		TracyD3D12NewFrame(m_tracyQueueCtx);
 
+		// Applied here rather than from the UI callback so the option is honoured however it was
+		// set -- a startup default or a programmatic change, not only a click. Recreating the
+		// raytracing buffers means waiting for the GPU to finish with the old ones and refreshing
+		// the descriptors that referenced them, which is only safe before the frame is recorded.
+		if (RaytracingRenderer* raytracing = m_deferredRenderer->GetRaytracingRenderer())
+		{
+			const unsigned int requested = m_deferredRenderer->GetRenderOptionsRef().RaytracingRenderHeight;
+			if (raytracing->GetRequestedRenderHeight() != requested)
+			{
+				FlushCommandQueue();
+				raytracing->SetRenderHeight(requested);
+				raytracing->RebuildDescriptors();
+			}
+		}
+
 		auto frameResource = CurrentFrameResource();
 		auto cmdListAlloc = frameResource->GetCommandListAllocator();
 		auto objectCB = frameResource->GetObjectCB();
@@ -1199,6 +1214,56 @@ namespace udsdx
 					ImGui::EndDisabled();
 				}
 				ImGui::EndCombo();
+			}
+
+			// Internal raytracing resolution. Only DLSS reconstructs a smaller buffer back to the
+			// display; the other modes just get a cheaper image stretched at the resolve, which is
+			// still the honest way to compare what the reconstruction is buying.
+			{
+				static const unsigned int kRenderHeights[] = { 0u, 270u, 360u, 540u, 720u, 1080u };
+				static const char* kRenderHeightNames[] = { "Native", "270p", "360p", "540p", "720p", "1080p" };
+
+				// DLSS refuses inputs below roughly a third of the output; those entries would only
+				// ever fail, so they are shown greyed rather than silently doing nothing.
+				const unsigned int minHeight = (m_streamline != nullptr && raytracing != nullptr)
+					? m_streamline->GetMinimumRenderHeight(m_clientWidth, m_clientHeight) : 0u;
+
+				int current = 0;
+				for (int i = 0; i < IM_ARRAYSIZE(kRenderHeights); ++i)
+				{
+					if (kRenderHeights[i] == options.RaytracingRenderHeight) { current = i; }
+				}
+
+				if (ImGui::BeginCombo("Render Resolution", kRenderHeightNames[current]))
+				{
+					for (int i = 0; i < IM_ARRAYSIZE(kRenderHeights); ++i)
+					{
+						const bool tooSmall = options.RaytracingDenoiser == RaytracingDenoiserMode::DlssRayReconstruction
+							&& kRenderHeights[i] != 0u && minHeight != 0u && kRenderHeights[i] < minHeight;
+						const bool aboveNative = kRenderHeights[i] != 0u
+							&& kRenderHeights[i] >= static_cast<unsigned int>(m_clientHeight);
+						ImGui::BeginDisabled(tooSmall || aboveNative);
+						// Only records the choice; Core::Render applies it at a point where the
+						// buffers can safely be rebuilt.
+						if (ImGui::Selectable(kRenderHeightNames[i], current == i) && !tooSmall && !aboveNative)
+						{
+							options.RaytracingRenderHeight = kRenderHeights[i];
+						}
+						ImGui::EndDisabled();
+					}
+					ImGui::EndCombo();
+				}
+
+				if (raytracing != nullptr && raytracing->GetRenderHeight() != 0u)
+				{
+					ImGui::TextDisabled("Raytracing at %u x %u -> %d x %d",
+						raytracing->GetRenderWidth(), raytracing->GetRenderHeight(),
+						m_clientWidth, m_clientHeight);
+				}
+				if (minHeight != 0u)
+				{
+					ImGui::TextDisabled("DLSS accepts down to %up for this output.", minHeight);
+				}
 			}
 
 			if (!rayReconstructionSupported)
