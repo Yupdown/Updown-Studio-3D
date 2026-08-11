@@ -2,6 +2,11 @@
 
 #include "pch.h"
 
+namespace DirectX
+{
+	class ScratchImage;
+}
+
 namespace udsdx
 {
 	class FrameDebug;
@@ -17,6 +22,25 @@ namespace udsdx
 	class PostProcessOutline;
 	class Streamline;
 	class Texture;
+
+	// A one-shot readback of what the frame just rendered, satisfied at the end of the same
+	// frame's Render() (after Present). Both sources stall the render thread until the copy
+	// completes, which is acceptable because they exist for offline verification, not gameplay.
+	struct CaptureRequest
+	{
+		enum class CaptureSource
+		{
+			// The swap chain back buffer (post-tonemap, post-UI), saved as a PNG to Path.
+			BackBufferPng,
+			// The deferred renderer's HDR intermediate target (pre-tonemap raytracing resolve when
+			// RT is active, R11G11B10_FLOAT), handed to OnCaptured as a ScratchImage; Path unused.
+			HdrTarget,
+		};
+
+		CaptureSource Source = CaptureSource::BackBufferPng;
+		std::wstring Path;
+		std::function<void(DirectX::ScratchImage&&)> OnCaptured;
+	};
 
 	class Core
 	{
@@ -88,6 +112,9 @@ namespace udsdx
 		void EnsureTextureShaderResourceView(Texture* texture);
 		RenderOptions& GetRenderOptionsRef();
 
+		// Queues a capture to be taken at the end of the current (or next) frame's Render().
+		void EnqueueCapture(CaptureRequest request);
+
 		int GetClientPosX() const;
 		int GetClientPosY() const;
 		int GetClientWidth() const;
@@ -121,6 +148,10 @@ namespace udsdx
 
 		void InitializeSpriteBatch();
 
+		// Drains m_pendingCaptures. Runs right after Present and before the back buffer index
+		// advances, so CurrentBackBuffer() still names the frame that was just rendered.
+		void ExecutePendingCaptures();
+
 	protected:
 		HINSTANCE	m_hInstance = 0;
 		HWND		m_hMainWnd = 0;
@@ -150,6 +181,9 @@ namespace udsdx
 		// Current Scene to render with
 		std::shared_ptr<Scene> m_scene;
 		std::function<void(const Time&)> m_updateCallback = nullptr;
+
+		// One-shot capture requests drained at the end of Render().
+		std::vector<CaptureRequest> m_pendingCaptures;
 
 	protected:
 		TimeMeasure* m_timeMeasure;

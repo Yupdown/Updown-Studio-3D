@@ -26,6 +26,9 @@
 #include "light_directional.h"
 #include "streamline.h"
 
+#include <DirectXTex.h>
+#include <wincodec.h> // GUID_ContainerFormatPng
+
 // Forward declare message handler from imgui_impl_win32.cpp
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -805,6 +808,12 @@ namespace udsdx
 			// m_swapChain is Streamline's proxy whenever SL is running, so this is also where its
 			// per-frame work happens -- the SDK warns that missing it leaks across resizes.
 			ThrowIfFailed(m_swapChain->Present(0, presentFlags));
+
+			if (!m_pendingCaptures.empty())
+			{
+				ExecutePendingCaptures();
+			}
+
 			// Swap the back and front buffers
 			m_currBackBuffer = (m_currBackBuffer + 1) % SwapChainBufferCount;
 		}
@@ -816,6 +825,57 @@ namespace udsdx
 
 		// Add the one-shot resource to the command queue for execution.
 		m_graphicsMemory->Commit(m_commandQueue.Get());
+	}
+
+	void Core::EnqueueCapture(CaptureRequest request)
+	{
+		m_pendingCaptures.emplace_back(std::move(request));
+	}
+
+	void Core::ExecutePendingCaptures()
+	{ ZoneScoped;
+		// Requests must not survive a failed attempt, or a bad path would stall every frame.
+		std::vector<CaptureRequest> requests;
+		requests.swap(m_pendingCaptures);
+
+		for (auto& request : requests)
+		{
+			switch (request.Source)
+			{
+			case CaptureRequest::CaptureSource::BackBufferPng:
+			{
+				// ScreenGrab records its own command list and fences on it, so by the time this
+				// returns the PNG is on disk.
+				HRESULT hr = DirectX::SaveWICTextureToFile(
+					m_commandQueue.Get(), CurrentBackBuffer(),
+					GUID_ContainerFormatPng, request.Path.c_str(),
+					D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_PRESENT);
+				if (FAILED(hr))
+				{
+					DebugConsole::LogError("Back buffer capture failed (hr=" + std::to_string(hr) + ")");
+				}
+				break;
+			}
+			case CaptureRequest::CaptureSource::HdrTarget:
+			{
+				// The bloom pass leaves the HDR intermediate in RENDER_TARGET at the end of every
+				// frame, so a same-state round trip here is valid without touching the frame graph.
+				DirectX::ScratchImage image;
+				HRESULT hr = DirectX::CaptureTexture(
+					m_commandQueue.Get(), m_deferredRenderer->GetRenderTargetResource(), false, image,
+					D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_RENDER_TARGET);
+				if (FAILED(hr))
+				{
+					DebugConsole::LogError("HDR target capture failed (hr=" + std::to_string(hr) + ")");
+				}
+				else if (request.OnCaptured)
+				{
+					request.OnCaptured(std::move(image));
+				}
+				break;
+			}
+			}
+		}
 	}
 
 	void Core::UpdateMainPassCB()
