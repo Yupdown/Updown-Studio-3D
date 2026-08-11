@@ -1171,8 +1171,11 @@ namespace udsdx
 		// moment the renderer could run at 540p under a 1321-tall display. The +1 keeps index 0
 		// (which Halton maps to 0,0) out of the cycle.
 		const float upscaleRatio = static_cast<float>(m_height) / static_cast<float>(std::max(1u, m_renderHeight));
+		// Ceil, not round: the guideline is a minimum, and rounding 72.11 down to 72 would sit
+		// just under it. One extra phase is free; one missing phase is a sub-pixel position that
+		// never gets sampled.
 		const uint32_t jitterPhases = std::max(16u,
-			static_cast<uint32_t>(std::lround(8.0f * upscaleRatio * upscaleRatio)));
+			static_cast<uint32_t>(std::ceil(8.0f * upscaleRatio * upscaleRatio)));
 		const uint32_t jitterIndex = static_cast<uint32_t>(m_frameCounter % jitterPhases) + 1u;
 		m_jitterOffset.x = RadicalInverse(jitterIndex, 2u) - 0.5f;
 		m_jitterOffset.y = RadicalInverse(jitterIndex, 3u) - 0.5f;
