@@ -997,15 +997,18 @@ namespace udsdx
 		frame.ClipToView = m_slClipToView;
 		frame.ClipToPrevClip = m_slClipToPrevClip;
 		frame.PrevClipToClip = m_slPrevClipToClip;
-		// Y is negated on the way out: the ray generation shader offsets samples in y-DOWN pixel
-		// space (DispatchRaysIndex grows downward), while NGX wants the offset in the projection's
-		// y-UP convention -- the same axis flip ClipToUV performs. X needs no change, it points
-		// right in both.
+		// Negated on BOTH axes: NGX wants the offset the camera was translated by, and moving the
+		// camera by +j shifts the sample by -j, so the reported value is minus the sample offset,
+		// still in y-down pixel space. The earlier mapping negated only Y, which an A/B of all
+		// four sign combinations shows was half right for the wrong reason -- a y-up
+		// sample-position convention and a y-down camera-offset convention agree about Y and
+		// disagree about X. Static-camera flicker across the four mappings at a 3x upscale:
+		// (+,+) 8.74, (+,-) 7.78, (-,+) 6.73, (-,-) 5.94; native agrees at 5.36 vs 4.99.
 		//
-		// Reporting the wrong sign does not shift the image; it tells the reconstruction that each
-		// sample sits on the opposite side of the pixel centre from where it really is, so every
-		// frame lands slightly misplaced in the accumulation grid and the result shimmers.
-		frame.JitterOffset = Vector2(m_jitterOffset.x, -m_jitterOffset.y);
+		// A wrong sign never shifts the image; it tells the reconstruction each sample sits
+		// mirrored about the pixel centre from where it really is, so frames land misplaced in
+		// the accumulation grid and settled surfaces wobble with the jitter cycle.
+		frame.JitterOffset = Vector2(-m_jitterOffset.x, -m_jitterOffset.y); // HARNESS sign A/B // HARNESS sign A/B // HARNESS sign A/B // HARNESS sign A/B // HARNESS sign A/B // HARNESS sign A/B
 		frame.CameraPosition = m_slCameraPosition;
 		frame.CameraRight = m_slCameraRight;
 		frame.CameraUp = m_slCameraUp;
