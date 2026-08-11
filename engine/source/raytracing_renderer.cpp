@@ -1008,7 +1008,7 @@ namespace udsdx
 		// A wrong sign never shifts the image; it tells the reconstruction each sample sits
 		// mirrored about the pixel centre from where it really is, so frames land misplaced in
 		// the accumulation grid and settled surfaces wobble with the jitter cycle.
-		frame.JitterOffset = Vector2(-m_jitterOffset.x, -m_jitterOffset.y); // HARNESS sign A/B // HARNESS sign A/B // HARNESS sign A/B // HARNESS sign A/B // HARNESS sign A/B // HARNESS sign A/B
+		frame.JitterOffset = Vector2(-m_jitterOffset.x, -m_jitterOffset.y);
 		frame.CameraPosition = m_slCameraPosition;
 		frame.CameraRight = m_slCameraRight;
 		frame.CameraUp = m_slCameraUp;
