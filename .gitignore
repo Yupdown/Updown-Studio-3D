@@ -6,6 +6,15 @@
 # Common build directories
 /build*/
 
+# Raytracing visual testbed output (scripts/rt-visual-test.ps1). Note the hyphen: the testbed's
+# own sources live in /testbed/ and are tracked.
+/testbed-*/
+
+# Testbed scene assets, fetched by scripts/fetch-testbed-assets.ps1 (~54 MB of unmodified
+# Khronos sample models).
+/resource/model/sponza/
+/resource/model/DamagedHelmet.glb
+
 # Local CodeGraph index: a machine-specific SQLite database, rebuilt by `codegraph init`.
 /.codegraph/
 

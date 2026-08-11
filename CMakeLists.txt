@@ -31,3 +31,4 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 add_subdirectory(engine)
 add_subdirectory(demo)
+add_subdirectory(testbed)
