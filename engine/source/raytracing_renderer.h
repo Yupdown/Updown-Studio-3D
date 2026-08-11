@@ -104,6 +104,11 @@ namespace udsdx
 		// camera or scene motion is handled by reprojection and must not call this.
 		void InvalidateHistory() { m_historyValid = false; }
 		bool IsHistoryValid() const { return m_historyValid; }
+		// Restarts the frame counter that seeds the per-pixel RNG and the Halton jitter sequence.
+		// With the history also invalidated, a re-convergence then replays the exact same sample
+		// sequence -- which is what makes converged images reproducible across runs. Verification
+		// use only; never needed for rendering.
+		void ResetFrameCounter() { m_frameCounter = 0; }
 		// Sources the motion blur pass consumes. Valid after Pass() has run for the frame.
 		// The depth SRV is a swizzled view of the guide buffer that presents camera distance in
 		// .r, which is where the blur shader looks; it is already linear, so that pass must be
