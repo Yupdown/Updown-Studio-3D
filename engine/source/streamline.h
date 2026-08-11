@@ -107,10 +107,23 @@ namespace udsdx
 		// Re-applying identical sizes is a no-op, so this can be called every frame.
 		bool SetRayReconstructionOptions(UINT renderWidth, UINT renderHeight, UINT outputWidth, UINT outputHeight);
 
-		// Smallest input DLSS will reconstruct into this output size, from its most aggressive
-		// quality mode. Returns 0 when Ray Reconstruction is unavailable. Used to grey out render
-		// scales the SDK would simply reject -- roughly a 3x upscale limit.
-		UINT GetMinimumRenderHeight(UINT outputWidth, UINT outputHeight);
+		// One entry per DLSS quality mode: the render size the mode wants and the window it will
+		// accept around it. These are the ONLY sizes Ray Reconstruction evaluates for a given
+		// output, so the UI enumerates them instead of offering a fixed list that would have to be
+		// snapped afterwards.
+		struct RayReconstructionRenderSize
+		{
+			const char* ModeName = nullptr;
+			UINT OptimalWidth = 0;
+			UINT OptimalHeight = 0;
+			UINT MinHeight = 0;
+			UINT MaxHeight = 0;
+		};
+
+		// Fills `out` with the sub-native render sizes valid for this output, best quality first.
+		// Returns the count, 0 when Ray Reconstruction is unavailable.
+		UINT EnumerateRayReconstructionRenderSizes(UINT outputWidth, UINT outputHeight,
+			RayReconstructionRenderSize* out, UINT capacity);
 
 		// Snaps a requested render height to the nearest one Ray Reconstruction will actually
 		// evaluate. RR has no dynamic resolution: each quality mode accepts a fixed window of

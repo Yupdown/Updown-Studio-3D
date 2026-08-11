@@ -1260,42 +1260,96 @@ namespace udsdx
 			ImGui::EndCombo();
 		}
 
-		// Internal raytracing resolution. Only DLSS reconstructs a smaller buffer back to the
-		// display; the other modes just get a cheaper image stretched at the resolve, which is
-		// still the honest way to compare what the reconstruction is buying.
+		// Internal raytracing resolution. Under DLSS Ray Reconstruction the choices are NOT free:
+		// each quality mode evaluates a fixed window of render sizes for the current output, so the
+		// combo enumerates exactly what the SDK reports instead of offering a list that would have
+		// to be snapped afterwards. The other denoisers have no such constraint and keep a plain
+		// height list -- their smaller buffer is simply stretched at the resolve.
 		{
-			static const unsigned int kRenderHeights[] = { 0u, 270u, 360u, 540u, 720u, 1080u };
-			static const char* kRenderHeightNames[] = { "Native", "270p", "360p", "540p", "720p", "1080p" };
+			const bool enumerateDlss = options.RaytracingDenoiser == RaytracingDenoiserMode::DlssRayReconstruction
+				&& m_streamline != nullptr && m_streamline->IsRayReconstructionSupported();
 
-			// DLSS refuses inputs below roughly a third of the output; those entries would only
-			// ever fail, so they are shown greyed rather than silently doing nothing.
-			const unsigned int minHeight = (m_streamline != nullptr && raytracing != nullptr)
-				? m_streamline->GetMinimumRenderHeight(m_clientWidth, m_clientHeight) : 0u;
-
-			int current = 0;
-			for (int i = 0; i < IM_ARRAYSIZE(kRenderHeights); ++i)
+			if (enumerateDlss)
 			{
-				if (kRenderHeights[i] == options.RaytracingRenderHeight) { current = i; }
+				Streamline::RayReconstructionRenderSize sizes[8]{};
+				const UINT count = m_streamline->EnumerateRayReconstructionRenderSizes(
+					static_cast<UINT>(m_clientWidth), static_cast<UINT>(m_clientHeight),
+					sizes, static_cast<UINT>(std::size(sizes)));
+
+				// The effective height is what the renderer is actually running at; matching the
+				// preview against it (rather than the raw option) keeps the label honest when a
+				// stale stored height was snapped into a mode's window.
+				const unsigned int effective = raytracing != nullptr ? raytracing->GetRenderHeight() : 0u;
+				const bool isNative = options.RaytracingRenderHeight == 0u;
+
+				char label[96];
+				const char* preview = "Native (DLAA)";
+				if (!isNative)
+				{
+					preview = "Custom";
+					for (UINT i = 0; i < count; ++i)
+					{
+						if (sizes[i].OptimalHeight == effective)
+						{
+							std::snprintf(label, sizeof(label), "%s (%u x %u)",
+								sizes[i].ModeName, sizes[i].OptimalWidth, sizes[i].OptimalHeight);
+							preview = label;
+							break;
+						}
+					}
+				}
+
+				if (ImGui::BeginCombo("Render Resolution", preview))
+				{
+					// Selections only record the choice; Core::Render applies it where the
+					// buffers can safely be rebuilt.
+					if (ImGui::Selectable("Native (DLAA)", isNative))
+					{
+						options.RaytracingRenderHeight = 0u;
+					}
+					for (UINT i = 0; i < count; ++i)
+					{
+						char entry[96];
+						std::snprintf(entry, sizeof(entry), "%s (%u x %u)",
+							sizes[i].ModeName, sizes[i].OptimalWidth, sizes[i].OptimalHeight);
+						if (ImGui::Selectable(entry, !isNative && sizes[i].OptimalHeight == effective))
+						{
+							options.RaytracingRenderHeight = sizes[i].OptimalHeight;
+						}
+						if (ImGui::IsItemHovered() && sizes[i].MinHeight != sizes[i].MaxHeight)
+						{
+							ImGui::SetTooltip("accepts %up .. %up", sizes[i].MinHeight, sizes[i].MaxHeight);
+						}
+					}
+					ImGui::EndCombo();
+				}
 			}
-
-			if (ImGui::BeginCombo("Render Resolution", kRenderHeightNames[current]))
+			else
 			{
+				static const unsigned int kRenderHeights[] = { 0u, 270u, 360u, 540u, 720u, 1080u };
+				static const char* kRenderHeightNames[] = { "Native", "270p", "360p", "540p", "720p", "1080p" };
+
+				int current = 0;
 				for (int i = 0; i < IM_ARRAYSIZE(kRenderHeights); ++i)
 				{
-					const bool tooSmall = options.RaytracingDenoiser == RaytracingDenoiserMode::DlssRayReconstruction
-						&& kRenderHeights[i] != 0u && minHeight != 0u && kRenderHeights[i] < minHeight;
-					const bool aboveNative = kRenderHeights[i] != 0u
-						&& kRenderHeights[i] >= static_cast<unsigned int>(m_clientHeight);
-					ImGui::BeginDisabled(tooSmall || aboveNative);
-					// Only records the choice; Core::Render applies it at a point where the
-					// buffers can safely be rebuilt.
-					if (ImGui::Selectable(kRenderHeightNames[i], current == i) && !tooSmall && !aboveNative)
-					{
-						options.RaytracingRenderHeight = kRenderHeights[i];
-					}
-					ImGui::EndDisabled();
+					if (kRenderHeights[i] == options.RaytracingRenderHeight) { current = i; }
 				}
-				ImGui::EndCombo();
+
+				if (ImGui::BeginCombo("Render Resolution", kRenderHeightNames[current]))
+				{
+					for (int i = 0; i < IM_ARRAYSIZE(kRenderHeights); ++i)
+					{
+						const bool aboveNative = kRenderHeights[i] != 0u
+							&& kRenderHeights[i] >= static_cast<unsigned int>(m_clientHeight);
+						ImGui::BeginDisabled(aboveNative);
+						if (ImGui::Selectable(kRenderHeightNames[i], current == i) && !aboveNative)
+						{
+							options.RaytracingRenderHeight = kRenderHeights[i];
+						}
+						ImGui::EndDisabled();
+					}
+					ImGui::EndCombo();
+				}
 			}
 
 			if (raytracing != nullptr && raytracing->GetRenderHeight() != 0u)
@@ -1303,10 +1357,6 @@ namespace udsdx
 				ImGui::TextDisabled("Raytracing at %u x %u -> %d x %d",
 					raytracing->GetRenderWidth(), raytracing->GetRenderHeight(),
 					m_clientWidth, m_clientHeight);
-			}
-			if (minHeight != 0u)
-			{
-				ImGui::TextDisabled("DLSS accepts down to %up for this output.", minHeight);
 			}
 		}
 

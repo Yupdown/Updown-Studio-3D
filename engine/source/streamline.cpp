@@ -323,31 +323,59 @@ namespace udsdx
 #endif
 	}
 
-	UINT Streamline::GetMinimumRenderHeight(UINT outputWidth, UINT outputHeight)
+	UINT Streamline::EnumerateRayReconstructionRenderSizes(UINT outputWidth, UINT outputHeight,
+		RayReconstructionRenderSize* out, UINT capacity)
 	{
 #ifndef UPDOWN_STREAMLINE
 		(void)outputWidth;
 		(void)outputHeight;
+		(void)out;
+		(void)capacity;
 		return 0u;
 #else
 		if (!m_rayReconstructionSupported || m_functions->DLSSDGetOptimalSettings == nullptr
-			|| outputWidth == 0 || outputHeight == 0)
+			|| outputWidth == 0 || outputHeight == 0 || out == nullptr)
 		{
 			return 0u;
 		}
 
-		// The most aggressive mode reports the smallest input the SDK will accept for this output.
-		sl::DLSSDOptions probe{};
-		probe.mode = sl::DLSSMode::eUltraPerformance;
-		probe.outputWidth = outputWidth;
-		probe.outputHeight = outputHeight;
+		// Best quality first, matching the order a user would scan a dropdown in. DLAA is not in
+		// this list: native needs no enumeration and is the caller's zero entry.
+		static const struct { sl::DLSSMode Mode; const char* Name; } kModes[] = {
+			{ sl::DLSSMode::eMaxQuality,       "Quality" },
+			{ sl::DLSSMode::eBalanced,         "Balanced" },
+			{ sl::DLSSMode::eMaxPerformance,   "Performance" },
+			{ sl::DLSSMode::eUltraPerformance, "Ultra Performance" },
+		};
 
-		sl::DLSSDOptimalSettings settings{};
-		if (m_functions->DLSSDGetOptimalSettings(probe, settings) != sl::Result::eOk)
+		UINT count = 0;
+		for (const auto& candidate : kModes)
 		{
-			return 0u;
+			if (count >= capacity)
+			{
+				break;
+			}
+
+			sl::DLSSDOptions probe{};
+			probe.mode = candidate.Mode;
+			probe.outputWidth = outputWidth;
+			probe.outputHeight = outputHeight;
+
+			sl::DLSSDOptimalSettings settings{};
+			if (m_functions->DLSSDGetOptimalSettings(probe, settings) != sl::Result::eOk
+				|| settings.optimalRenderHeight == 0u)
+			{
+				continue;
+			}
+
+			out[count].ModeName = candidate.Name;
+			out[count].OptimalWidth = settings.optimalRenderWidth;
+			out[count].OptimalHeight = settings.optimalRenderHeight;
+			out[count].MinHeight = settings.renderHeightMin != 0u ? settings.renderHeightMin : settings.optimalRenderHeight;
+			out[count].MaxHeight = settings.renderHeightMax != 0u ? settings.renderHeightMax : settings.optimalRenderHeight;
+			++count;
 		}
-		return settings.renderHeightMin != 0u ? settings.renderHeightMin : settings.optimalRenderHeight;
+		return count;
 #endif
 	}
 
