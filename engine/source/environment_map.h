@@ -44,7 +44,9 @@ namespace udsdx
 		static constexpr UINT kFaceCount = 6;
 		static constexpr UINT kIrradianceFaceSize = 64;
 		static constexpr UINT kPrefilterFaceSize = 256;
-		static constexpr UINT kIrradianceSampleCount = 64;
+		// 64 was enough while nothing sampled this map. Once the deferred pass reads it for ambient
+		// diffuse the banding shows, and the bake is a one-off at load time.
+		static constexpr UINT kIrradianceSampleCount = 256;
 		static constexpr UINT kPrefilterSampleCount = 128;
 		static constexpr float kDefaultIblRadianceCutoff = 64.0f;
 

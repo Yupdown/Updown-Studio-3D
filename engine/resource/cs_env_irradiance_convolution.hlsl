@@ -66,8 +66,15 @@ void CS(uint3 dtid : SV_DispatchThreadID)
     float3 tangent = normalize(cross(upVector, normal));
     float3 bitangent = cross(normal, tangent);
 
+    // BuildHemisphereSample is cosine-weighted, i.e. pdf = cos/pi, so the cosine and the pdf
+    // cancel and the estimator for E is (pi/N) * sum(L). Weighting by NoL again -- as this did --
+    // and dividing by sum(NoL) yields a cos-squared weighted average, which is not any irradiance.
+    //
+    // What is stored is E/pi, not E. That keeps this map in the same numeric range as the source
+    // radiance (so gIblRadianceCutoff means the same thing before and after the bake), and it is
+    // the form the lighting shaders want: the Lambert term is diffuseAlbedo * (E/pi), with no
+    // stray constant at the point of use.
     float3 accumColor = float3(0.0f, 0.0f, 0.0f);
-    float weightSum = 0.0f;
 
     [loop]
     for (uint sampleIndex = 0; sampleIndex < gSampleCount; ++sampleIndex)
@@ -75,16 +82,10 @@ void CS(uint3 dtid : SV_DispatchThreadID)
         float2 xi = Hammersley(sampleIndex, gSampleCount);
         float3 localSample = BuildHemisphereSample(xi);
         float3 worldSample = normalize(localSample.x * tangent + localSample.y * bitangent + localSample.z * normal);
-        float NoL = saturate(dot(normal, worldSample));
-        if (NoL > 0.0f)
-        {
-            float3 radiance = gSourceCubeMap.SampleLevel(gLinearWrapSampler, worldSample, 0.0f).rgb;
-            radiance = ApplyRadianceCutoff(radiance, cutoff);
-            accumColor += radiance * NoL;
-            weightSum += NoL;
-        }
+        float3 radiance = gSourceCubeMap.SampleLevel(gLinearWrapSampler, worldSample, 0.0f).rgb;
+        accumColor += ApplyRadianceCutoff(radiance, cutoff);
     }
 
-    float3 irradiance = (weightSum > 0.0f) ? (accumColor / weightSum) : float3(0.0f, 0.0f, 0.0f);
+    float3 irradiance = accumColor / max((float)gSampleCount, 1.0f);
     gIrradianceCubeMap[uint3(dtid.xy, gFaceIndex)] = float4(irradiance, 1.0f);
 }
