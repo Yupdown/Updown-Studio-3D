@@ -190,7 +190,8 @@ struct PixelOut
 	float4 Buffer1 : SV_TARGET0;
     float4 Buffer2 : SV_TARGET1;
     float2 Buffer3 : SV_TARGET2;
-    float2 Buffer4 : SV_TARGET3;
+    // Metallic, roughness, dielectric F0 / 0.16 -- see GBUFFER_FORMATS in deferred_renderer.h.
+    float4 Buffer4 : SV_TARGET3;
 };
 
 #ifdef RIGGED
@@ -568,15 +569,15 @@ float4 PSDeferredDefault(VertexOut pin) : SV_Target
 
 	// No manual linearization: the albedo target is _SRGB, so the sampler already decoded it.
 	float3 baseColor = gBuffer1.Sample(gsamPointClamp, pin.TexC).rgb;
-	float2 metalRough = gBuffer4.Sample(gsamPointClamp, pin.TexC).rg;
+	float3 material = gBuffer4.Sample(gsamPointClamp, pin.TexC).rgb;
 
-	float metallic = metalRough.r;
-	float roughness = ClampRoughness(metalRough.g);
+	float metallic = material.r;
+	float roughness = ClampRoughness(material.g);
 	float alpha = RoughnessToAlpha(roughness);
 	float3 diffuseAlbedo = DiffuseAlbedo(baseColor, metallic);
-	// Fixed 0.04 rather than the material's IOR: gBuffer4 is R8G8 and has nowhere to put F0, so
-	// dielectrics with Ior != 1.5 disagree with the raytracer until that target is widened.
-	float3 f0 = SpecularF0(baseColor, metallic, 0.04f);
+	// B stores the material's dielectric F0 scaled by 1/0.16, so the raster honours glTF's IOR
+	// extension the same way the raytracer does.
+	float3 f0 = SpecularF0(baseColor, metallic, material.b * 0.16f);
 
 	float3 V = normalize(gEyePosW.xyz - PosW.xyz);
 	float NoV = saturate(dot(normalW, V));

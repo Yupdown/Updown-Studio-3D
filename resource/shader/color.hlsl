@@ -58,9 +58,8 @@ PixelOut PS(VertexOut pin)
     pOut.Buffer1 = float4(baseColor.rgb, 1.0f);
     pOut.Buffer2 = float4(normalV * 0.5f + 0.5f, 1.0f);
     pOut.Buffer3 = PackMotion(posH, pin.PrevPosH);
-    // Nothing samples this target yet -- deferred lighting is still Lambert -- but writing the
-    // real values keeps the G-buffer honest for whenever a BRDF arrives.
-    pOut.Buffer4 = float2(metallic, roughness);
+    // F0 is stored divided by 0.16 so the byte covers the range dielectrics actually occupy.
+    pOut.Buffer4 = float4(metallic, roughness, DielectricF0FromIor(m.Ior) / 0.16f, 0.0f);
     return pOut;
 }
 

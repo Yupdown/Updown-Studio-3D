@@ -79,7 +79,11 @@ namespace udsdx
 			DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, // RGB: Albedo color (linear values, sRGB-encoded storage)
 			DXGI_FORMAT_R10G10B10A2_UNORM, // RGB: View normal vector (UNORM encoded)
 			DXGI_FORMAT_R16G16_FLOAT, // RG: Screen-space UV motion vector delta
-			DXGI_FORMAT_R8G8_UNORM, // R: Metallic, G: Roughness
+			// B carries the dielectric F0 divided by 0.16, the Unreal convention: F0 for real
+			// dielectrics tops out around 0.08 (IOR ~1.76), so scaling by 1/0.16 spends the byte on
+			// the range that exists instead of on the top three quarters that do not. The quantum
+			// works out to 0.00063 in F0, far below anything visible.
+			DXGI_FORMAT_R8G8B8A8_UNORM, // R: Metallic, G: Roughness, B: DielectricF0 / 0.16
 		};
 
 		static constexpr float GBUFFER_CLEAR_VALUES[NUM_GBUFFERS][4] = {
@@ -87,9 +91,9 @@ namespace udsdx
 			{ 0.0f, 0.0f, 0.0f, 0.0f },
 			{ 0.0f, 0.0f, 0.0f, 0.0f },
 			// Roughness clears to 1, not 0: a zeroed row would clear the whole buffer to a perfect
-			// mirror. Matters only once something samples this target, but the value should not be
-			// wrong in the meantime.
-			{ 0.0f, 1.0f, 0.0f, 0.0f },
+			// mirror. B clears to 0.25, which decodes to the 0.04 of a standard IOR-1.5 dielectric,
+			// so an untouched texel describes a plausible surface rather than one with no Fresnel.
+			{ 0.0f, 1.0f, 0.25f, 0.0f },
 		};
 
 		static constexpr DXGI_FORMAT DEPTH_FORMAT = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
