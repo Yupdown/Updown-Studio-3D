@@ -41,6 +41,13 @@ Values are always emitted even on PASS. On a marginal failure (value close to th
 the number and the PNG before concluding the renderer regressed — thresholds were calibrated on
 one machine and the stochastic ones scale with `--max-samples`.
 
+**Which numbers are stable enough to diff across builds.** `determinism/*` is bit-exact (0.0) and
+is the reliable canary: if a change was supposed to be visually neutral and this moves, something
+really did change. `primary/*` is NOT bit-stable — it is the first convergence after boot, so
+acceleration-structure warm-up perturbs it by ~1e-7 relative *between runs of the same binary*
+(`lum_mean` wobbles in its 7th significant digit). Never conclude a regression from `primary`
+alone; re-run the same binary first and compare the spread.
+
 ## What the cases verify
 
 | Case | Invariant |
