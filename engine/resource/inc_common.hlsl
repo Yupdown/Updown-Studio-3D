@@ -537,8 +537,8 @@ float4 PSDeferredDefault(VertexOut pin) : SV_Target
     float4 PosW = mul(PosNDC, gViewProjInverse);
 	PosW /= PosW.w;
 
+	// No manual linearization: the albedo target is _SRGB, so the sampler already decoded it.
 	float4 gBuffer1Color = gBuffer1.Sample(gsamPointClamp, pin.TexC);
-	gBuffer1Color.rgb = pow(gBuffer1Color.rgb, gamma);
 
 	float3 fColor = (AmbientLight(pin) + min(ShadowValue(PosW, normalW), DiffuseLight(pin))) * gBuffer1Color.rgb;
 	fColor = ApplyFog(fColor, PosW.xyz);

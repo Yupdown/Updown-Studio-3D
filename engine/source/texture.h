@@ -8,11 +8,14 @@ namespace udsdx
 	class Texture : public ResourceObject
 	{
 	public:
-		Texture(std::wstring_view path, ID3D12Device* device, ID3D12GraphicsCommandList* commandList);
+		// colorSpace decides the compressed format (BC7_UNORM_SRGB vs BC7_UNORM), so it must match
+		// how the image is authored: colour maps sRGB, data maps linear. HDR sources ignore it --
+		// BC6H is always linear.
+		Texture(std::wstring_view path, TextureColorSpace colorSpace, ID3D12Device* device, ID3D12GraphicsCommandList* commandList);
 		// For a compressed image embedded in another resource (e.g. a model file). 'key' is a
 		// synthetic identity for the texture, 'name' a human-readable label, 'data'/'size' the
 		// encoded bytes, and 'formatHint' the image extension without a dot (e.g. L"png").
-		Texture(std::wstring_view key, std::string_view name, const void* data, size_t size, std::wstring_view formatHint, bool isHdr, ID3D12Device* device, ID3D12GraphicsCommandList* commandList);
+		Texture(std::wstring_view key, std::string_view name, const void* data, size_t size, std::wstring_view formatHint, bool isHdr, TextureColorSpace colorSpace, ID3D12Device* device, ID3D12GraphicsCommandList* commandList);
 		// For creating texture from existing resource (Works as a wrapper)
 		Texture(ID3D12Resource* resource, D3D12_CPU_DESCRIPTOR_HANDLE srvCpu, D3D12_GPU_DESCRIPTOR_HANDLE srvGpu);
 		~Texture();

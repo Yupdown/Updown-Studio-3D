@@ -32,6 +32,49 @@ namespace udsdx
 
 	}
 
+	std::wstring Resource::MakeTextureKey(std::wstring_view normalizedPath, TextureColorSpace colorSpace)
+	{
+		return colorSpace == TextureColorSpace::Srgb
+			? std::wstring(normalizedPath)
+			: std::wstring(normalizedPath) + L"|linear";
+	}
+
+	Texture* Resource::LoadTexture(std::wstring_view path, TextureColorSpace colorSpace)
+	{
+		const std::wstring normalized = NormalizePath(path);
+		const std::wstring key = MakeTextureKey(normalized, colorSpace);
+
+		auto iter = m_resources.find(key);
+		if (iter != m_resources.end())
+		{
+			for (const auto& resource : iter->second)
+			{
+				if (auto* existing = dynamic_cast<Texture*>(resource.get()))
+				{
+					return existing;
+				}
+			}
+		}
+
+		// Straight to the texture loader rather than through the extension dictionary: the type is
+		// already known here, and the dictionary exists only to pick a loader from a suffix.
+		auto loaderIter = m_loaders.find(L"texture");
+		if (loaderIter == m_loaders.end())
+		{
+			return nullptr;
+		}
+		auto* textureLoader = static_cast<TextureLoader*>(loaderIter->second.get());
+
+		auto loaded = textureLoader->LoadWithColorSpace(normalized, colorSpace);
+		Texture* casted = dynamic_cast<Texture*>(loaded.get());
+		if (casted == nullptr)
+		{
+			return nullptr;
+		}
+		m_resources[key].emplace_back(std::move(loaded));
+		return casted;
+	}
+
 	Material* Resource::CreateMaterial(std::wstring_view key)
 	{
 		std::wstring normalized = NormalizePath(key);
@@ -221,8 +264,14 @@ namespace udsdx
 	std::unique_ptr<ResourceObject> TextureLoader::Load(std::wstring_view path, const std::type_info* requestedType)
 	{ ZoneScoped;
 		(void)requestedType;
-		auto texture = std::make_unique<Texture>(path, m_device, m_commandList);
-		return texture;
+		// Extension dispatch carries no colour-space information, so this path assumes colour.
+		// Data maps go through Resource::LoadTexture instead.
+		return std::make_unique<Texture>(path, TextureColorSpace::Srgb, m_device, m_commandList);
+	}
+
+	std::unique_ptr<ResourceObject> TextureLoader::LoadWithColorSpace(std::wstring_view path, TextureColorSpace colorSpace)
+	{ ZoneScoped;
+		return std::make_unique<Texture>(path, colorSpace, m_device, m_commandList);
 	}
 
 	ModelLoader::ModelLoader(ID3D12Device* device, ID3D12GraphicsCommandList* commandList) : ResourceLoader(device, commandList)

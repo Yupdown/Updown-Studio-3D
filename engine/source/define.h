@@ -232,4 +232,14 @@ namespace udsdx
 
 	// Sentinel for a texture without a registered SRV (no bindless heap index assigned).
 	static constexpr UINT InvalidSrvIndex = 0xFFFFFFFFu;
+
+	// How a texture's bits are to be interpreted. Colour maps are authored sRGB-encoded and must be
+	// decoded to linear before any filtering; data maps (normals, metallic-roughness, occlusion)
+	// are already linear and must not be touched. The distinction reaches the GPU as the DXGI
+	// format, so it has to be decided when the texture is compressed, not when it is sampled.
+	enum class TextureColorSpace : UINT
+	{
+		Linear = 0,
+		Srgb = 1,
+	};
 }

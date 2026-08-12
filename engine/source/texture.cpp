@@ -7,7 +7,7 @@
 
 namespace udsdx
 {
-	Texture::Texture(std::wstring_view path, ID3D12Device* device, ID3D12GraphicsCommandList* commandList) : ResourceObject(path)
+	Texture::Texture(std::wstring_view path, TextureColorSpace colorSpace, ID3D12Device* device, ID3D12GraphicsCommandList* commandList) : ResourceObject(path)
 	{
 		// Set the name of the texture (with file name except directory)
 		std::filesystem::path pathTexture(path);
@@ -20,17 +20,17 @@ namespace udsdx
 		// Resolve (and lazily build, via texconv on the GPU) the compressed DDS in the
 		// executable-side cache, then load it for upload. All BC compression now happens
 		// out-of-process in texconv; this constructor only consumes the resulting DDS.
-		std::filesystem::path ddsPath = INSTANCE(DDSCache)->GetCompressedTexture(path, isHdr);
+		std::filesystem::path ddsPath = INSTANCE(DDSCache)->GetCompressedTexture(path, isHdr, colorSpace);
 		UploadFromDDS(ddsPath, device, commandList);
 	}
 
-	Texture::Texture(std::wstring_view key, std::string_view name, const void* data, size_t size, std::wstring_view formatHint, bool isHdr, ID3D12Device* device, ID3D12GraphicsCommandList* commandList) : ResourceObject(key)
+	Texture::Texture(std::wstring_view key, std::string_view name, const void* data, size_t size, std::wstring_view formatHint, bool isHdr, TextureColorSpace colorSpace, ID3D12Device* device, ID3D12GraphicsCommandList* commandList) : ResourceObject(key)
 	{
 		m_name = std::string(name);
 
 		// Route the embedded bytes through the same texconv-backed DDS cache the file path uses, so
 		// embedded textures share the BC7/BC6H compression, caching, and upload path.
-		std::filesystem::path ddsPath = INSTANCE(DDSCache)->GetCompressedTexture(data, size, formatHint, isHdr);
+		std::filesystem::path ddsPath = INSTANCE(DDSCache)->GetCompressedTexture(data, size, formatHint, isHdr, colorSpace);
 		UploadFromDDS(ddsPath, device, commandList);
 	}
 

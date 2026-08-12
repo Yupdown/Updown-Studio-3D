@@ -26,7 +26,11 @@ namespace udsdx
 	public:
 		TextureLoader(ID3D12Device* device, ID3D12CommandQueue* commandQueue, ID3D12GraphicsCommandList* commandList);
 
+		// Assumes sRGB: extension dispatch has nowhere to carry a colour space.
 		std::unique_ptr<ResourceObject> Load(std::wstring_view path, const std::type_info* requestedType = nullptr) override;
+		// Explicit form used by Resource::LoadTexture. Not virtual -- colour space is a
+		// texture-specific concept and has no place in the shared loader interface.
+		std::unique_ptr<ResourceObject> LoadWithColorSpace(std::wstring_view path, TextureColorSpace colorSpace);
 	};
 
 	class ModelLoader : public ResourceLoader
@@ -68,6 +72,7 @@ namespace udsdx
 	};
 
 	class Material;
+	class Texture;
 
 	class Resource
 	{
@@ -103,6 +108,15 @@ namespace udsdx
 		// Creation-ordered; a material's position here is its GPU table index.
 		const std::vector<Material*>& GetMaterials() const { return m_materialOrder; }
 
+		// Colour-space-aware texture load. An sRGB and a linear view of the same file are two
+		// distinct GPU textures -- different BC7 variant, different DDS cache entry -- so they are
+		// cached under two distinct keys.
+		//
+		// Load<Texture>(path) is equivalent to LoadTexture(path, Srgb): almost everything loaded by
+		// name is a colour map. Data maps (normal, metallic-roughness, occlusion) MUST use the
+		// explicit form, or they are decoded as if they were colour.
+		Texture* LoadTexture(std::wstring_view path, TextureColorSpace colorSpace);
+
 		// Returns the directory that contains the running executable.
 		static std::filesystem::path GetExecutableDirectory();
 		// Lexically normalizes, lowercases, and converts a path to generic separators so it can
@@ -110,6 +124,10 @@ namespace udsdx
 		static std::wstring NormalizePath(std::wstring_view path);
 
 	private:
+		// Linear textures get a suffixed key so the sRGB key stays exactly the normalized path,
+		// keeping every existing entry and call site valid.
+		static std::wstring MakeTextureKey(std::wstring_view normalizedPath, TextureColorSpace colorSpace);
+
 		void InitializeLoaders(ID3D12Device* device, ID3D12CommandQueue* commandQueue, ID3D12GraphicsCommandList* commandList, ID3D12RootSignature* rootSignature);
 		void InitializeExtensionDictionary();
 		void InitializeIgnoreFiles();

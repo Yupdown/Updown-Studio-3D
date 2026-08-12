@@ -25,7 +25,7 @@ namespace udsdx
 		// hash. isHdr selects the compression format (BC6H_UF16 for HDR sources, BC7_UNORM
 		// otherwise). Throws std::runtime_error when the source cannot be read, texconv.exe is
 		// missing, or compression fails.
-		std::filesystem::path GetCompressedTexture(std::wstring_view sourcePath, bool isHdr);
+		std::filesystem::path GetCompressedTexture(std::wstring_view sourcePath, bool isHdr, TextureColorSpace colorSpace);
 
 		// Same as above but for an in-memory compressed image (e.g. a texture embedded inside a
 		// model file). 'data'/'size' point at the encoded bytes (PNG/JPG/etc.), 'formatHint' is the
@@ -33,12 +33,12 @@ namespace udsdx
 		// reads. The cache name is the content hash of the bytes, so identical embedded and on-disk
 		// images share a single cache entry. Throws std::runtime_error when texconv.exe is missing or
 		// compression fails.
-		std::filesystem::path GetCompressedTexture(const void* data, size_t size, std::wstring_view formatHint, bool isHdr);
+		std::filesystem::path GetCompressedTexture(const void* data, size_t size, std::wstring_view formatHint, bool isHdr, TextureColorSpace colorSpace);
 
 	private:
 		// Runs texconv to compress 'source' into 'ddsPath' (via a per-call temp directory named
 		// after 'name' so concurrent compressions of different textures never collide).
-		void RunTexconv(const std::filesystem::path& source, const std::filesystem::path& ddsPath, const std::wstring& name, bool isHdr);
+		void RunTexconv(const std::filesystem::path& source, const std::filesystem::path& ddsPath, const std::wstring& name, bool isHdr, TextureColorSpace colorSpace);
 
 	private:
 		std::filesystem::path m_cacheDir;    // <exe dir>/ddscache

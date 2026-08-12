@@ -72,7 +72,10 @@ namespace udsdx
 		static constexpr UINT NUM_GBUFFERS = 4;
 
 		static constexpr DXGI_FORMAT GBUFFER_FORMATS[NUM_GBUFFERS] = {
-			DXGI_FORMAT_R8G8B8A8_UNORM, // RGB: Albedo color
+			// _SRGB, not plain UNORM: shaders now write linear albedo (textures are decoded by the
+			// sampler), and 8 bits of linear would band badly in the darks. The ROP encodes on
+			// write and the sampler decodes on read, so the stored bits stay perceptually spaced.
+			DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, // RGB: Albedo color (linear values, sRGB-encoded storage)
 			DXGI_FORMAT_R10G10B10A2_UNORM, // RGB: View normal vector (UNORM encoded)
 			DXGI_FORMAT_R16G16_FLOAT, // RG: Screen-space UV motion vector delta
 			DXGI_FORMAT_R8G8_UNORM, // R: Metallic, G: Roughness
@@ -82,6 +85,10 @@ namespace udsdx
 			{ 0.0f, 0.0f, 0.0f, 0.0f },
 			{ 0.0f, 0.0f, 0.0f, 0.0f },
 			{ 0.0f, 0.0f, 0.0f, 0.0f },
+			// Roughness clears to 1, not 0: a zeroed row would clear the whole buffer to a perfect
+			// mirror. Matters only once something samples this target, but the value should not be
+			// wrong in the meantime.
+			{ 0.0f, 1.0f, 0.0f, 0.0f },
 		};
 
 		static constexpr DXGI_FORMAT DEPTH_FORMAT = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;

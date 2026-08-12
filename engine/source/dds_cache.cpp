@@ -7,6 +7,23 @@ namespace udsdx
 {
 	namespace
 	{
+		// Bump when the DDS a given source produces changes for reasons other than its bytes, so
+		// every stale cache entry is bypassed at once.
+		constexpr uint64_t kCacheKeyVersion = 2ULL;
+
+		// Folds everything besides the source bytes that decides what texconv emits into the cache
+		// name. Colour space above all: the same PNG legitimately needs both a BC7_UNORM and a
+		// BC7_UNORM_SRGB entry, and serving one where the other was asked for is invisible until
+		// the image is subtly wrong.
+		uint64_t SaltHash(uint64_t hash, bool isHdr, TextureColorSpace colorSpace)
+		{
+			constexpr uint64_t prime = 0x100000001b3ULL;
+			hash = (hash ^ kCacheKeyVersion) * prime;
+			hash = (hash ^ static_cast<uint64_t>(isHdr ? 1u : 0u)) * prime;
+			hash = (hash ^ static_cast<uint64_t>(colorSpace)) * prime;
+			return hash;
+		}
+
 		// Renders a 64-bit FNV-1a accumulator as 16 lowercase hex digits.
 		std::wstring HashToHex(uint64_t hash)
 		{
@@ -24,12 +41,14 @@ namespace udsdx
 		// digits. Returns an empty string if the file cannot be opened. A fixed algorithm (not
 		// std::hash, whose values are not guaranteed stable across runs or toolchains) so the cache
 		// file name survives rebuilds and compiler updates.
-		std::wstring HashFileContent(const std::filesystem::path& path)
+		// Returns 0 when the file cannot be opened; callers treat that as failure. (0 is not a
+		// reachable FNV-1a result for any real input, so it is safe as a sentinel.)
+		uint64_t HashFileContent(const std::filesystem::path& path)
 		{
 			std::ifstream file(path, std::ios::binary);
 			if (!file.is_open())
 			{
-				return {};
+				return 0ULL;
 			}
 
 			uint64_t hash = 0xcbf29ce484222325ULL; // FNV-1a 64-bit offset basis
@@ -45,12 +64,12 @@ namespace udsdx
 				}
 			}
 
-			return HashToHex(hash);
+			return hash;
 		}
 
 		// Same FNV-1a as HashFileContent, but over an in-memory buffer, so an embedded image and an
 		// identical loose file produce the same cache name.
-		std::wstring HashMemory(const void* data, size_t size)
+		uint64_t HashMemory(const void* data, size_t size)
 		{
 			uint64_t hash = 0xcbf29ce484222325ULL; // FNV-1a 64-bit offset basis
 			const unsigned char* bytes = static_cast<const unsigned char*>(data);
@@ -60,7 +79,7 @@ namespace udsdx
 				hash *= 0x100000001b3ULL; // FNV-1a 64-bit prime
 			}
 
-			return HashToHex(hash);
+			return hash;
 		}
 	}
 
@@ -78,7 +97,7 @@ namespace udsdx
 	{
 	}
 
-	std::filesystem::path DDSCache::GetCompressedTexture(std::wstring_view sourcePath, bool isHdr)
+	std::filesystem::path DDSCache::GetCompressedTexture(std::wstring_view sourcePath, bool isHdr, TextureColorSpace colorSpace)
 	{
 		if (!std::filesystem::exists(m_texconvPath))
 		{
@@ -91,23 +110,24 @@ namespace udsdx
 		// different name and forces a recompress, while identical content (even restored from an
 		// older copy with an older timestamp) reuses the existing entry. The previous content's DDS
 		// is left behind as an orphan; delete the ddscache folder to reclaim space.
-		std::wstring name = HashFileContent(source);
-		if (name.empty())
+		const uint64_t contentHash = HashFileContent(source);
+		if (contentHash == 0ULL)
 		{
 			throw std::runtime_error("Failed to read source texture for hashing: " + source.string());
 		}
+		std::wstring name = HashToHex(SaltHash(contentHash, isHdr, colorSpace));
 		std::filesystem::path ddsPath = m_cacheDir / (name + L".dds");
 
 		if (!std::filesystem::exists(ddsPath))
 		{
-			RunTexconv(source, ddsPath, name, isHdr);
+			RunTexconv(source, ddsPath, name, isHdr, colorSpace);
 			DebugConsole::Log("\tTexture compressed and cached: " + ddsPath.string());
 		}
 
 		return ddsPath;
 	}
 
-	std::filesystem::path DDSCache::GetCompressedTexture(const void* data, size_t size, std::wstring_view formatHint, bool isHdr)
+	std::filesystem::path DDSCache::GetCompressedTexture(const void* data, size_t size, std::wstring_view formatHint, bool isHdr, TextureColorSpace colorSpace)
 	{
 		if (!std::filesystem::exists(m_texconvPath))
 		{
@@ -119,7 +139,7 @@ namespace udsdx
 			throw std::runtime_error("Embedded texture has no data to compress.");
 		}
 
-		std::wstring name = HashMemory(data, size);
+		std::wstring name = HashToHex(SaltHash(HashMemory(data, size), isHdr, colorSpace));
 		std::filesystem::path ddsPath = m_cacheDir / (name + L".dds");
 
 		if (!std::filesystem::exists(ddsPath))
@@ -141,7 +161,7 @@ namespace udsdx
 
 			try
 			{
-				RunTexconv(tempSource, ddsPath, name, isHdr);
+				RunTexconv(tempSource, ddsPath, name, isHdr, colorSpace);
 			}
 			catch (...)
 			{
@@ -155,7 +175,7 @@ namespace udsdx
 		return ddsPath;
 	}
 
-	void DDSCache::RunTexconv(const std::filesystem::path& source, const std::filesystem::path& ddsPath, const std::wstring& name, bool isHdr)
+	void DDSCache::RunTexconv(const std::filesystem::path& source, const std::filesystem::path& ddsPath, const std::wstring& name, bool isHdr, TextureColorSpace colorSpace)
 	{
 		std::filesystem::path sourceAbsolute = std::filesystem::absolute(source);
 		std::filesystem::path tempDir = m_cacheDir / (name + L".tmp");
@@ -165,14 +185,22 @@ namespace udsdx
 		std::filesystem::create_directories(tempDir, ec);
 
 		// texconv only accelerates BC7/BC6H on the GPU; BC1-BC5 stay on the CPU. HDR sources keep
-		// the HDR-friendly BC6H format, everything else uses BC7.
-		const wchar_t* format = isHdr ? L"BC6H_UF16" : L"BC7_UNORM";
+		// the HDR-friendly BC6H format (which has no sRGB variant and is always linear),
+		// everything else uses BC7 in the variant the colour space calls for.
+		const bool srgb = !isHdr && colorSpace == TextureColorSpace::Srgb;
+		const wchar_t* format = isHdr ? L"BC6H_UF16" : (srgb ? L"BC7_UNORM_SRGB" : L"BC7_UNORM");
 
-		// texconv.exe -nologo -y -m 0 -f <format> -gpu 0 -o "<tempDir>" "<source>"
+		// texconv.exe -nologo -y -m 0 -f <format> [-srgb] -gpu 0 -o "<tempDir>" "<source>"
 		std::wstring commandLine;
 		commandLine += L"\"" + m_texconvPath.wstring() + L"\"";
 		commandLine += L" -nologo -y -m 0 -f ";
 		commandLine += format;
+		if (srgb)
+		{
+			// Not optional alongside the _SRGB format: -m 0 builds the mip chain, and without
+			// -srgb that averaging happens on sRGB-encoded values, which darkens every mip.
+			commandLine += L" -srgb";
+		}
 		commandLine += L" -gpu 0";
 		commandLine += L" -o \"" + tempDir.wstring() + L"\"";
 		commandLine += L" \"" + sourceAbsolute.wstring() + L"\"";

@@ -218,19 +218,19 @@ namespace udsdx
 		// type (base colour under both DIFFUSE and BASE_COLOR, metallic-roughness under
 		// METALNESS, DIFFUSE_ROUGHNESS and GLTF_METALLIC_ROUGHNESS), and the trailing entries
 		// cover the conventions other importers use.
-		struct Slot { MaterialTextureSlot Index; aiTextureType Types[3]; };
+		struct Slot { MaterialTextureSlot Index; TextureColorSpace ColorSpace; aiTextureType Types[3]; };
 		const Slot slots[] = {
-			{ MaterialTextureSlot::BaseColor,
+			{ MaterialTextureSlot::BaseColor, TextureColorSpace::Srgb,
 				{ aiTextureType_BASE_COLOR, aiTextureType_DIFFUSE, aiTextureType_NONE } },
-			{ MaterialTextureSlot::MetallicRoughness,
+			{ MaterialTextureSlot::MetallicRoughness, TextureColorSpace::Linear,
 				{ aiTextureType_GLTF_METALLIC_ROUGHNESS, aiTextureType_METALNESS, aiTextureType_DIFFUSE_ROUGHNESS } },
-			{ MaterialTextureSlot::Normal,
+			{ MaterialTextureSlot::Normal, TextureColorSpace::Linear,
 				// FBX exporters routinely park the normal map in HEIGHT.
 				{ aiTextureType_NORMALS, aiTextureType_HEIGHT, aiTextureType_NONE } },
-			{ MaterialTextureSlot::Occlusion,
+			{ MaterialTextureSlot::Occlusion, TextureColorSpace::Linear,
 				// glTF2 maps occlusionTexture to LIGHTMAP, never to AMBIENT_OCCLUSION.
 				{ aiTextureType_LIGHTMAP, aiTextureType_AMBIENT_OCCLUSION, aiTextureType_NONE } },
-			{ MaterialTextureSlot::Emissive,
+			{ MaterialTextureSlot::Emissive, TextureColorSpace::Srgb,
 				{ aiTextureType_EMISSIVE, aiTextureType_EMISSION_COLOR, aiTextureType_NONE } },
 		};
 
@@ -260,7 +260,7 @@ namespace udsdx
 			if (raw != nullptr && raw[0] == '*')
 			{
 				// Embedded texture ("*N"): defer wiring until the Texture exists (resolve time).
-				const int embeddedIndex = RegisterEmbeddedTexture(scene, raw);
+				const int embeddedIndex = RegisterEmbeddedTexture(scene, raw, slot.ColorSpace);
 				if (embeddedIndex >= 0)
 				{
 					m_pendingEmbedded.push_back({ static_cast<int>(materialIndex), slot.Index, embeddedIndex });
@@ -274,7 +274,7 @@ namespace udsdx
 			std::filesystem::path resolved = resourcePath.parent_path() / std::filesystem::path(raw);
 			if (std::filesystem::exists(resolved))
 			{
-				Texture* texture = INSTANCE(Resource)->Load<Texture>(Resource::NormalizePath(resolved.wstring()));
+				Texture* texture = INSTANCE(Resource)->LoadTexture(resolved.wstring(), slot.ColorSpace);
 				if (texture != nullptr)
 				{
 					material.SetSourceTexture(texture, slot.Index);
@@ -400,7 +400,7 @@ namespace udsdx
 		}
 	}
 
-	int ModelAsset::RegisterEmbeddedTexture(const aiScene* scene, const char* assimpPath)
+	int ModelAsset::RegisterEmbeddedTexture(const aiScene* scene, const char* assimpPath, TextureColorSpace colorSpace)
 	{
 		const aiTexture* embedded = scene->GetEmbeddedTexture(assimpPath);
 		if (embedded == nullptr)
@@ -416,8 +416,11 @@ namespace udsdx
 			return -1;
 		}
 
+		// Keyed on the colour space as well as the scene index: one image referenced from both a
+		// colour and a data slot needs two GPU textures, compressed as different BC7 variants.
 		const int sceneIndex = std::atoi(assimpPath + 1);
-		auto iter = m_embeddedIndexMap.find(sceneIndex);
+		const int cacheKey = (sceneIndex << 1) | (colorSpace == TextureColorSpace::Srgb ? 1 : 0);
+		auto iter = m_embeddedIndexMap.find(cacheKey);
 		if (iter != m_embeddedIndexMap.end())
 		{
 			return iter->second;
@@ -429,6 +432,7 @@ namespace udsdx
 		std::string hint = embedded->achFormatHint;
 		blob.FormatHint = std::wstring(hint.begin(), hint.end());
 		blob.IsHdr = (hint == "hdr");
+		blob.ColorSpace = colorSpace;
 
 		const size_t byteSize = embedded->mWidth; // for compressed textures mWidth is the byte count
 		const uint8_t* bytes = reinterpret_cast<const uint8_t*>(embedded->pcData);
@@ -436,7 +440,7 @@ namespace udsdx
 
 		const int listIndex = static_cast<int>(m_embeddedTextureBlobs.size());
 		m_embeddedTextureBlobs.emplace_back(std::move(blob));
-		m_embeddedIndexMap.emplace(sceneIndex, listIndex);
+		m_embeddedIndexMap.emplace(cacheKey, listIndex);
 		return listIndex;
 	}
 
@@ -451,7 +455,7 @@ namespace udsdx
 
 			std::wstring key = L"embedded:" + std::wstring(blob.Name.begin(), blob.Name.end()) + L"*" + std::to_wstring(i);
 			auto texture = std::make_unique<Texture>(
-				key, blob.Name, blob.Data.data(), blob.Data.size(), blob.FormatHint, blob.IsHdr, device, commandList);
+				key, blob.Name, blob.Data.data(), blob.Data.size(), blob.FormatHint, blob.IsHdr, blob.ColorSpace, device, commandList);
 			INSTANCE(Core)->EnsureTextureShaderResourceView(texture.get());
 			m_embeddedTextures.emplace_back(std::move(texture));
 		}

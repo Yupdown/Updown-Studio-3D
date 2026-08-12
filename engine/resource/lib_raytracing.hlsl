@@ -64,9 +64,9 @@ void ClosestHitSurface(inout SurfacePayload payload, in BuiltInTriangleIntersect
     float3 albedo = info.BaseColor.rgb;
     if (info.AlbedoTexIndex != INVALID_SRV_INDEX)
     {
-        // Linearise the same way the deferred path does: color.hlsl writes the raw texture into an
-        // R8G8B8A8_UNORM G-buffer and PSDeferredDefault applies pow(rgb, 2.2) before lighting.
-        albedo *= pow(SampleAlbedo(info, uv).rgb, 2.2f);
+        // No pow(): base colour textures are compressed as BC7_UNORM_SRGB, so the sampler returns
+        // linear values already.
+        albedo *= SampleAlbedo(info, uv).rgb;
     }
 
     payload.Albedo = albedo;

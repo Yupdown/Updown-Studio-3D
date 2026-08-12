@@ -72,6 +72,7 @@ namespace udsdx
 			std::wstring FormatHint;
 			std::vector<uint8_t> Data;
 			bool IsHdr = false;
+			TextureColorSpace ColorSpace = TextureColorSpace::Srgb;
 		};
 		// A material slot waiting on an embedded texture that does not exist until resolve time.
 		struct PendingEmbedded
@@ -94,7 +95,7 @@ namespace udsdx
 		// Logs the glTF features this engine cannot express (a second UV set, KHR_texture_transform)
 		// so an asset relying on them is not silently misrendered.
 		static void WarnUnsupportedTextureMapping(const aiMaterial* aimaterial, aiTextureType type, const Material& material);
-		int RegisterEmbeddedTexture(const aiScene* scene, const char* assimpPath);
+		int RegisterEmbeddedTexture(const aiScene* scene, const char* assimpPath, TextureColorSpace colorSpace);
 		void ResolveEmbeddedTextures(ID3D12Device* device, ID3D12GraphicsCommandList* commandList);
 		std::shared_ptr<SceneObject> InstantiateNode(int nodeIndex, Shader* shader, bool enableRaytracing) const;
 		// Resource-owned material for a submesh, or the default material when the index is absent.
