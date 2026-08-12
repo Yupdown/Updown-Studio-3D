@@ -154,7 +154,13 @@ SurfacePayload TraceSurface(RayDesc ray)
 
 // Sun visibility with a cone-sampled direction, giving soft shadows whose penumbra widens with
 // distance from the occluder.
-float3 DirectSun(float3 position, float3 normal, float3 albedo, inout uint rng)
+//
+// V points from the surface toward the viewer. Cone sampling without a pdf divide stays unbiased
+// under any BRDF: gSunIntensity is the total irradiance arriving from the cone, and the expectation
+// of f_r(l) * E * cos is the integral being estimated. A BRDF that varies sharply across the cone
+// costs variance, not correctness, and BRDF_MIN_ROUGHNESS is what keeps that variance bounded.
+float3 DirectSun(float3 position, float3 normal, float3 V, float3 baseColor, SurfaceMaterial m,
+                 inout uint rng)
 {
     float3 toSun = SampleCone(NextFloat2(rng), -gDirLight, gSunCosHalfAngle);
     float ndotl = dot(normal, toSun);
@@ -193,12 +199,22 @@ float3 DirectSun(float3 position, float3 normal, float3 albedo, inout uint rng)
     }
 
     // gSunIntensity is the irradiance a head-on surface receives from the cone, so E is the
-    // irradiance arriving here and the BRDF supplies the 1/pi. The indirect bounce below has always
-    // been correct in these units -- the cosine pdf cancels albedo/pi exactly -- so the direct term
-    // was the one place the renderer was pi times hot, and this is that inconsistency being fixed
-    // rather than a brightness change.
+    // irradiance arriving here and the BRDF supplies the 1/pi.
     float3 E = gSunColor.rgb * gSunIntensity * ndotl;
-    return DiffuseBRDF(albedo) * E;
+
+    float3 specular = 0.0f.xxx;
+    float NoV = dot(normal, V);
+    if (NoV > 0.0f)
+    {
+        // Safe to normalise: NoV > 0 and ndotl > 0 give dot(normal, V + toSun) > 0, so the sum
+        // cannot be the zero vector.
+        float3 H = normalize(V + toSun);
+        float3 f0 = SpecularF0(baseColor, m.Metallic, m.DielectricF0);
+        specular = SpecularBRDF(NoV, ndotl, saturate(dot(normal, H)), saturate(dot(V, H)),
+                                f0, RoughnessToAlpha(m.Roughness));
+    }
+
+    return E * (DiffuseBRDF(DiffuseAlbedo(baseColor, m.Metallic)) + specular);
 }
 
 // Emits the direct term (sun + primary sky + fog in-scatter) and the indirect term (the one
@@ -231,6 +247,9 @@ void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 ind
     // and a zeroed indirect stays zero through the spatial filter.
     if (gDebugMode == RT_DEBUG_ALBEDO)
     {
+        // Base colour, deliberately NOT the diffuse albedo gAlbedoOut now carries. This view exists
+        // to answer "what does the material say", and metals reading as black would hide the very
+        // texture an inspector is looking for.
         directOut = primary.Albedo;
         return;
     }
@@ -251,11 +270,17 @@ void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 ind
         return;
     }
 
+    SurfaceMaterial primaryMaterial = UnpackSurfaceMaterial(primary.MatPack0, primary.MatPack1);
+    float3 primaryV = -ray.Direction;
+
     float3 position = ray.Origin + ray.Direction * primary.HitT;
     // Emission rides the direct channel, which is never albedo-demodulated. Putting it in the
     // indirect channel instead would divide it by the primary albedo and blow up wherever that is
-    // near zero -- exactly the surfaces an emissive material tends to have.
-    float3 direct = DirectSun(position, primary.Normal, primary.Albedo, rng) + primary.Emission;
+    // near zero -- exactly the surfaces an emissive material tends to have. The sun's specular lobe
+    // rides it for the same reason: it is view-dependent, so demodulating it by a view-independent
+    // albedo would be wrong, and it is sharp where the filtered channel is smooth.
+    float3 direct = DirectSun(position, primary.Normal, primaryV, primary.Albedo, primaryMaterial, rng)
+                  + primary.Emission;
 
     // One diffuse indirect bounce. This is the radiosity term: light from the directional light
     // that reached another surface first and scattered from it onto this one.
@@ -281,7 +306,11 @@ void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 ind
         // A bounce hit's emission genuinely is light arriving at the shading point, so here it
         // belongs in the demodulated channel: the resolve re-multiplies by the primary albedo,
         // which is the correct transport factor.
-        incoming = DirectSun(bouncePosition, secondary.Normal, secondary.Albedo, rng)
+        //
+        // The bounce surface gets the full GGX too, because its material rides the payload -- so a
+        // diffuse bounce landing on metal reflects the sun instead of behaving like a dull diffuser.
+        incoming = DirectSun(bouncePosition, secondary.Normal, -bounce.Direction, secondary.Albedo,
+                             UnpackSurfaceMaterial(secondary.MatPack0, secondary.MatPack1), rng)
                  + secondary.Emission;
     }
 
@@ -293,8 +322,9 @@ void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 ind
     }
     if (gDebugMode == RT_DEBUG_INDIRECT)
     {
-        // Cosine pdf and the 1/pi Lambert term cancel, leaving a plain albedo multiply.
-        directOut = primary.Albedo * incoming;
+        // Cosine pdf and the 1/pi Lambert term cancel, leaving a plain albedo multiply -- of the
+        // DIFFUSE albedo, since metals have no diffuse lobe to gather into.
+        directOut = DiffuseAlbedo(primary.Albedo, primaryMaterial.Metallic) * incoming;
         return;
     }
 
@@ -369,6 +399,7 @@ void RayGenMain()
     float2 guideOffset = gJitterGuideRay != 0u ? (0.5f + gJitterOffset) : 0.5f.xx;
     RayDesc guideRay = BuildPrimaryRay((float2(pixel) + guideOffset) / float2(dimensions));
     SurfacePayload guide = TraceSurface(guideRay);
+    SurfaceMaterial guideMaterial = UnpackSurfaceMaterial(guide.MatPack0, guide.MatPack1);
 
     float3 directSum = 0.0f;
     float3 indirectSum = 0.0f;
@@ -393,7 +424,16 @@ void RayGenMain()
     float3 indirect = indirectSum * invSpp;
     // From the deterministic centre ray, like the rest of the guide data: no jitter, so the
     // re-modulated texture never shimmers.
-    float3 albedo = guide.HitT < 0.0f ? 1.0f.xxx : guide.Albedo;
+    //
+    // DIFFUSE albedo, not base colour. The indirect channel holds incident radiance gathered by a
+    // cosine-sampled bounce, and the diffuse lobe is what gathers it -- so this is the factor that
+    // makes `direct + indirect * albedo` exact rather than approximately right. It is also what
+    // kBufferTypeAlbedo means to DLSS Ray Reconstruction, so one change satisfies both. Metals go
+    // to zero here, which is correct: their indirect light arrives through the specular lobe on the
+    // direct channel instead.
+    float3 albedo = guide.HitT < 0.0f
+        ? 1.0f.xxx
+        : DiffuseAlbedo(guide.Albedo, guideMaterial.Metallic);
 
     gRadianceOut[pixel] = float4(direct, guide.HitT < 0.0f ? 0.0f : 1.0f);
     gIndirectOut[pixel] = float4(indirect, 0.0f);
@@ -408,8 +448,6 @@ void RayGenMain()
     // Ray Reconstruction's specular guide. EnvBRDFApprox is the split-sum term a baked LUT would
     // hold, which is exactly what DLSS-RR's reference EnvBRDFApprox2 computes -- so the raster IBL,
     // this guide and the reference all agree by construction rather than by coincidence.
-    SurfaceMaterial guideMaterial = UnpackSurfaceMaterial(guide.MatPack0, guide.MatPack1);
-
     if (guide.HitT < 0.0f)
     {
         // Sky: only camera rotation moves it, and there is no surface to validate against.
