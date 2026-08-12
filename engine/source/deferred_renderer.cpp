@@ -30,6 +30,7 @@ namespace udsdx
 		BuildObjectRootSignature();
 		BuildDeferredRootSignature();
 		BuildSkyboxPipelineState();
+		BuildDummyEnvironmentCube();
 
 		// Render passes owned by the renderer.
 		m_shadowMap = std::make_unique<ShadowMap>(m_renderOptions.ShadowMapSize, m_renderOptions.ShadowMapSize, m_device);
@@ -129,6 +130,11 @@ namespace udsdx
 		m_stencilBufferCpuSrv = descriptorParam.SrvCpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
 		m_stencilBufferGpuSrv = descriptorParam.SrvGpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
 
+		descriptorParam.SrvCpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
+		descriptorParam.SrvGpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
+
+		m_dummyEnvironmentCubeCpuSrv = descriptorParam.SrvCpuHandle;
+		m_dummyEnvironmentCubeGpuSrv = descriptorParam.SrvGpuHandle;
 		descriptorParam.SrvCpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
 		descriptorParam.SrvGpuHandle.Offset(1, descriptorParam.CbvSrvUavDescriptorSize);
 
@@ -392,6 +398,28 @@ namespace udsdx
 		m_skyboxVelocityPipelineState->SetName(L"DeferredRenderer::SkyboxVelocityPass");
 	}
 
+	void DeferredRenderer::BuildDummyEnvironmentCube()
+	{
+		D3D12_RESOURCE_DESC desc = {};
+		desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+		desc.Width = 1;
+		desc.Height = 1;
+		desc.DepthOrArraySize = 6;
+		desc.MipLevels = 1;
+		desc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+		desc.SampleDesc.Count = 1;
+		desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+		desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+		// Created directly in a read state rather than left in COMMON: nothing ever writes it, so
+		// there is no transition to hang the promotion off, and GENERIC_READ keeps the debug layer
+		// quiet about a resource sampled straight out of its initial state.
+		const CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
+		ThrowIfFailed(m_device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &desc,
+			D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(m_dummyEnvironmentCube.GetAddressOf())));
+		m_dummyEnvironmentCube->SetName(L"DeferredRenderer::DummyEnvironmentCube");
+	}
+
     void DeferredRenderer::RebuildDescriptors()
 	{
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
@@ -438,6 +466,18 @@ namespace udsdx
 		srvDesc.Format = DXGI_FORMAT_X32_TYPELESS_G8X24_UINT;
 		srvDesc.Texture2D.PlaneSlice = 1;
 		m_device->CreateShaderResourceView(m_depthBuffer.Get(), &srvDesc, m_stencilBufferCpuSrv);
+
+		if (m_dummyEnvironmentCube != nullptr && m_dummyEnvironmentCubeCpuSrv.ptr != 0)
+		{
+			D3D12_SHADER_RESOURCE_VIEW_DESC cubeSrvDesc = {};
+			cubeSrvDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+			cubeSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
+			cubeSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+			cubeSrvDesc.TextureCube.MostDetailedMip = 0;
+			cubeSrvDesc.TextureCube.MipLevels = 1;
+			cubeSrvDesc.TextureCube.ResourceMinLODClamp = 0.0f;
+			m_device->CreateShaderResourceView(m_dummyEnvironmentCube.Get(), &cubeSrvDesc, m_dummyEnvironmentCubeCpuSrv);
+		}
 
 		// Create descriptor to mip level 0 of entire resource using the format of the resource.
 		D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc;
@@ -597,15 +637,15 @@ namespace udsdx
 			pCommandList->SetGraphicsRootDescriptorTable(7, renderParam.RenderEnvironmentMap->GetIrradianceMapSrvGpu());
 			pCommandList->SetGraphicsRootDescriptorTable(8, renderParam.RenderEnvironmentMap->GetPrefilterMapSrvGpu());
 		}
-		else if (renderParam.RenderEnvironmentMap != nullptr && renderParam.RenderEnvironmentMap->HasValidCubeMap())
-		{
-			pCommandList->SetGraphicsRootDescriptorTable(7, renderParam.RenderEnvironmentMap->GetCubeMapSrvGpu());
-			pCommandList->SetGraphicsRootDescriptorTable(8, renderParam.RenderEnvironmentMap->GetCubeMapSrvGpu());
-		}
 		else
 		{
-			pCommandList->SetGraphicsRootDescriptorTable(7, m_depthBufferGpuSrv);
-			pCommandList->SetGraphicsRootDescriptorTable(8, m_depthBufferGpuSrv);
+			// One fallback, not two. The raw environment cube used to be bound here when the bake
+			// had not produced its maps yet, but the lighting pass reads t7 as irradiance, and
+			// unconvolved radiance in that slot is not a dimmer approximation -- it is a different
+			// quantity. gHasEnvironmentMap is 0 in this branch, so these are never sampled; they
+			// exist only so the bound SRV dimension matches the TextureCube declaration.
+			pCommandList->SetGraphicsRootDescriptorTable(7, m_dummyEnvironmentCubeGpuSrv);
+			pCommandList->SetGraphicsRootDescriptorTable(8, m_dummyEnvironmentCubeGpuSrv);
 		}
 
 		// clear a render target

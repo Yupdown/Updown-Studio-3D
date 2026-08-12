@@ -24,6 +24,7 @@
 #include "post_process_outline.h"
 #include "raytracing_renderer.h"
 #include "light_directional.h"
+#include "environment_map.h"
 #include "streamline.h"
 #include "material_table.h"
 
@@ -899,6 +900,14 @@ namespace udsdx
 		passConstants.FogDensity = m_deferredRenderer->GetRenderOptionsRef().FogDensity;
 		passConstants.FogHeightFalloff = m_deferredRenderer->GetRenderOptionsRef().FogHeightFalloff;
 		passConstants.FogDistanceStart = m_deferredRenderer->GetRenderOptionsRef().FogDistanceStart;
+
+		// Safe to read here: EnvironmentMap::PostUpdate enqueues itself, and the scene's PostUpdate
+		// has already run by this point in the frame. HasValidIblMaps, not HasValidCubeMap -- the
+		// lighting pass reads t7 as irradiance, and a raw cube there is the wrong quantity.
+		const auto& environmentMaps = m_scene->GetRenderEnvironmentMaps();
+		const EnvironmentMap* environmentMap = environmentMaps.empty() ? nullptr : environmentMaps.front();
+		passConstants.HasEnvironmentMap =
+			(environmentMap != nullptr && environmentMap->HasValidIblMaps()) ? 1u : 0u;
 
 		auto frameResource = CurrentFrameResource();
 		frameResource->GetObjectCB()->CopyData(0, passConstants);

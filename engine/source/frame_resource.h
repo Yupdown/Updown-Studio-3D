@@ -56,6 +56,11 @@ namespace udsdx
 		float FogDensity = 0.0f;
 		float FogHeightFalloff = 0.0f;
 		float FogDistanceStart = 0.0f;
+		// Whether t7/t8 hold real irradiance and prefilter cubes. Slots into the 4 bytes that were
+		// already padding at offset 60, so the HLSL packing is unchanged. Must come from
+		// HasValidIblMaps: the cube-only fallback binds the raw environment cube to both slots, and
+		// treating that as an irradiance map would light the scene with unconvolved radiance.
+		UINT HasEnvironmentMap = 0;
 	};
 
 	// Mirrors cbRaytracing in inc_raytracing.hlsl. Every group below is padded to a 16-byte

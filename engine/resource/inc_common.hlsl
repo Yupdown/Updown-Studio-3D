@@ -279,13 +279,6 @@ void ShadowPS(VertexOut pin)
 
 #endif
 
-float SpecularValue(float posW, float3 normalW)
-{
-	float3 R = reflect(gDirLight, normalW);
-	float spec = pow(max(0.0f, dot(R, normalize(gEyePosW.xyz - posW))), 8.0f);
-	return spec;
-}
-
 // tangentW.w is the bitangent handedness: without it the bitangent is inverted wherever the UV
 // island is mirrored, and the surface lights backwards there.
 float3 NormalSampleToWorldSpace(float3 normalSample, float3 normalW, float4 tangentW)
@@ -370,6 +363,8 @@ cbuffer cbPerFrame : register(b2)
 	float gFogDensity;
 	float gFogHeightFalloff;
 	float gFogDistanceStart;
+	// 0 means t7/t8 hold a dimension-correct stand-in, not real data -- do not sample them.
+	uint gHasEnvironmentMap;
 };
 
 // Nonnumeric values cannot be added to a cbuffer.
@@ -380,6 +375,11 @@ Texture2D		gBuffer4    : register(t3);
 Texture2DArray	gShadowMap   : register(t4);
 Texture2D		gSSAOMap	: register(t5);
 Texture2D		gBufferDSV  : register(t6);
+// Baked IBL. The irradiance cube stores E/pi, so the Lambert ambient term is a plain multiply by
+// the diffuse albedo. The prefilter cube's mip N holds roughness N/(mips-1), which is the exact
+// inverse of the mapping EnvironmentMap::GeneratePrefilterMap bakes with.
+TextureCube		gIrradianceMap  : register(t7);
+TextureCube		gPrefilterMap   : register(t8);
 
 SamplerState gsamPointClamp : register(s0);
 SamplerState gsamLinearClamp : register(s1);
@@ -498,24 +498,33 @@ float ShadowValue(float4 posW, float3 normalW, float bias = 0.0f)
 
 static const float gamma = 2.2f;
 
-float3 AmbientLight(VertexOut pin)
+// Ambient irradiance over pi, in the same units the irradiance cube stores. Without a baked
+// environment this is the flat sky colour the renderer has always used -- numerically the constant
+// AmbientLight() returned, and the same one SampleSky() falls back to in inc_raytracing.hlsl, so
+// the two renderers still agree in an unlit scene.
+float3 AmbientIrradianceOverPi(float3 normalW)
 {
-	// Sky color. #133771
-	float3 skyColor = pow(float3(0.357f, 0.404f, 0.467f), gamma);
-	float aoFactor = gSSAOMap.Sample(gsamPointClamp, pin.TexC).r;
-
-	return skyColor.rgb * aoFactor;
+	if (gHasEnvironmentMap == 0u)
+	{
+		// Sky color. #133771
+		return pow(float3(0.357f, 0.404f, 0.467f), gamma);
+	}
+	return gIrradianceMap.Sample(gsamLinearWrap, normalW).rgb;
 }
 
-float3 DiffuseLight(VertexOut pin)
+// Prefiltered radiance along the reflection vector. mip = roughness * (mips - 1) inverts the
+// mapping the bake used, so a roughness read here lands on the mip baked for it.
+float3 PrefilteredRadiance(float3 reflectionW, float roughness)
 {
-	float3 normalV = normalize(gBuffer2.Sample(gsamPointClamp, pin.TexC).xyz * 2.0f - 1.0f);
-	float3 normalW = normalize(mul(normalV, transpose((float3x3)gView)));
+	if (gHasEnvironmentMap == 0u)
+	{
+		return pow(float3(0.357f, 0.404f, 0.467f), gamma);
+	}
 
-	float lambertian = max(dot(normalW, -gDirLight), 0.0);
-	// gLightIntensity is irradiance on a head-on surface, so this is E and the caller supplies the
-	// BRDF's 1/pi -- the same convention DirectSun uses in lib_raytracing.hlsl.
-	return gLightColor.rgb * lambertian * gLightIntensity;
+	uint width, height, mipLevels;
+	gPrefilterMap.GetDimensions(0u, width, height, mipLevels);
+	float mip = roughness * float(max(mipLevels, 1u) - 1u);
+	return gPrefilterMap.SampleLevel(gsamLinearWrap, reflectionW, mip).rgb;
 }
 
 float3 ApplyFog(float3 col, float3 worldPos)
@@ -558,15 +567,47 @@ float4 PSDeferredDefault(VertexOut pin) : SV_Target
 	PosW /= PosW.w;
 
 	// No manual linearization: the albedo target is _SRGB, so the sampler already decoded it.
-	float4 gBuffer1Color = gBuffer1.Sample(gsamPointClamp, pin.TexC);
+	float3 baseColor = gBuffer1.Sample(gsamPointClamp, pin.TexC).rgb;
+	float2 metalRough = gBuffer4.Sample(gsamPointClamp, pin.TexC).rg;
 
-	// Shadowing is a visibility factor, so it multiplies the light. min() capped every lit surface
-	// at the shadow term's 1.0 however bright the light was, and being a scalar-vs-vector min it
-	// clipped per channel, tinting shadows under a coloured sun.
-	float3 albedo = gBuffer1Color.rgb;
-	float3 sun = ShadowValue(PosW, normalW) * DiffuseBRDF(albedo) * DiffuseLight(pin);
-	float3 fColor = AmbientLight(pin) * albedo + sun;
-	fColor = ApplyFog(fColor, PosW.xyz);
+	float metallic = metalRough.r;
+	float roughness = ClampRoughness(metalRough.g);
+	float alpha = RoughnessToAlpha(roughness);
+	float3 diffuseAlbedo = DiffuseAlbedo(baseColor, metallic);
+	// Fixed 0.04 rather than the material's IOR: gBuffer4 is R8G8 and has nowhere to put F0, so
+	// dielectrics with Ior != 1.5 disagree with the raytracer until that target is widened.
+	float3 f0 = SpecularF0(baseColor, metallic, 0.04f);
+
+	float3 V = normalize(gEyePosW.xyz - PosW.xyz);
+	float NoV = saturate(dot(normalW, V));
+	float ao = gSSAOMap.Sample(gsamPointClamp, pin.TexC).r;
+
+	// Direct sun. Shadowing is a visibility factor, so it multiplies the light; the min() this
+	// replaced capped every lit surface at the shadow term's 1.0 however bright the light was, and
+	// being a scalar-vs-vector min it clipped per channel, tinting shadows under a coloured sun.
+	float3 toLight = -gDirLight;
+	float NoL = saturate(dot(normalW, toLight));
+	float3 sun = 0.0f.xxx;
+	if (NoL > 0.0f && NoV > 0.0f)
+	{
+		// NoL > 0 and NoV > 0 keep V + toLight away from the zero vector.
+		float3 H = normalize(V + toLight);
+		float3 E = gLightColor.rgb * gLightIntensity * NoL * ShadowValue(PosW, normalW);
+		sun = E * (DiffuseBRDF(diffuseAlbedo)
+			+ SpecularBRDF(NoV, NoL, saturate(dot(normalW, H)), saturate(dot(V, H)), f0, alpha));
+	}
+
+	// Image-based ambient. The irradiance cube stores E/pi, so the diffuse term is a plain multiply
+	// and the split-sum specular uses the analytic EnvBRDFApprox -- the same function the raytracer
+	// writes into its DLSS specular-albedo guide, so the two cannot disagree about it.
+	float3 ambient = diffuseAlbedo * AmbientIrradianceOverPi(normalW) * ao
+		+ PrefilteredRadiance(reflect(-V, normalW), roughness) * EnvBRDFApprox(f0, roughness, NoV) * ao;
+
+	// "Matches the raytracer" is NOT the bar here, and cannot be: occlusion is screen-space here and
+	// a traced bounce there, the split sum assumes N=V=R, PCSS uses a 64-texel light width rather
+	// than the sun's angular diameter, the prefilter cube is not the source mip chain, and this path
+	// has no multi-bounce at all. Agreement on the DIRECT sun term is the bar.
+	float3 fColor = ApplyFog(sun + ambient, PosW.xyz);
 	return float4(fColor, 1.0f);
 }
 

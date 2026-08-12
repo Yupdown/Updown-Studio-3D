@@ -28,6 +28,7 @@ namespace udsdx
 		void BuildAllDescriptors(DescriptorParam& descriptorParam);
 		void BuildObjectRootSignature();
 		void BuildDeferredRootSignature();
+		void BuildDummyEnvironmentCube();
 		void RebuildDescriptors();
 		void BuildResources();
 		void BuildSkyboxPipelineState();
@@ -132,6 +133,14 @@ namespace udsdx
 		CD3DX12_CPU_DESCRIPTOR_HANDLE m_targetViewCpuRtv;
 		CD3DX12_CPU_DESCRIPTOR_HANDLE m_targetViewCpuSrv;
 		CD3DX12_GPU_DESCRIPTOR_HANDLE m_targetViewGpuSrv;
+
+		// 1x1x6 stand-in bound to t7/t8 when the scene has no baked IBL. The lighting shader
+		// declares those slots as TextureCube, and binding a Texture2D there -- as the fallback used
+		// to, by reusing the depth SRV -- is an SRV dimension mismatch. Its contents are never read:
+		// gHasEnvironmentMap gates every sample, exactly as the raytracer's dummy cube works.
+		ComPtr<ID3D12Resource> m_dummyEnvironmentCube;
+		CD3DX12_CPU_DESCRIPTOR_HANDLE m_dummyEnvironmentCubeCpuSrv;
+		CD3DX12_GPU_DESCRIPTOR_HANDLE m_dummyEnvironmentCubeGpuSrv;
 
 		CD3DX12_CPU_DESCRIPTOR_HANDLE m_depthBufferCpuSrv;
 		CD3DX12_GPU_DESCRIPTOR_HANDLE m_depthBufferGpuSrv;
