@@ -1,6 +1,7 @@
 #pragma once
 
 #include "pch.h"
+#include "material_gpu.h"
 
 namespace udsdx
 {
@@ -10,11 +11,11 @@ namespace udsdx
 		Matrix4x4 PrevWorld = Matrix4x4::Identity;
 	};
 
-	// Per-material root constants (passed directly in the root signature, not a CBV).
+	// Per-material root constant (passed directly in the root signature, not a CBV). Everything
+	// that used to live here now lives in the MaterialTable record this indexes.
 	struct MaterialConstants
 	{
-		UINT SamplerMode = 2;
-		UINT MainTexIndex = 0; // bindless SRV heap index of the main texture
+		UINT MaterialIndex = DefaultMaterialIndex;
 	};
 
 	struct CameraConstants

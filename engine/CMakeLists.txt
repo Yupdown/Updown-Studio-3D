@@ -24,6 +24,7 @@ set(ENGINE_SOURCES
     source/input.cpp
     source/light_directional.cpp
     source/material.cpp
+    source/material_table.cpp
     source/mesh.cpp
     source/mesh_base.cpp
     source/model_asset.cpp

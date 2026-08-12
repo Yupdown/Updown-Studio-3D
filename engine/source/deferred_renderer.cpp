@@ -13,6 +13,7 @@
 #include "post_process_outline.h"
 #include "raytracing_renderer.h"
 #include "core.h"
+#include "material_table.h"
 #include "debug_console.h"
 #include "shader_compile.h"
 #include "compiled_shaders/vs_skybox.h"
@@ -141,7 +142,7 @@ namespace udsdx
 
 	void DeferredRenderer::BuildObjectRootSignature()
 	{
-		CD3DX12_ROOT_PARAMETER slotRootParameter[8];
+		CD3DX12_ROOT_PARAMETER slotRootParameter[9];
 
 		slotRootParameter[RootParam::PerObjectCBV].InitAsConstants(sizeof(ObjectConstants) / 4, 0);
 		slotRootParameter[RootParam::PerMaterialCBV].InitAsConstants(sizeof(MaterialConstants) / 4, 1);
@@ -156,6 +157,10 @@ namespace udsdx
 		CD3DX12_DESCRIPTOR_RANGE texTable;
 		texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, UINT_MAX, 0, 0);
 		slotRootParameter[RootParam::SrcTexTable].InitAsDescriptorTable(1, &texTable, D3D12_SHADER_VISIBILITY_PIXEL);
+
+		// space2, not space0: the unbounded table above starts at t0 space0 and swallows every
+		// higher t register in that space.
+		slotRootParameter[RootParam::MaterialTableSRV].InitAsShaderResourceView(0, 2);
 
 		CD3DX12_STATIC_SAMPLER_DESC samplerDesc[] = {
 			CD3DX12_STATIC_SAMPLER_DESC(
@@ -676,6 +681,7 @@ namespace udsdx
 		auto pCommandList = renderParam.CommandList;
 		pCommandList->SetGraphicsRootSignature(m_objectRootSignature.Get());
 		pCommandList->SetGraphicsRootDescriptorTable(RootParam::SrcTexTable, renderParam.SRVDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+		pCommandList->SetGraphicsRootShaderResourceView(RootParam::MaterialTableSRV, INSTANCE(Core)->GetMaterialTable()->GetAddress(renderParam.FrameResourceIndex));
 
 		const auto& cameras = scene->GetRenderCameras();
 		const auto& lights = scene->GetRenderLights();
@@ -776,6 +782,7 @@ namespace udsdx
 
 		pCommandList->SetGraphicsRootSignature(renderParam.RootSignature);
 		pCommandList->SetGraphicsRootDescriptorTable(RootParam::SrcTexTable, renderParam.SRVDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+		pCommandList->SetGraphicsRootShaderResourceView(RootParam::MaterialTableSRV, INSTANCE(Core)->GetMaterialTable()->GetAddress(renderParam.FrameResourceIndex));
 		pCommandList->OMSetRenderTargets(NUM_GBUFFERS, m_gBuffersCpuRtv.data(), true, &m_depthBufferCpuDsv);
 
 		pCommandList->RSSetViewports(1, &renderParam.Viewport);
@@ -805,6 +812,7 @@ namespace udsdx
 
 		pCommandList->SetGraphicsRootSignature(renderParam.RootSignature);
 		pCommandList->SetGraphicsRootDescriptorTable(RootParam::SrcTexTable, renderParam.SRVDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+		pCommandList->SetGraphicsRootShaderResourceView(RootParam::MaterialTableSRV, INSTANCE(Core)->GetMaterialTable()->GetAddress(renderParam.FrameResourceIndex));
 		pCommandList->OMSetRenderTargets(NUM_GBUFFERS, m_gBuffersCpuRtv.data(), true, &m_depthBufferCpuDsv);
 
 		pCommandList->RSSetViewports(1, &renderParam.Viewport);
@@ -815,6 +823,7 @@ namespace udsdx
 
 		pCommandList->SetGraphicsRootSignature(m_objectRootSignature.Get());
 		pCommandList->SetGraphicsRootDescriptorTable(RootParam::SrcTexTable, renderParam.SRVDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+		pCommandList->SetGraphicsRootShaderResourceView(RootParam::MaterialTableSRV, INSTANCE(Core)->GetMaterialTable()->GetAddress(renderParam.FrameResourceIndex));
 		pCommandList->OMSetRenderTargets(1, &targetRtv, true, &depthDsv);
 
 		pCommandList->RSSetViewports(1, &renderParam.Viewport);

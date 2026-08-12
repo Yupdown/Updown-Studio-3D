@@ -19,9 +19,43 @@ cbuffer cbPerObject : register(b0)
 
 cbuffer cbPerMaterial : register(b1)
 {
-    uint gSamplerMode;
-    uint gMainTexIndex;
+    uint gMaterialIndex;
 };
+
+#define INVALID_SRV_INDEX 0xFFFFFFFFu
+
+#define MAT_FLAG_ALPHA_TEST     0x1u
+#define MAT_FLAG_ALPHA_BLEND    0x2u
+#define MAT_FLAG_DOUBLE_SIDED   0x4u
+#define MAT_FLAG_FLIP_GREEN_Y   0x8u
+#define MAT_FLAG_ORM_PACKED     0x10u
+
+// Mirrors udsdx::MaterialGpu in material_gpu.h (96 bytes). inc_raytracing.hlsl carries an
+// identical copy; all three must be edited together.
+struct MaterialData
+{
+    float4 BaseColorFactor;
+    float3 EmissiveFactor;
+    float  EmissiveStrength;
+    float  MetallicFactor;
+    float  RoughnessFactor;
+    float  NormalScale;
+    float  OcclusionStrength;
+    float  AlphaCutoff;
+    float  Ior;
+    uint   Flags;
+    uint   SamplerMode;
+    uint   BaseColorTexIndex;
+    uint   MetalRoughTexIndex;
+    uint   NormalTexIndex;
+    uint   OcclusionTexIndex;
+    uint   EmissiveTexIndex;
+    uint3  Pad;
+};
+
+// space2, matching RootParam::MaterialTableSRV: the bindless texture table is an unbounded range
+// from t0 space0 and would otherwise absorb this register.
+StructuredBuffer<MaterialData> gMaterials : register(t0, space2);
 
 cbuffer cbPerCamera : register(b2)
 {
@@ -78,26 +112,44 @@ static const float Bayer8x8[64] =
 };
 
 // Bindless: a single unbounded SRV table spanning the whole SRV heap. Textures are addressed by
-// their heap index (gMainTexIndex) rather than a fixed register slot.
+// their heap index (from the material record) rather than a fixed register slot.
 Texture2D gTextures[] : register(t0, space0);
 
 SamplerState gSamplerNearest : register(s0);
 SamplerState gSamplerLinear : register(s1);
 SamplerState gSamplerAnisotropic : register(s2);
 
-float4 SampleMainTex(float2 uv)
+MaterialData GetMaterial()
 {
-    Texture2D gMainTex = gTextures[gMainTexIndex];
-    switch (gSamplerMode)
+    return gMaterials[gMaterialIndex];
+}
+
+// White when the slot is empty, so callers can multiply unconditionally by the factor.
+float4 SampleMaterialSlot(uint texIndex, uint samplerMode, float2 uv)
+{
+    if (texIndex == INVALID_SRV_INDEX)
+    {
+        return float4(1.0f, 1.0f, 1.0f, 1.0f);
+    }
+    Texture2D tex = gTextures[texIndex];
+    switch (samplerMode)
     {
     case 0:
-        return gMainTex.SampleLevel(gSamplerNearest, uv, 0.0f);
+        return tex.SampleLevel(gSamplerNearest, uv, 0.0f);
     case 1:
-        return gMainTex.Sample(gSamplerLinear, uv);
+        return tex.Sample(gSamplerLinear, uv);
     case 2:
     default:
-        return gMainTex.Sample(gSamplerAnisotropic, uv);
+        return tex.Sample(gSamplerAnisotropic, uv);
     }
+}
+
+// Full base colour: texture times factor. Keeping the old name means the shadow alpha test and
+// any app shader see baseColorFactor.a folded in, which is what glTF's alpha test expects.
+float4 SampleMainTex(float2 uv)
+{
+    MaterialData m = GetMaterial();
+    return SampleMaterialSlot(m.BaseColorTexIndex, m.SamplerMode, uv) * m.BaseColorFactor;
 }
 
 struct VertexIn
@@ -213,8 +265,12 @@ inline float3 LocalToWorldNormal(float3 normalL)
 
 void ShadowPS(VertexOut pin)
 {
-    float a = SampleMainTex(pin.Tex).a;
-    clip(a - 0.1f);
+    MaterialData m = GetMaterial();
+    if ((m.Flags & MAT_FLAG_ALPHA_TEST) == 0u)
+    {
+        return;
+    }
+    clip(SampleMainTex(pin.Tex).a - m.AlphaCutoff);
 }
 
 #endif

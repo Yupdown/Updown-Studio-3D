@@ -25,6 +25,7 @@
 #include "raytracing_renderer.h"
 #include "light_directional.h"
 #include "streamline.h"
+#include "material_table.h"
 
 #include <DirectXTex.h>
 #include <wincodec.h> // GUID_ContainerFormatPng
@@ -87,6 +88,8 @@ namespace udsdx
 		RegisterDescriptorsToHeaps();
 		BuildConstantBuffers();
 		InitializeSpriteBatch();
+
+		m_materialTable = std::make_unique<MaterialTable>(m_d3dDevice.Get());
 
 		OnResizeWindow(m_clientWidth, m_clientHeight);
 
@@ -755,6 +758,10 @@ namespace udsdx
 
 		ID3D12DescriptorHeap* descriptorHeaps[] = { m_srvHeap.Get() };
 		m_commandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
+
+		// Before any pass records a draw: every material a draw can reference already exists (they
+		// are created at load time), so one repack here covers the raster, shadow and DXR passes.
+		m_materialTable->Upload(m_currFrameResourceIndex);
 
 		// Indicate a state transition on the resource usage.
 		// Transition the back buffer to make it ready for writing.

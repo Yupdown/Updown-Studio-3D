@@ -22,6 +22,7 @@ namespace udsdx
 	class PostProcessOutline;
 	class Streamline;
 	class Texture;
+	class MaterialTable;
 
 	// A one-shot readback of what the frame just rendered, satisfied at the end of the same
 	// frame's Render() (after Present). Both sources stall the render thread until the copy
@@ -97,6 +98,7 @@ namespace udsdx
 		ShadowMap* GetShadowMap() const;
 		ScreenSpaceAO* GetScreenSpaceAO() const;
 		MonoUploadBuffer* GetMonoUploadBuffer() const;
+		MaterialTable* GetMaterialTable() const { return m_materialTable.get(); }
 
 		FrameResource* CurrentFrameResource() const;
 		ID3D12Resource* CurrentBackBuffer() const;
@@ -304,6 +306,9 @@ namespace udsdx
 
 		std::unique_ptr<GraphicsMemory> m_graphicsMemory;
 		std::unique_ptr<MonoUploadBuffer> m_monoUploadBuffer;
+		// GPU mirror of Resource's materials, repacked once per frame and bound by both the raster
+		// and raytracing paths.
+		std::unique_ptr<MaterialTable> m_materialTable;
 
 		// DirectXTK Sprite Batch for HUD rendering
 		std::unique_ptr<SpriteBatch> m_hudSpriteBatch;

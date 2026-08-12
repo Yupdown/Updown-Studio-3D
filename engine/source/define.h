@@ -216,6 +216,9 @@ namespace udsdx
 		PerShadowCBV,
 		PerFrameCBV,
 		SrcTexTable,
+		// Appended so no existing slot shifts. Root SRV over the MaterialTable buffer; the
+		// per-material root constant is an index into it.
+		MaterialTableSRV,
 	};
 
 	enum RenderGroup : UINT
