@@ -10,6 +10,9 @@
 #define INVALID_SRV_INDEX       0xFFFFFFFFu
 
 #include "inc_raytracing_common.hlsl"
+// Resource-free by contract, so it is safe here despite the note above -- and sharing it is the
+// only thing keeping the raster and raytraced BRDFs from drifting apart.
+#include "inc_brdf.hlsl"
 
 #define RT_PI                   3.14159265359f
 
@@ -197,15 +200,7 @@ float2 NextFloat2(inout uint state)
 // Sampling
 //------------------------------------------------------------------------------------------------
 
-// Duff et al. branchless orthonormal basis.
-void OrthonormalBasis(float3 n, out float3 t, out float3 b)
-{
-    float sign = n.z >= 0.0f ? 1.0f : -1.0f;
-    float a = -1.0f / (sign + n.z);
-    float c = n.x * n.y * a;
-    t = float3(1.0f + sign * n.x * n.x * a, sign * c, -sign * n.x);
-    b = float3(c, sign + n.y * n.y * a, -n.y);
-}
+// OrthonormalBasis lives in inc_brdf.hlsl -- the sampling code there needs it too.
 
 // Cosine-weighted hemisphere sample. Its pdf is cos/pi and the Lambert BRDF is albedo/pi, so the
 // two cancel and the estimator reduces to albedo * incoming radiance -- no pdf division anywhere.

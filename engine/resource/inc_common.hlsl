@@ -1,3 +1,7 @@
+// Shared with the raytracing path so both renderers evaluate the same BRDF. Outside both #ifdef
+// branches: the deferred lighting pass needs it too.
+#include "inc_brdf.hlsl"
+
 #define MAX_BONES 256
 #define NUM_CASCADES 4
 

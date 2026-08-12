@@ -166,7 +166,9 @@ set(ENGINE_SHADER_COMMON_DEFINES
 function(add_engine_shader hlsl_file entrypoint profile)
     set(options)
     set(oneValueArgs)
-    set(multiValueArgs EXTRA_DEFINES)
+    # DEPENDS_ON lists the headers this shader #includes. CMake cannot discover them, so without
+    # it an edit to a shared header silently does not rebuild anything that includes it.
+    set(multiValueArgs EXTRA_DEFINES DEPENDS_ON)
     cmake_parse_arguments(SHADER "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
     get_filename_component(shader_name "${hlsl_file}" NAME_WE)
@@ -191,7 +193,7 @@ function(add_engine_shader hlsl_file entrypoint profile)
             -Qembed_debug
             ${shader_defines}
             "${shader_input}"
-        DEPENDS "${shader_input}"
+        DEPENDS "${shader_input}" ${SHADER_DEPENDS_ON}
         VERBATIM
         COMMENT "Compiling ${hlsl_file} to ${shader_output}"
     )
@@ -236,15 +238,22 @@ function(add_engine_shader_library hlsl_file profile)
     set(ENGINE_SHADER_HEADERS ${ENGINE_SHADER_HEADERS} "${shader_output}" PARENT_SCOPE)
 endfunction()
 
+set(ENGINE_SHADER_INC_BRDF "${CMAKE_CURRENT_SOURCE_DIR}/resource/inc_brdf.hlsl")
+set(ENGINE_SHADER_INC_RT_COMMON "${CMAKE_CURRENT_SOURCE_DIR}/resource/inc_raytracing_common.hlsl")
+
 set(ENGINE_SHADER_HEADERS)
 add_engine_shader(resource/cs_motion_blur_neighbormax.hlsl CS cs_6_0)
 add_engine_shader(resource/cs_motion_blur_tilemax.hlsl CS cs_6_0)
-add_engine_shader(resource/cs_raytracing_accumulate.hlsl CS cs_6_0)
-add_engine_shader(resource/cs_raytracing_atrous.hlsl CS cs_6_0)
+add_engine_shader(resource/cs_raytracing_accumulate.hlsl CS cs_6_0
+    DEPENDS_ON "${ENGINE_SHADER_INC_RT_COMMON}")
+add_engine_shader(resource/cs_raytracing_atrous.hlsl CS cs_6_0
+    DEPENDS_ON "${ENGINE_SHADER_INC_RT_COMMON}")
 add_engine_shader(resource/cs_screenspace_ao_blur.hlsl CS cs_6_0)
 add_engine_shader(resource/cs_env_equirect_to_cubemap.hlsl CS cs_6_0)
-add_engine_shader(resource/cs_env_irradiance_convolution.hlsl CS cs_6_0)
-add_engine_shader(resource/cs_env_prefilter.hlsl CS cs_6_0)
+add_engine_shader(resource/cs_env_irradiance_convolution.hlsl CS cs_6_0
+    DEPENDS_ON "${ENGINE_SHADER_INC_BRDF}")
+add_engine_shader(resource/cs_env_prefilter.hlsl CS cs_6_0
+    DEPENDS_ON "${ENGINE_SHADER_INC_BRDF}")
 add_engine_shader(resource/ps_bloom_downsample.hlsl PS ps_6_0)
 add_engine_shader(resource/ps_bloom_prepass.hlsl PS ps_6_0)
 add_engine_shader(resource/ps_bloom_synthesize.hlsl PS ps_6_0)
@@ -255,13 +264,15 @@ add_engine_shader(resource/ps_screenspace_ao.hlsl PS ps_6_0)
 add_engine_shader(resource/ps_skybox.hlsl PS ps_6_0)
 add_engine_shader(resource/ps_skybox_velocity.hlsl PS ps_6_0)
 add_engine_shader(resource/ps_taa.hlsl PS ps_6_0)
-add_engine_shader(resource/ps_raytracing_resolve.hlsl PS ps_6_0)
+add_engine_shader(resource/ps_raytracing_resolve.hlsl PS ps_6_0
+    DEPENDS_ON "${ENGINE_SHADER_INC_RT_COMMON}")
 add_engine_shader(resource/vs_drawscreen.hlsl VS vs_6_0)
 add_engine_shader(resource/vs_skybox.hlsl VS vs_6_0)
 add_engine_shader_library(resource/lib_raytracing.hlsl lib_6_3
     DEPENDS_ON
         "${CMAKE_CURRENT_SOURCE_DIR}/resource/inc_raytracing.hlsl"
-        "${CMAKE_CURRENT_SOURCE_DIR}/resource/inc_raytracing_common.hlsl")
+        "${ENGINE_SHADER_INC_RT_COMMON}"
+        "${ENGINE_SHADER_INC_BRDF}")
 
 set(EMBEDDED_COMMON_HLSL_INPUT "${CMAKE_CURRENT_SOURCE_DIR}/resource/inc_common.hlsl")
 set(EMBEDDED_COMMON_HLSL_HEADER "${ENGINE_EMBEDDED_SHADER_DIR}/inc_common_hlsl.h")
@@ -280,6 +291,25 @@ add_custom_command(
     COMMENT "Embedding inc_common.hlsl into ${EMBEDDED_COMMON_HLSL_HEADER}"
 )
 list(APPEND ENGINE_SHADER_HEADERS "${EMBEDDED_COMMON_HLSL_HEADER}")
+
+# Embedded a second time for the same reason as inc_common.hlsl: shaders under resource/shader are
+# compiled at runtime with no include path, so ShaderIncludeHandler serves them from these blobs.
+set(EMBEDDED_BRDF_HLSL_HEADER "${ENGINE_EMBEDDED_SHADER_DIR}/inc_brdf_hlsl.h")
+add_custom_command(
+    OUTPUT "${EMBEDDED_BRDF_HLSL_HEADER}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${ENGINE_EMBEDDED_SHADER_DIR}"
+    COMMAND ${CMAKE_COMMAND}
+        -DINPUT=${ENGINE_SHADER_INC_BRDF}
+        -DOUTPUT=${EMBEDDED_BRDF_HLSL_HEADER}
+        -DSYMBOL=g_embedded_brdf_hlsl
+        -P ${CMAKE_SOURCE_DIR}/cmake/embed_binary_as_header.cmake
+    DEPENDS
+        "${ENGINE_SHADER_INC_BRDF}"
+        "${CMAKE_SOURCE_DIR}/cmake/embed_binary_as_header.cmake"
+    VERBATIM
+    COMMENT "Embedding inc_brdf.hlsl into ${EMBEDDED_BRDF_HLSL_HEADER}"
+)
+list(APPEND ENGINE_SHADER_HEADERS "${EMBEDDED_BRDF_HLSL_HEADER}")
 
 add_custom_target(engine_compiled_shaders DEPENDS ${ENGINE_SHADER_HEADERS})
 add_dependencies(engine engine_compiled_shaders)

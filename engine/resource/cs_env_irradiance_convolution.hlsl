@@ -1,3 +1,6 @@
+// Hammersley / RadicalInverseVdC come from the shared BRDF header.
+#include "inc_brdf.hlsl"
+
 TextureCube<float4> gSourceCubeMap : register(t0);
 RWTexture2DArray<float4> gIrradianceCubeMap : register(u0);
 SamplerState gLinearWrapSampler : register(s0);
@@ -11,23 +14,6 @@ cbuffer cbIblBake : register(b0)
     uint gRoughnessBits;
     uint gCutoffBits;
 };
-
-static const float PI = 3.14159265359f;
-
-float RadicalInverseVdC(uint bits)
-{
-    bits = (bits << 16u) | (bits >> 16u);
-    bits = ((bits & 0x55555555u) << 1u) | ((bits & 0xAAAAAAAAu) >> 1u);
-    bits = ((bits & 0x33333333u) << 2u) | ((bits & 0xCCCCCCCCu) >> 2u);
-    bits = ((bits & 0x0F0F0F0Fu) << 4u) | ((bits & 0xF0F0F0F0u) >> 4u);
-    bits = ((bits & 0x00FF00FFu) << 8u) | ((bits & 0xFF00FF00u) >> 8u);
-    return float(bits) * 2.3283064365386963e-10f;
-}
-
-float2 Hammersley(uint index, uint sampleCount)
-{
-    return float2(float(index) / max(float(sampleCount), 1.0f), RadicalInverseVdC(index));
-}
 
 float3 FaceUvToDirection(uint faceIndex, float2 uv)
 {
@@ -43,7 +29,7 @@ float3 FaceUvToDirection(uint faceIndex, float2 uv)
 
 float3 BuildHemisphereSample(float2 xi)
 {
-    float phi = 2.0f * PI * xi.x;
+    float phi = 2.0f * BRDF_PI * xi.x;
     float cosTheta = sqrt(1.0f - xi.y);
     float sinTheta = sqrt(xi.y);
     return float3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);

@@ -2,11 +2,42 @@
 #include "shader_compile.h"
 #include "debug_console.h"
 #include "embedded_shaders/inc_common_hlsl.h"
+#include "embedded_shaders/inc_brdf_hlsl.h"
 
 namespace udsdx
 {
     static ComPtr<IDxcUtils> g_pUtils;
     static ComPtr<IDxcCompiler3> g_pCompiler;
+
+    namespace
+    {
+        // Shaders under resource/shader are compiled at runtime from wherever the app keeps them,
+        // with no include path, so their headers cannot be found on disk. They are baked into the
+        // executable instead and served from here.
+        struct EmbeddedHeader
+        {
+            const wchar_t* Name;
+            const unsigned char* Data;
+            unsigned int Size;
+        };
+
+        constexpr EmbeddedHeader kEmbeddedHeaders[] = {
+            { L"inc_common.hlsl", g_embedded_common_hlsl, g_embedded_common_hlsl_size },
+            { L"inc_brdf.hlsl",   g_embedded_brdf_hlsl,   g_embedded_brdf_hlsl_size   },
+        };
+
+        // DXC hands quoted includes over as "./name.hlsl"; match on the bare file name so both
+        // spellings resolve.
+        std::wstring_view StripRelativePrefix(const wchar_t* filename)
+        {
+            std::wstring_view name(filename);
+            while (name.starts_with(L"./") || name.starts_with(L".\\"))
+            {
+                name.remove_prefix(2);
+            }
+            return name;
+        }
+    }
 
     // Scans preprocessed HLSL for a definition/declaration of `name`, i.e. an occurrence of the
     // identifier on a token boundary immediately followed (modulo whitespace) by '('. Good enough
@@ -46,19 +77,28 @@ namespace udsdx
         HRESULT hr = g_pUtils->LoadFile(filename.c_str(), nullptr, &pBlob);
         if (FAILED(hr))
         {
-            if (std::wcscmp(pFilename, L"inc_common.hlsl"))
+            const std::wstring_view name = StripRelativePrefix(pFilename);
+            const EmbeddedHeader* match = nullptr;
+            for (const EmbeddedHeader& header : kEmbeddedHeaders)
             {
-                ThrowIfFailed(g_pUtils->CreateBlob(
-                    g_embedded_common_hlsl,
-                    g_embedded_common_hlsl_size,
-                    DXC_CP_UTF8,
-                    &pBlob
-                ));
+                if (name == header.Name)
+                {
+                    match = &header;
+                    break;
+                }
             }
-            else
+
+            if (match == nullptr)
             {
-                ThrowIfFailed(hr);
+                // Serving inc_common for an unrecognised name is the historical behaviour and is
+                // kept so nothing that works today breaks -- but it silently compiles the wrong
+                // source, so say so rather than leaving the next typo to be debugged blind.
+                DebugConsole::LogError("Shader include not found and not embedded: '"
+                    + std::filesystem::path(name).string() + "'. Substituting inc_common.hlsl.");
+                match = &kEmbeddedHeaders[0];
             }
+
+            ThrowIfFailed(g_pUtils->CreateBlob(match->Data, match->Size, DXC_CP_UTF8, &pBlob));
         }
         *ppIncludeSource = pBlob.Detach();
         return S_OK;
