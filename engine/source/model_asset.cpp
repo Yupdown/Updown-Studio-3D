@@ -309,15 +309,13 @@ namespace udsdx
 		m_embeddedTextureBlobs.shrink_to_fit();
 	}
 
-	Material ModelAsset::MakeMaterial(int materialIndex, Shader* shader) const
+	Material ModelAsset::MakeMaterial(int materialIndex) const
 	{
 		if (materialIndex >= 0 && static_cast<size_t>(materialIndex) < m_materials.size())
 		{
-			Material material = *m_materials[materialIndex]; // copy the template (textures + sampler)
-			material.SetShader(shader);
-			return material;
+			return *m_materials[materialIndex]; // copy the template (textures + sampler)
 		}
-		return Material(shader);
+		return Material();
 	}
 
 	std::shared_ptr<SceneObject> ModelAsset::Instantiate(Shader* shader, bool enableRaytracing) const
@@ -348,10 +346,11 @@ namespace udsdx
 		{
 			auto renderer = root->AddComponent<RiggedMeshRenderer>();
 			renderer->SetMesh(static_cast<RiggedMesh*>(m_meshes[0].get()));
+			renderer->SetShader(shader);
 			const std::vector<int>& submeshMaterials = m_meshSubmeshMaterials[0];
 			for (size_t submeshIndex = 0; submeshIndex < submeshMaterials.size(); ++submeshIndex)
 			{
-				renderer->SetMaterial(MakeMaterial(submeshMaterials[submeshIndex], shader), static_cast<int>(submeshIndex));
+				renderer->SetMaterial(MakeMaterial(submeshMaterials[submeshIndex]), static_cast<int>(submeshIndex));
 			}
 			renderer->RebindBones();
 
@@ -403,8 +402,9 @@ namespace udsdx
 					? object->AddComponent<RaytracingMeshRenderer>()
 					: object->AddComponent<MeshRenderer>();
 				renderer->SetMesh(static_cast<Mesh*>(m_meshes[meshIndex].get()));
+				renderer->SetShader(shader);
 				const int materialIndex = submeshMaterials.empty() ? -1 : submeshMaterials[0];
-				renderer->SetMaterial(MakeMaterial(materialIndex, shader), 0);
+				renderer->SetMaterial(MakeMaterial(materialIndex), 0);
 			}
 		}
 

@@ -12,10 +12,15 @@ namespace udsdx
 	{
 		RendererBase::PostUpdate(time, scene);
 
-		scene.EnqueueRenderObject(this, m_renderGroup, m_materials[0].GetShader()->DefaultPipelineState(), m_materials[0].GetShader()->DeferredPipelineState(), 0);
+		if (m_shader == nullptr || m_materials.empty())
+		{
+			return;
+		}
+
+		scene.EnqueueRenderObject(this, m_renderGroup, m_shader->DefaultPipelineState(), m_shader->DeferredPipelineState(), 0);
 		if (m_castShadow == true)
 		{
-			scene.EnqueueRenderShadowObject(this, m_materials[0].GetShader()->ShadowPipelineState(), 0);
+			scene.EnqueueRenderShadowObject(this, m_shader->ShadowPipelineState(), 0);
 		}
 	}
 

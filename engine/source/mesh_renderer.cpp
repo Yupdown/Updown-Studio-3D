@@ -16,18 +16,18 @@ namespace udsdx
 	{
 		RendererBase::PostUpdate(time, scene);
 
+		if (m_shader == nullptr)
+		{
+			return;
+		}
+
 		int submeshCount = m_mesh ? static_cast<int>(std::min(m_mesh->GetSubmeshes().size(), m_materials.size())) : 0;
 		for (int i = 0; i < submeshCount; ++i)
 		{
-			Shader* shader = m_materials[i].GetShader();
-			if (shader == nullptr)
-			{
-				continue;
-			}
-			scene.EnqueueRenderObject(this, m_renderGroup, shader->DefaultPipelineState(), shader->DeferredPipelineState(), i);
+			scene.EnqueueRenderObject(this, m_renderGroup, m_shader->DefaultPipelineState(), m_shader->DeferredPipelineState(), i);
 			if (m_castShadow == true)
 			{
-				scene.EnqueueRenderShadowObject(this, shader->ShadowPipelineState(), i);
+				scene.EnqueueRenderShadowObject(this, m_shader->ShadowPipelineState(), i);
 			}
 		}
 	}

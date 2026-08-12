@@ -89,7 +89,7 @@ namespace udsdx
 		int RegisterEmbeddedTexture(const aiScene* scene, const char* assimpPath);
 		void ResolveEmbeddedTextures(ID3D12Device* device, ID3D12GraphicsCommandList* commandList);
 		std::shared_ptr<SceneObject> InstantiateNode(int nodeIndex, Shader* shader, bool enableRaytracing) const;
-		Material MakeMaterial(int materialIndex, Shader* shader) const;
+		Material MakeMaterial(int materialIndex) const;
 
 	private:
 		bool m_isRigged = false;

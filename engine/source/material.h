@@ -11,24 +11,21 @@ namespace udsdx
 		Anisotropic = 2
 	};
 
-	class Shader;
 	class Texture;
 
+	// Surface properties only. Which shader (and therefore which pipeline state) draws a surface is
+	// a rendering decision that belongs to the renderer, not to the surface -- see
+	// RendererBase::SetShader. The raytracer has no per-material shader at all.
 	struct Material
 	{
 	public:
-		// A shader-less material is valid as a template (e.g. one built by ModelAsset); a shader must be
-		// injected via SetShader before it is used for rendering.
-		Material();
-		Material(Shader* shader);
-		Material(Shader* shader, Texture* texture);
+		Material() = default;
+		explicit Material(Texture* texture);
 
 	public:
-		void SetShader(Shader* shader);
 		void SetSourceTexture(Texture* texture, UINT index = 0);
 		void SetSamplerMode(MaterialSamplerMode samplerMode);
 
-		Shader* GetShader() const;
 		UINT GetTextureCount() const;
 		Texture* GetSourceTexture(UINT index = 0) const;
 		// Bindless SRV heap index of the texture in the given slot, or InvalidSrvIndex when empty.
@@ -36,7 +33,6 @@ namespace udsdx
 		MaterialSamplerMode GetSamplerMode() const;
 
 	private:
-		Shader* m_shader = nullptr;
 		std::array<Texture*, NumTextureSlots> m_mainTex = {};
 		MaterialSamplerMode m_samplerMode = MaterialSamplerMode::Anisotropic;
 	};

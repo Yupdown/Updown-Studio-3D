@@ -17,6 +17,11 @@ namespace udsdx
 
 	public:
 		void SetMaterial(const Material& material, int index = 0);
+		// The shader picks the pipeline states every submesh of this renderer draws with. One per
+		// renderer rather than one per material: a submesh needing a different pipeline is really a
+		// different renderer, and the raytracer has no per-material shader concept at all.
+		void SetShader(Shader* shader) { m_shader = shader; }
+		Shader* GetShader() const { return m_shader; }
 
 		void SetTopology(D3D_PRIMITIVE_TOPOLOGY value);
 		void SetCastShadow(bool value);
@@ -43,6 +48,7 @@ namespace udsdx
 
 	protected:
 		std::vector<Material> m_materials;
+		Shader* m_shader = nullptr;
 
 		D3D_PRIMITIVE_TOPOLOGY m_topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 		bool m_castShadow = true;

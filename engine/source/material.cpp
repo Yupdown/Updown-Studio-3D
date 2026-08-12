@@ -5,22 +5,9 @@
 
 namespace udsdx
 {
-	Material::Material() : m_shader(nullptr)
-	{
-	}
-
-	Material::Material(Shader* shader) : m_shader(shader)
-	{
-	}
-
-	Material::Material(Shader* shader, Texture* texture) : Material(shader)
+	Material::Material(Texture* texture)
 	{
 		m_mainTex[0] = texture;
-	}
-
-	void Material::SetShader(Shader* shader)
-	{
-		m_shader = shader;
 	}
 
 	void Material::SetSourceTexture(Texture* texture, UINT index)
@@ -31,11 +18,6 @@ namespace udsdx
 	void Material::SetSamplerMode(MaterialSamplerMode samplerMode)
 	{
 		m_samplerMode = samplerMode;
-	}
-
-	Shader* Material::GetShader() const
-	{
-		return m_shader;
 	}
 
 	Texture* Material::GetSourceTexture(UINT index) const

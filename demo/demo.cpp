@@ -50,8 +50,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     auto pipelineStateTexture = INSTANCE(Resource)->Load<Shader>(L"resource\\shader\\color.hlsl");
     // maxwell.obj's texture lives in resource/texture/ (not beside the model), so override the
     // instantiated materials with it explicitly.
-    udsdx::Material material = udsdx::Material(pipelineStateTexture, INSTANCE(Resource)->Load<udsdx::Texture>(L"resource\\texture\\dingus_nowhiskers.jpg"));
-    udsdx::Material materialTile = udsdx::Material(pipelineState, INSTANCE(Resource)->Load<udsdx::Texture>(L"resource\\texture\\tile.png"));
+    udsdx::Material material = udsdx::Material(INSTANCE(Resource)->Load<udsdx::Texture>(L"resource\\texture\\dingus_nowhiskers.jpg"));
+    udsdx::Material materialTile = udsdx::Material(INSTANCE(Resource)->Load<udsdx::Texture>(L"resource\\texture\\tile.png"));
     materialTile.SetSamplerMode(udsdx::MaterialSamplerMode::Nearest);
 
     tilemap = std::make_shared<MCTilemap>();
@@ -105,6 +105,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
             auto renderer = chunkObject[i][j]->AddComponent<RaytracingMeshRenderer>();
             renderer->SetMesh(chunkMeshes[i][j].get());
+            renderer->SetShader(pipelineState);
             renderer->SetMaterial(materialTile);
 
             chunkObject[i][j]->GetTransform()->SetLocalPosition(
@@ -133,9 +134,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     // Rigged character loaded from a GLB. The asset's embedded textures are already on its
     // materials; Instantiate spawns the skeleton as named child SceneObjects and an Animator on
     // the root that auto-plays the first clip looped.
-    auto characterAsset = INSTANCE(Resource)->Load<udsdx::ModelAsset>(L"resource\\model\\character.glb");
+    auto characterAsset = INSTANCE(Resource)->Load<udsdx::ModelAsset>(L"resource\\model\\samsung_sample.glb");
 
-    riggedObject = characterAsset->Instantiate(pipelineStateTexture);
+    riggedObject = characterAsset->Instantiate(pipelineStateTexture, true);
     riggedObject->GetTransform()->SetLocalPosition(Vector3(0.0f, 16.0f, -4.0f));
     scene->AddObject(riggedObject);
 
@@ -247,6 +248,6 @@ void Update(const Time& time)
 
     for (int i = 0; i < objects.size(); ++i)
     {
-        // objects[i]->GetTransform()->Rotate(Quaternion::CreateFromAxisAngle(Vector3::Up, time.deltaTime * 10.0f * rotations[i]));
+        objects[i]->GetTransform()->Rotate(Quaternion::CreateFromAxisAngle(Vector3::Up, time.deltaTime * 10.0f * rotations[i]));
 	}
 }
