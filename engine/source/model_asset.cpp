@@ -16,6 +16,8 @@
 #include "debug_console.h"
 #include <assimp/scene.h>
 #include <assimp/material.h>
+// AI_MATKEY_GLTF_ALPHAMODE / _ALPHACUTOFF and the per-texture scale/strength keys live here.
+#include <assimp/GltfMaterial.h>
 
 namespace udsdx
 {
@@ -210,21 +212,51 @@ namespace udsdx
 			return;
 		}
 
-		struct Slot { aiTextureType Type; MaterialTextureSlot Index; };
+		ReadMaterialScalars(aimaterial, material);
+
+		// Fallback chains, first hit wins. glTF2 registers several of these under more than one
+		// type (base colour under both DIFFUSE and BASE_COLOR, metallic-roughness under
+		// METALNESS, DIFFUSE_ROUGHNESS and GLTF_METALLIC_ROUGHNESS), and the trailing entries
+		// cover the conventions other importers use.
+		struct Slot { MaterialTextureSlot Index; aiTextureType Types[3]; };
 		const Slot slots[] = {
-			{ aiTextureType_DIFFUSE, MaterialTextureSlot::BaseColor },
-			{ aiTextureType_NORMALS, MaterialTextureSlot::Normal },
+			{ MaterialTextureSlot::BaseColor,
+				{ aiTextureType_BASE_COLOR, aiTextureType_DIFFUSE, aiTextureType_NONE } },
+			{ MaterialTextureSlot::MetallicRoughness,
+				{ aiTextureType_GLTF_METALLIC_ROUGHNESS, aiTextureType_METALNESS, aiTextureType_DIFFUSE_ROUGHNESS } },
+			{ MaterialTextureSlot::Normal,
+				// FBX exporters routinely park the normal map in HEIGHT.
+				{ aiTextureType_NORMALS, aiTextureType_HEIGHT, aiTextureType_NONE } },
+			{ MaterialTextureSlot::Occlusion,
+				// glTF2 maps occlusionTexture to LIGHTMAP, never to AMBIENT_OCCLUSION.
+				{ aiTextureType_LIGHTMAP, aiTextureType_AMBIENT_OCCLUSION, aiTextureType_NONE } },
+			{ MaterialTextureSlot::Emissive,
+				{ aiTextureType_EMISSIVE, aiTextureType_EMISSION_COLOR, aiTextureType_NONE } },
 		};
+
+		std::array<std::string, NumMaterialTextureSlots> slotPaths;
 
 		for (const Slot& slot : slots)
 		{
 			aiString texturePath;
-			if (aimaterial->GetTexture(slot.Type, 0, &texturePath) != AI_SUCCESS)
+			aiTextureType foundType = aiTextureType_NONE;
+			for (aiTextureType type : slot.Types)
+			{
+				if (type != aiTextureType_NONE && aimaterial->GetTexture(type, 0, &texturePath) == AI_SUCCESS)
+				{
+					foundType = type;
+					break;
+				}
+			}
+			if (foundType == aiTextureType_NONE)
 			{
 				continue;
 			}
 
+			WarnUnsupportedTextureMapping(aimaterial, foundType, material);
+
 			const char* raw = texturePath.C_Str();
+			slotPaths[static_cast<size_t>(slot.Index)] = raw != nullptr ? raw : "";
 			if (raw != nullptr && raw[0] == '*')
 			{
 				// Embedded texture ("*N"): defer wiring until the Texture exists (resolve time).
@@ -247,6 +279,123 @@ namespace udsdx
 				{
 					material.SetSourceTexture(texture, slot.Index);
 				}
+			}
+		}
+
+		// glTF packs occlusion/roughness/metallic into one image and references it from both
+		// occlusionTexture and metallicRoughnessTexture. Assimp surfaces them under unrelated
+		// texture types, so comparing the referenced paths is the only way to notice. Shading does
+		// not depend on spotting it -- both slots resolve to the same Texture and each channel is
+		// read where glTF says it lives -- but a packed set is worth knowing about.
+		const std::string& occlusionPath = slotPaths[static_cast<size_t>(MaterialTextureSlot::Occlusion)];
+		const std::string& metalRoughPath = slotPaths[static_cast<size_t>(MaterialTextureSlot::MetallicRoughness)];
+		if (!occlusionPath.empty() && occlusionPath == metalRoughPath)
+		{
+			material.SetOrmPacked(true);
+		}
+	}
+
+	void ModelAsset::ReadMaterialScalars(const aiMaterial* aimaterial, Material& material)
+	{
+		aiColor4D color4;
+		// glTF2 writes baseColorFactor to both keys; other importers only fill COLOR_DIFFUSE.
+		if (aimaterial->Get(AI_MATKEY_BASE_COLOR, color4) == AI_SUCCESS ||
+			aimaterial->Get(AI_MATKEY_COLOR_DIFFUSE, color4) == AI_SUCCESS)
+		{
+			material.SetBaseColorFactor(Color(color4.r, color4.g, color4.b, color4.a));
+		}
+
+		aiColor3D color3;
+		if (aimaterial->Get(AI_MATKEY_COLOR_EMISSIVE, color3) == AI_SUCCESS)
+		{
+			material.SetEmissiveFactor(Vector3(color3.r, color3.g, color3.b));
+		}
+
+		float value = 0.0f;
+		// Left at the engine defaults when absent. In particular metallic stays 0 rather than
+		// glTF's 1: the key is always present for glTF, so only non-glTF assets see the default.
+		if (aimaterial->Get(AI_MATKEY_METALLIC_FACTOR, value) == AI_SUCCESS)
+		{
+			material.SetMetallicFactor(value);
+		}
+		if (aimaterial->Get(AI_MATKEY_ROUGHNESS_FACTOR, value) == AI_SUCCESS)
+		{
+			material.SetRoughnessFactor(value);
+		}
+		if (aimaterial->Get(AI_MATKEY_EMISSIVE_INTENSITY, value) == AI_SUCCESS)
+		{
+			material.SetEmissiveStrength(value);
+		}
+		// Per-texture scalars glTF hangs off the texture reference rather than the material.
+		if (aimaterial->Get(AI_MATKEY_GLTF_TEXTURE_SCALE(aiTextureType_NORMALS, 0), value) == AI_SUCCESS)
+		{
+			material.SetNormalScale(value);
+		}
+		if (aimaterial->Get(AI_MATKEY_GLTF_TEXTURE_STRENGTH(aiTextureType_LIGHTMAP, 0), value) == AI_SUCCESS)
+		{
+			material.SetOcclusionStrength(value);
+		}
+		if (aimaterial->Get(AI_MATKEY_GLTF_ALPHACUTOFF, value) == AI_SUCCESS)
+		{
+			material.SetAlphaCutoff(value);
+		}
+		// Only meaningful with KHR_materials_ior; other importers write their own generic default.
+		if (aimaterial->Get(AI_MATKEY_REFRACTI, value) == AI_SUCCESS)
+		{
+			material.SetIor(value);
+		}
+
+		int flag = 0;
+		if (aimaterial->Get(AI_MATKEY_TWOSIDED, flag) == AI_SUCCESS)
+		{
+			material.SetDoubleSided(flag != 0);
+		}
+
+		aiString alphaMode;
+		if (aimaterial->Get(AI_MATKEY_GLTF_ALPHAMODE, alphaMode) == AI_SUCCESS)
+		{
+			const std::string mode = alphaMode.C_Str();
+			if (mode == "MASK")
+			{
+				material.SetAlphaMode(MaterialAlphaMode::Mask);
+			}
+			else if (mode == "BLEND")
+			{
+				material.SetAlphaMode(MaterialAlphaMode::Blend);
+			}
+			else
+			{
+				material.SetAlphaMode(MaterialAlphaMode::Opaque);
+			}
+		}
+		else if (aimaterial->Get(AI_MATKEY_OPACITY, value) == AI_SUCCESS && value < 1.0f)
+		{
+			// No glTF alpha mode: fall back to the generic opacity every other importer writes, so
+			// a translucent FBX/OBJ material is not silently promoted to opaque.
+			material.SetAlphaMode(MaterialAlphaMode::Blend);
+		}
+	}
+
+	void ModelAsset::WarnUnsupportedTextureMapping(const aiMaterial* aimaterial, aiTextureType type, const Material& material)
+	{
+		// The engine carries one UV set and applies no texture transform. Both are expressible in
+		// glTF, so say so out loud rather than rendering something subtly wrong in silence.
+		int uvIndex = 0;
+		if (aimaterial->Get(AI_MATKEY_UVWSRC(type, 0), uvIndex) == AI_SUCCESS && uvIndex != 0)
+		{
+			DebugConsole::LogWarning("Material references TEXCOORD_" + std::to_string(uvIndex) +
+				"; the engine has a single UV set, so UV0 is used instead.");
+		}
+
+		aiUVTransform transform;
+		if (aimaterial->Get(AI_MATKEY_UVTRANSFORM(type, 0), transform) == AI_SUCCESS)
+		{
+			const bool identity = transform.mTranslation.x == 0.0f && transform.mTranslation.y == 0.0f
+				&& transform.mScaling.x == 1.0f && transform.mScaling.y == 1.0f
+				&& transform.mRotation == 0.0f;
+			if (!identity)
+			{
+				DebugConsole::LogWarning("Material carries a KHR_texture_transform; it is not applied.");
 			}
 		}
 	}

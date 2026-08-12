@@ -6,6 +6,8 @@
 
 struct aiScene;
 struct aiNode;
+struct aiMaterial;
+enum aiTextureType : int;
 
 namespace udsdx
 {
@@ -86,6 +88,12 @@ namespace udsdx
 		// Builds one AnimationClip per source animation, keyed by the animation's name.
 		void BuildAnimations(const aiScene* scene);
 		void ExtractMaterialTextures(const aiScene* scene, unsigned int materialIndex, Material& material, const std::filesystem::path& resourcePath);
+		// glTF metallic-roughness factors, alpha mode and the per-texture scalars. Absent keys leave
+		// the material's own defaults in place.
+		static void ReadMaterialScalars(const aiMaterial* aimaterial, Material& material);
+		// Logs the glTF features this engine cannot express (a second UV set, KHR_texture_transform)
+		// so an asset relying on them is not silently misrendered.
+		static void WarnUnsupportedTextureMapping(const aiMaterial* aimaterial, aiTextureType type, const Material& material);
 		int RegisterEmbeddedTexture(const aiScene* scene, const char* assimpPath);
 		void ResolveEmbeddedTextures(ID3D12Device* device, ID3D12GraphicsCommandList* commandList);
 		std::shared_ptr<SceneObject> InstantiateNode(int nodeIndex, Shader* shader, bool enableRaytracing) const;
