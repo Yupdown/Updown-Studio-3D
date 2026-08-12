@@ -132,7 +132,7 @@ RWTexture2D<float4>             gAlbedoOut           : register(u4, space0);  //
 RWTexture2D<float4>             gNormalRoughnessOut  : register(u5, space0);  // world normal.xyz, linear roughness.w
 RWTexture2D<float>              gLinearDepthOut      : register(u6, space0);  // view-space Z
 RWTexture2D<float4>             gNoisyColorOut       : register(u7, space0);  // un-accumulated direct + albedo * indirect
-RWTexture2D<float4>             gSpecularAlbedoOut   : register(u8, space0);  // zero: this path is Lambert-only
+RWTexture2D<float4>             gSpecularAlbedoOut   : register(u8, space0);  // split-sum EnvBRDFApprox(f0, roughness, NoV)
 
 // Two separate unbounded tables over the same shader-visible SRV heap, so a heap index is the
 // bindless lookup index in both cases -- the same convention Texture::GetSrvIndex already uses.
@@ -161,12 +161,41 @@ struct SurfacePayload
     float3 Albedo;       // 12
     float  HitT;         //  4   negative means miss
     float3 Normal;       // 12   world space, faces the incoming ray
-    uint   Flags;        //  4
+    uint   MatPack0;     //  4   fp16 roughness | fp16 metallic << 16
     float3 Emission;     // 12   sky radiance on miss
-    uint   Rng;          //  4
+    uint   MatPack1;     //  4   fp16 dielectric F0; upper 16 bits reserved
     float3 PrevWorldPos; // 12   hit point carried into the previous frame's world space
     uint   InstanceIdx;  //  4   InstanceIndex(), the temporal validation key
-};                       // 64 bytes total
+};                       // 64 bytes total -- must stay in lockstep with the payload size in
+                         // RaytracingRenderer::CreateStateObject (raytracing_renderer.cpp)
+
+// The two uints above used to be Flags (a copy of mat.Flags that nothing read -- the any-hit shader
+// loads the material itself) and Rng (always written as 0 and never read). Reclaiming them costs
+// nothing and is what lets a bounce hit be shaded with the same BRDF as a primary hit, so a diffuse
+// bounce that lands on metal reflects the sun correctly.
+//
+// fp16 gives ~1e-3 resolution over [0,1], better than the raster G-buffer's R8G8 1/255.
+struct SurfaceMaterial
+{
+    float Roughness;     // already clamped to BRDF_MIN_ROUGHNESS
+    float Metallic;
+    float DielectricF0;
+};
+
+void PackSurfaceMaterial(SurfaceMaterial m, out uint pack0, out uint pack1)
+{
+    pack0 = f32tof16(m.Roughness) | (f32tof16(m.Metallic) << 16u);
+    pack1 = f32tof16(m.DielectricF0);
+}
+
+SurfaceMaterial UnpackSurfaceMaterial(uint pack0, uint pack1)
+{
+    SurfaceMaterial m;
+    m.Roughness    = f16tof32(pack0 & 0xFFFFu);
+    m.Metallic     = f16tof32(pack0 >> 16u);
+    m.DielectricF0 = f16tof32(pack1 & 0xFFFFu);
+    return m;
+}
 
 //------------------------------------------------------------------------------------------------
 // Random numbers
@@ -293,6 +322,23 @@ float4 SampleMaterialTex(uint texIndex, uint samplerMode, float2 uv)
         return gTextures[texIndex].SampleLevel(gSamplerPointWrap, uv, 0.0f);
     }
     return gTextures[texIndex].SampleLevel(gSamplerLinearWrap, uv, 0.0f);
+}
+
+// glTF metallic-roughness packing: G is roughness, B is metallic, in one texture -- so one fetch
+// covers both. An ORM texture puts occlusion in R and leaves G and B where they are, which is why
+// MAT_FLAG_ORM_PACKED needs no special case here.
+SurfaceMaterial EvaluateSurfaceMaterial(MaterialData mat, float2 uv)
+{
+    float4 mr = SampleMaterialTex(mat.MetalRoughTexIndex, mat.SamplerMode, uv);
+
+    SurfaceMaterial m;
+    // Clamped at the source rather than at each point of use: the payload should carry the
+    // roughness the renderer actually shades with, so the debug view and the denoiser guide cannot
+    // disagree with the BRDF.
+    m.Roughness = ClampRoughness(mat.RoughnessFactor * mr.g);
+    m.Metallic = saturate(mat.MetallicFactor * mr.b);
+    m.DielectricF0 = DielectricF0FromIor(mat.Ior);
+    return m;
 }
 
 // Tangent-space normal into world space. A tangent is a direction along the surface, so it rides

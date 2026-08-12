@@ -83,21 +83,11 @@ void ClosestHitSurface(inout SurfacePayload payload, in BuiltInTriangleIntersect
     float3 emission = mat.EmissiveFactor * mat.EmissiveStrength
         * SampleMaterialTex(mat.EmissiveTexIndex, mat.SamplerMode, uv).rgb;
 
-    // The payload is full at 64 bytes, so the metallic-roughness debug view borrows the albedo
-    // channel rather than growing it. Safe because that view bypasses accumulation and every other
-    // consumer of Albedo is skipped for it.
-    if (gDebugMode == RT_DEBUG_METALROUGH)
-    {
-        float4 mr = SampleMaterialTex(mat.MetalRoughTexIndex, mat.SamplerMode, uv);
-        // glTF channel packing: G is roughness, B is metallic.
-        albedo = float3(mat.MetallicFactor * mr.b, mat.RoughnessFactor * mr.g, 0.0f);
-    }
-
     payload.Albedo = albedo;
     payload.Normal = shadingNormal;
     payload.HitT = RayTCurrent();
     payload.Emission = emission;
-    payload.Flags = mat.Flags;
+    PackSurfaceMaterial(EvaluateSurfaceMaterial(mat, uv), payload.MatPack0, payload.MatPack1);
 
     // Carry the hit point into the previous frame. ObjectRayOrigin/Direction are already in
     // object space and RayTCurrent() is the same parameter in both spaces, so this is the
@@ -148,9 +138,9 @@ SurfacePayload TraceSurface(RayDesc ray)
     payload.Albedo = 0.0f;
     payload.HitT = -1.0f;
     payload.Normal = 0.0f;
-    payload.Flags = 0u;
+    payload.MatPack0 = 0u;
     payload.Emission = 0.0f;
-    payload.Rng = 0u;
+    payload.MatPack1 = 0u;
     payload.PrevWorldPos = 0.0f;
     payload.InstanceIdx = 0xFFFFFFFFu;
 
@@ -183,9 +173,9 @@ float3 DirectSun(float3 position, float3 normal, float3 albedo, inout uint rng)
     payload.Albedo = 0.0f;
     payload.HitT = 0.0f;    // assume occluded; MissShadow sets it negative
     payload.Normal = 0.0f;
-    payload.Flags = 0u;
+    payload.MatPack0 = 0u;
     payload.Emission = 0.0f;
-    payload.Rng = 0u;
+    payload.MatPack1 = 0u;
     payload.PrevWorldPos = 0.0f;
     payload.InstanceIdx = 0xFFFFFFFFu;
 
@@ -246,7 +236,8 @@ void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 ind
     }
     if (gDebugMode == RT_DEBUG_METALROUGH)
     {
-        directOut = primary.Albedo; // closest-hit packed (metallic, roughness, 0) in here
+        SurfaceMaterial m = UnpackSurfaceMaterial(primary.MatPack0, primary.MatPack1);
+        directOut = float3(m.Metallic, m.Roughness, 0.0f);
         return;
     }
     if (gDebugMode == RT_DEBUG_EMISSION)
@@ -409,10 +400,10 @@ void RayGenMain()
     // written unaccumulated because RR expects raw per-frame samples, not a pre-averaged estimate.
     gNoisyColorOut[pixel] = float4(direct + albedo * indirect, 1.0f);
 
-    // Lambert only: no specular lobe means F0 is zero, and the reference EnvBRDFApprox2 in the
-    // DLSS-RR guide returns zero for a zero specular colour. Written rather than cleared once so
-    // there is already a place to put a real value if materials ever grow one.
-    gSpecularAlbedoOut[pixel] = float4(0.0f, 0.0f, 0.0f, 1.0f);
+    // Ray Reconstruction's specular guide. EnvBRDFApprox is the split-sum term a baked LUT would
+    // hold, which is exactly what DLSS-RR's reference EnvBRDFApprox2 computes -- so the raster IBL,
+    // this guide and the reference all agree by construction rather than by coincidence.
+    SurfaceMaterial guideMaterial = UnpackSurfaceMaterial(guide.MatPack0, guide.MatPack1);
 
     if (guide.HitT < 0.0f)
     {
@@ -420,6 +411,7 @@ void RayGenMain()
         gMotionOut[pixel] = MotionFromDirection(guideRay.Direction);
         gGuideOut[pixel] = float4(RT_SKY_VIEW_Z, 0.0f, RT_SKY_VIEW_Z, asfloat(RT_INVALID_INSTANCE));
         gNormalRoughnessOut[pixel] = float4(0.0f, 0.0f, 0.0f, 1.0f);
+        gSpecularAlbedoOut[pixel] = float4(0.0f, 0.0f, 0.0f, 1.0f);
         // A finite far value, not the guide's 1e30 sentinel: that is fine for a comparison the
         // engine does itself, but it is not a depth a denoiser can reason about.
         gLinearDepthOut[pixel] = gRayMaxDistance;
@@ -435,8 +427,12 @@ void RayGenMain()
                                   0.0f,
                                   CameraDistance(currentWorld, gEyePosW.xyz),
                                   asfloat(guide.InstanceIdx));
-        // Roughness is 1 for the same reason specular albedo is 0.
-        gNormalRoughnessOut[pixel] = float4(guide.Normal, 1.0f);
+        gNormalRoughnessOut[pixel] = float4(guide.Normal, guideMaterial.Roughness);
+
+        float3 f0 = SpecularF0(guide.Albedo, guideMaterial.Metallic, guideMaterial.DielectricF0);
+        float NoV = saturate(dot(guide.Normal, -guideRay.Direction));
+        gSpecularAlbedoOut[pixel] = float4(EnvBRDFApprox(f0, guideMaterial.Roughness, NoV), 1.0f);
+
         // View-space Z, which is what kBufferTypeLinearDepth means -- deliberately not the
         // camera distance the guide stores, since the two are different quantities.
         gLinearDepthOut[pixel] = mul(float4(currentWorld, 1.0f), gView).z;

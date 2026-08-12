@@ -334,6 +334,8 @@ namespace udsdx
 		localRootAssociation->SetSubobjectToAssociate(*localRootSignature);
 		localRootAssociation->AddExport(kHitGroupName);
 
+		// Lockstep with SurfacePayload in inc_raytracing.hlsl: 13 floats + 3 uints = 64 bytes. Too
+		// small silently corrupts whatever falls off the end, so edit both together.
 		auto* shaderConfig = pipeline.CreateSubobject<CD3DX12_RAYTRACING_SHADER_CONFIG_SUBOBJECT>();
 		shaderConfig->Config(sizeof(float) * 13 + sizeof(UINT) * 3, D3D12_RAYTRACING_MAX_ATTRIBUTE_SIZE_IN_BYTES);
 
