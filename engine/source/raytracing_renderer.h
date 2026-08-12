@@ -38,6 +38,8 @@ namespace udsdx
 			float FogDistanceStart = 0.0f;
 			float RayMaxDistance = 0.0f;
 			float SkyMaxRadiance = 0.0f;
+			float SpecularSkyMaxRadiance = 0.0f;
+			float SpecularFireflyClamp = 0.0f;
 			float ShadowRayOffset = 0.0f;
 			Vector3 SunDirection{};
 			Color SunColor{};
@@ -48,7 +50,6 @@ namespace udsdx
 			UINT HasEnvironmentMap = 0;
 			UINT FisheyeEnabled = 0;
 			float FisheyeFov = 0.0f;
-			UINT Pad = 0;
 		};
 
 		static constexpr DXGI_FORMAT HISTORY_FORMAT = DXGI_FORMAT_R32G32B32A32_FLOAT;

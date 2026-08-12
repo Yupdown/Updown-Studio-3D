@@ -113,8 +113,11 @@ namespace udsdx
 		// pass does not run under Ray Reconstruction, which instead assumes the guides sit on the
 		// same sub-pixel position as the colour it is told about.
 		UINT JitterGuideRay = 0;
-		float JitterPad0 = 0.0f;
-		float JitterPad1 = 0.0f;
+		// Sky ceiling for a mirror-smooth specular bounce, interpolated toward SkyMaxRadiance as
+		// roughness grows -- see SpecularSkyClamp in lib_raytracing.hlsl.
+		float SpecularSkyMaxRadiance = 64.0f;
+		// Ceiling on a single specular bounce's contribution, after the BRDF weight.
+		float SpecularFireflyClamp = 64.0f;
 		float JitterPad2 = 0.0f;
 	};
 

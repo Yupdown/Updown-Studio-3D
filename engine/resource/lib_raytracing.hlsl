@@ -217,6 +217,80 @@ float3 DirectSun(float3 position, float3 normal, float3 V, float3 baseColor, Sur
     return E * (DiffuseBRDF(DiffuseAlbedo(baseColor, m.Metallic)) + specular);
 }
 
+// Sky ceiling for a specular bounce. gSkyMaxRadiance exists because the environment cube contains
+// the sun disk that DirectSun already accounts for, so it cannot simply be dropped here. But a
+// near-mirror gathers from one direction: there is no variance for a clamp to reduce, and all it
+// does is flatten a bright reflection into a grey patch. A wide lobe averages many directions and
+// behaves like the diffuse bounce, so it wants the original clamp. Interpolate between them.
+float SpecularSkyClamp(float roughness)
+{
+    return lerp(gSpecularSkyMaxRadiance, gSkyMaxRadiance, saturate(roughness));
+}
+
+// One specular indirect bounce, VNDF-sampled around the view direction.
+//
+// This is a second ray rather than a stochastic choice between a diffuse and a specular lobe.
+// Lobe selection would fire the diffuse ray only with probability pD, degrading the channel that
+// is carefully filtered downstream, and would stack selection variance on top of lobe variance in
+// the channel that has NO spatial filter. A dedicated ray costs 2 rays per sample and keeps both
+// estimators clean. Specular variance is low exactly where it matters (smooth metal is nearly a
+// mirror) and high only where throughput is ~0.04 anyway (rough dielectrics).
+float3 TraceSpecularBounce(float3 origin, float3 normal, float3 V, float3 baseColor,
+                           SurfaceMaterial m, float2 xi, inout uint rng)
+{
+    float NoV = dot(normal, V);
+    if (NoV <= 0.0f)
+    {
+        return 0.0f.xxx;
+    }
+
+    float alpha = RoughnessToAlpha(m.Roughness);
+    float3 H;
+    float3 L = SampleGGXVNDFWorld(normal, V, alpha, xi, H);
+
+    // VNDF can produce a half-vector whose reflection dips below the shading hemisphere. Rejecting
+    // is the correct handling; re-normalising or flipping would bias the estimator.
+    float NoL = dot(normal, L);
+    if (NoL <= 0.0f)
+    {
+        return 0.0f.xxx;
+    }
+
+    float3 f0 = SpecularF0(baseColor, m.Metallic, m.DielectricF0);
+    float3 weight = SpecularSampleWeight(f0, NoV, NoL, saturate(dot(V, H)), alpha);
+    // Safety valve: a rough dielectric at grazing incidence contributes nothing worth a ray.
+    if (max(weight.r, max(weight.g, weight.b)) < 1e-3f)
+    {
+        return 0.0f.xxx;
+    }
+
+    RayDesc specular;
+    specular.Origin = origin;
+    specular.Direction = L;
+    specular.TMin = gShadowRayOffset;
+    specular.TMax = gRayMaxDistance;
+
+    SurfacePayload hit = TraceSurface(specular);
+
+    float3 incoming;
+    if (hit.HitT < 0.0f)
+    {
+        incoming = min(hit.Emission, SpecularSkyClamp(m.Roughness).xxx);
+    }
+    else
+    {
+        float3 hitPosition = specular.Origin + L * hit.HitT;
+        incoming = DirectSun(hitPosition, hit.Normal, -L, hit.Albedo,
+                             UnpackSurfaceMaterial(hit.MatPack0, hit.MatPack1), rng)
+                 + hit.Emission;
+    }
+
+    // Clamp the contribution, not just the sky: this channel is never spatially filtered, so one
+    // bright emissive or sunlit surface caught in a near-mirror persists as a visible speck until
+    // temporal accumulation grinds it down -- and it never converges at all while the camera moves.
+    return min(weight * incoming, gSpecularFireflyClamp.xxx);
+}
+
 // Emits the direct term (sun + primary sky + fog in-scatter) and the indirect term (the one
 // diffuse bounce) separately. Indirect carries nearly all of the estimator's variance -- indoors
 // it is a lottery over which bounce rays find a lit patch -- so the spatial filter downstream
@@ -282,11 +356,18 @@ void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 ind
     float3 direct = DirectSun(position, primary.Normal, primaryV, primary.Albedo, primaryMaterial, rng)
                   + primary.Emission;
 
+    // Both random pairs are drawn here, unconditionally and before any branch, so a pixel's
+    // position in the RNG stream never depends on the material under it. Let the specular draw
+    // happen only when the lobe is worth tracing and two pixels on the same wall would decorrelate
+    // purely because one of them is metal.
+    float2 diffuseXi = NextFloat2(rng);
+    float2 specularXi = NextFloat2(rng);
+
     // One diffuse indirect bounce. This is the radiosity term: light from the directional light
     // that reached another surface first and scattered from it onto this one.
     RayDesc bounce;
     bounce.Origin = OffsetOrigin(position, primary.Normal);
-    bounce.Direction = CosineSampleHemisphere(NextFloat2(rng), primary.Normal);
+    bounce.Direction = CosineSampleHemisphere(diffuseXi, primary.Normal);
     bounce.TMin = gShadowRayOffset;
     bounce.TMax = gRayMaxDistance;
 
@@ -314,9 +395,14 @@ void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 ind
                  + secondary.Emission;
     }
 
+    float3 specularIndirect = TraceSpecularBounce(bounce.Origin, primary.Normal, primaryV,
+                                                  primary.Albedo, primaryMaterial, specularXi, rng);
+
     // Debug views stay unfogged so they show the raw quantity being inspected.
     if (gDebugMode == RT_DEBUG_DIRECT)
     {
+        // The specular bounce is deliberately absent: it rides the direct channel for filtering
+        // reasons, but it is indirect light and this view answers "what does the sun do here".
         directOut = direct;
         return;
     }
@@ -324,7 +410,8 @@ void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 ind
     {
         // Cosine pdf and the 1/pi Lambert term cancel, leaving a plain albedo multiply -- of the
         // DIFFUSE albedo, since metals have no diffuse lobe to gather into.
-        directOut = DiffuseAlbedo(primary.Albedo, primaryMaterial.Metallic) * incoming;
+        directOut = DiffuseAlbedo(primary.Albedo, primaryMaterial.Metallic) * incoming
+                  + specularIndirect;
         return;
     }
 
@@ -339,7 +426,7 @@ void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 ind
     float fogAmount;
     float3 fogColor;
     EvaluateFog(position, fogAmount, fogColor);
-    directOut = direct * (1.0f - fogAmount) + fogColor * fogAmount;
+    directOut = (direct + specularIndirect) * (1.0f - fogAmount) + fogColor * fogAmount;
     // DEMODULATED: the primary albedo is deliberately absent. The spatial filter smooths this
     // channel, and albedo baked into it would smear texture detail along with the noise -- the
     // resolve re-multiplies the full-resolution albedo AFTER filtering, so texture stays sharp

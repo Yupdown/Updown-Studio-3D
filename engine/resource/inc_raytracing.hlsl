@@ -103,7 +103,12 @@ cbuffer cbRaytracing : register(b0, space0)
     float2   gJitterOffset;
 
     uint     gJitterGuideRay;
-    float3   gJitterPad;
+    // Sky ceiling for a mirror-smooth specular bounce, interpolated toward gSkyMaxRadiance as
+    // roughness grows -- see SpecularSkyClamp in lib_raytracing.hlsl.
+    float    gSpecularSkyMaxRadiance;
+    // Ceiling on a single specular bounce's contribution, after the BRDF weight.
+    float    gSpecularFireflyClamp;
+    float    gJitterPad;
 };
 
 // Per-instance previous object-to-world, indexed by InstanceIndex(). Column-vector 3x4, matching

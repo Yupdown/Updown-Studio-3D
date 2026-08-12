@@ -890,6 +890,8 @@ namespace udsdx
 		constants.ShadowRayOffset = options.RaytracingShadowRayOffset;
 		constants.SkyIntensity = 1.0f;
 		constants.SkyMaxRadiance = param.RenderOptions->RaytracingSkyMaxRadiance;
+		constants.SpecularSkyMaxRadiance = param.RenderOptions->RaytracingSpecularSkyMaxRadiance;
+		constants.SpecularFireflyClamp = param.RenderOptions->RaytracingSpecularFireflyClamp;
 		constants.DebugMode = static_cast<UINT>(options.RaytracingDebug);
 		constants.HasEnvironmentMap = hasEnvironmentMap ? 1u : 0u;
 		constants.FrameSeed = static_cast<UINT>(m_frameCounter);
@@ -1223,6 +1225,10 @@ namespace udsdx
 		settings.FogDistanceStart = param.RenderOptions->FogDistanceStart;
 		settings.RayMaxDistance = param.RenderOptions->RaytracingRayMaxDistance;
 		settings.SkyMaxRadiance = param.RenderOptions->RaytracingSkyMaxRadiance;
+		// Both clamps change what the estimator converges to, so a slider move has to invalidate
+		// history -- otherwise the old mean survives and the knob looks broken.
+		settings.SpecularSkyMaxRadiance = param.RenderOptions->RaytracingSpecularSkyMaxRadiance;
+		settings.SpecularFireflyClamp = param.RenderOptions->RaytracingSpecularFireflyClamp;
 		settings.ShadowRayOffset = param.RenderOptions->RaytracingShadowRayOffset;
 		settings.SamplesPerPixel = std::max(1u, param.RenderOptions->RaytracingSamplesPerPixel);
 		settings.DebugMode = static_cast<UINT>(param.RenderOptions->RaytracingDebug);

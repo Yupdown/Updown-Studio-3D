@@ -114,6 +114,16 @@ namespace udsdx
 		// Clamping the tail at the source costs a slight darkening of sky-lit shadow but cuts the
 		// indirect estimator's variance enough for dark regions to actually converge.
 		float RaytracingSkyMaxRadiance = 8.0f;
+		// The same clamp, relaxed for the specular bounce. A near-mirror gathers from a single
+		// direction, so clamping buys no variance reduction there and only flattens a bright
+		// reflection into a grey patch; a wide lobe averages many directions and behaves like the
+		// diffuse bounce. SpecularSkyClamp interpolates between the two by roughness.
+		float RaytracingSpecularSkyMaxRadiance = 64.0f;
+		// Ceiling on one specular bounce's contribution after the BRDF weight, covering bright
+		// emissives and sunlit surfaces seen in a near-mirror. Deliberately not tighter than the
+		// clamp above: a mirror reflecting sky at that ceiling is a legitimate 64, and capping
+		// lower would make the roughness interpolation inert.
+		float RaytracingSpecularFireflyClamp = 64.0f;
 		// Edge-aware a-trous passes over the accumulated indirect radiance. Display-side only, so
 		// changing them never invalidates history. 0 disables the filter.
 		unsigned int RaytracingAtrousIterations = 4u;
