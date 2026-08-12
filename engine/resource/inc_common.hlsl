@@ -513,6 +513,8 @@ float3 DiffuseLight(VertexOut pin)
 	float3 normalW = normalize(mul(normalV, transpose((float3x3)gView)));
 
 	float lambertian = max(dot(normalW, -gDirLight), 0.0);
+	// gLightIntensity is irradiance on a head-on surface, so this is E and the caller supplies the
+	// BRDF's 1/pi -- the same convention DirectSun uses in lib_raytracing.hlsl.
 	return gLightColor.rgb * lambertian * gLightIntensity;
 }
 
@@ -558,7 +560,12 @@ float4 PSDeferredDefault(VertexOut pin) : SV_Target
 	// No manual linearization: the albedo target is _SRGB, so the sampler already decoded it.
 	float4 gBuffer1Color = gBuffer1.Sample(gsamPointClamp, pin.TexC);
 
-	float3 fColor = (AmbientLight(pin) + min(ShadowValue(PosW, normalW), DiffuseLight(pin))) * gBuffer1Color.rgb;
+	// Shadowing is a visibility factor, so it multiplies the light. min() capped every lit surface
+	// at the shadow term's 1.0 however bright the light was, and being a scalar-vs-vector min it
+	// clipped per channel, tinting shadows under a coloured sun.
+	float3 albedo = gBuffer1Color.rgb;
+	float3 sun = ShadowValue(PosW, normalW) * DiffuseBRDF(albedo) * DiffuseLight(pin);
+	float3 fColor = AmbientLight(pin) * albedo + sun;
 	fColor = ApplyFog(fColor, PosW.xyz);
 	return float4(fColor, 1.0f);
 }

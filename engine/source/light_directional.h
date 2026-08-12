@@ -16,6 +16,9 @@ namespace udsdx
 		Vector3 GetLightDirection() const;
 
 		void SetColor(const Color& color) { m_color = color; }
+		// Irradiance arriving on a surface facing the light head-on. Both renderers divide the BRDF
+		// by pi, so this is a physical quantity rather than a gain -- values around 2*pi land where
+		// the old pi-times-hot units put 2.
 		void SetIntensity(float intensity) { m_intensity = intensity; }
 		// Angular diameter of the light's disk in degrees. Drives raytraced soft shadows; 0 gives a
 		// perfectly directional light with hard shadow edges.
@@ -26,10 +29,11 @@ namespace udsdx
 		float GetAngularDiameter() const { return m_angularDiameter; }
 
 	private:
-		// Defaults reproduce the values the deferred lighting used to hardcode, so adding these
-		// fields does not change the rendered image.
+		// The default intensity is no longer neutral: it used to reproduce the constant the deferred
+		// lighting hardcoded, but once the BRDFs carry their 1/pi the same image needs 2*pi here.
+		// Changing one without the other rescales every unlit-by-hand scene in the engine.
 		Color m_color = Color(1.0f, 1.0f, 1.0f, 1.0f);
-		float m_intensity = 2.0f;
+		float m_intensity = 2.0f * DirectX::XM_PI;
 		float m_angularDiameter = 0.53f;
 	};
 }

@@ -1505,8 +1505,12 @@ namespace udsdx
 				{
 					sun->SetColor(sunColor);
 				}
+				// Irradiance, not a gain: the testbed's well-exposed interior sits at 26.7, which
+				// the old 0..20 range could not even reach. Logarithmic so the low end stays
+				// controllable across a range that now spans two decades.
 				float sunIntensity = sun->GetIntensity();
-				if (ImGui::SliderFloat("Sun Intensity", &sunIntensity, 0.0f, 20.0f, "%.3f"))
+				if (ImGui::SliderFloat("Sun Intensity", &sunIntensity, 0.0f, 64.0f, "%.3f",
+					ImGuiSliderFlags_Logarithmic))
 				{
 					sun->SetIntensity(sunIntensity);
 				}

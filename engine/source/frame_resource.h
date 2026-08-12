@@ -41,7 +41,7 @@ namespace udsdx
 		// LightDirection (12B) + LightIntensity (4B) completes one 16-byte register, so LightColor
 		// starts on a fresh row and the HLSL mirror in inc_common.hlsl packs identically.
 		Vector3 LightDirection = Vector3::Zero;
-		float LightIntensity = 2.0f;
+		float LightIntensity = 2.0f * DirectX::XM_PI; // irradiance; see LightDirectional::SetIntensity
 		Color LightColor = Color(1.0f, 1.0f, 1.0f, 1.0f);
 	};
 
@@ -79,7 +79,7 @@ namespace udsdx
 		UINT SamplesPerPixel = 1;
 
 		Vector3 SunDirection = Vector3::Zero;
-		float SunIntensity = 2.0f;
+		float SunIntensity = 2.0f * DirectX::XM_PI; // irradiance; see LightDirectional::SetIntensity
 		Color SunColor = Color(1.0f, 1.0f, 1.0f, 1.0f);
 
 		float SunCosHalfAngle = 1.0f;

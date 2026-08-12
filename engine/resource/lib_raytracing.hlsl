@@ -192,8 +192,13 @@ float3 DirectSun(float3 position, float3 normal, float3 albedo, inout uint rng)
         return 0.0f;
     }
 
-    // With the default light (colour 1, intensity 2) this matches inc_common.hlsl's DiffuseLight.
-    return albedo * gSunColor.rgb * gSunIntensity * ndotl;
+    // gSunIntensity is the irradiance a head-on surface receives from the cone, so E is the
+    // irradiance arriving here and the BRDF supplies the 1/pi. The indirect bounce below has always
+    // been correct in these units -- the cosine pdf cancels albedo/pi exactly -- so the direct term
+    // was the one place the renderer was pi times hot, and this is that inconsistency being fixed
+    // rather than a brightness change.
+    float3 E = gSunColor.rgb * gSunIntensity * ndotl;
+    return DiffuseBRDF(albedo) * E;
 }
 
 // Emits the direct term (sun + primary sky + fog in-scatter) and the indirect term (the one

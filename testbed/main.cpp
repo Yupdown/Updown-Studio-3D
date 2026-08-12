@@ -105,7 +105,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	// mean luminance by the same factor and pushed most of the frame toward black. A well-exposed
 	// frame is not cosmetic here -- crushed regions hide exactly the artifacts this scene exists
 	// to surface.
-	light->SetIntensity(8.5f);
+	// Times pi because intensity now means irradiance and the BRDFs carry their own 1/pi; the
+	// product is unchanged, so the reference image is too.
+	light->SetIntensity(8.5f * DirectX::XM_PI);
 	lightObject->GetTransform()->SetLocalRotation(
 		Quaternion::CreateFromYawPitchRoll(0.9f, 1.15f, 0.0f));
 	scene->AddObject(lightObject);
