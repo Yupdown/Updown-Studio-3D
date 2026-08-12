@@ -217,6 +217,45 @@ float3 DirectSun(float3 position, float3 normal, float3 V, float3 baseColor, Sur
     return E * (DiffuseBRDF(DiffuseAlbedo(baseColor, m.Metallic)) + specular);
 }
 
+// Directional albedo of the single-scattering GGX lobe, measured the only way that actually proves
+// the pieces agree: by averaging the estimator's own sample weights with F0 forced to 1, so a white
+// furnace is exactly what a lossless lobe should return.
+//
+// It traces NOTHING. That is the point -- it isolates D, V, F and the VNDF sampler from transport,
+// so a failure here is a BRDF bug and cannot be anything else. Single-scattering GGX loses energy
+// at high roughness (that is the known multi-scatter deficit, not a bug) but must never EXCEED 1,
+// and must sit very close to 1 where the lobe is narrow.
+float3 BrdfFurnaceTest(float3 normal, float3 V, float roughness)
+{
+    const uint kFurnaceSamples = 64u;
+
+    float NoV = dot(normal, V);
+    if (NoV <= 0.0f)
+    {
+        return 0.0f.xxx;
+    }
+
+    float alpha = RoughnessToAlpha(roughness);
+    float3 white = 1.0f.xxx;
+    float3 sum = 0.0f.xxx;
+
+    // Hammersley rather than the frame RNG: this is a measurement, and it should read the same on
+    // every frame so a threshold can be put on it.
+    [loop]
+    for (uint i = 0u; i < kFurnaceSamples; ++i)
+    {
+        float3 H;
+        float3 L = SampleGGXVNDFWorld(normal, V, alpha, Hammersley(i, kFurnaceSamples), H);
+        float NoL = dot(normal, L);
+        if (NoL > 0.0f)
+        {
+            sum += SpecularSampleWeight(white, NoV, NoL, saturate(dot(V, H)), alpha);
+        }
+    }
+
+    return sum / float(kFurnaceSamples);
+}
+
 // Sky ceiling for a specular bounce. gSkyMaxRadiance exists because the environment cube contains
 // the sun disk that DirectSun already accounts for, so it cannot simply be dropped here. But a
 // near-mirror gathers from one direction: there is no variance for a clamp to reduce, and all it
@@ -306,7 +345,8 @@ void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 ind
     {
         // Surface-property views show nothing for a miss: the sky is not a surface, and letting
         // its radiance through would make "is anything emissive here" unanswerable.
-        if (gDebugMode == RT_DEBUG_METALROUGH || gDebugMode == RT_DEBUG_EMISSION)
+        if (gDebugMode == RT_DEBUG_METALROUGH || gDebugMode == RT_DEBUG_EMISSION
+            || gDebugMode == RT_DEBUG_SPECULAR || gDebugMode == RT_DEBUG_FURNACE)
         {
             return;
         }
@@ -346,6 +386,12 @@ void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 ind
 
     SurfaceMaterial primaryMaterial = UnpackSurfaceMaterial(primary.MatPack0, primary.MatPack1);
     float3 primaryV = -ray.Direction;
+
+    if (gDebugMode == RT_DEBUG_FURNACE)
+    {
+        directOut = BrdfFurnaceTest(primary.Normal, primaryV, primaryMaterial.Roughness);
+        return;
+    }
 
     float3 position = ray.Origin + ray.Direction * primary.HitT;
     // Emission rides the direct channel, which is never albedo-demodulated. Putting it in the
@@ -412,6 +458,11 @@ void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 ind
         // DIFFUSE albedo, since metals have no diffuse lobe to gather into.
         directOut = DiffuseAlbedo(primary.Albedo, primaryMaterial.Metallic) * incoming
                   + specularIndirect;
+        return;
+    }
+    if (gDebugMode == RT_DEBUG_SPECULAR)
+    {
+        directOut = specularIndirect;
         return;
     }
 

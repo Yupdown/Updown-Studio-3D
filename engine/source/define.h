@@ -58,12 +58,18 @@ namespace udsdx
 		IndirectOnly,
 		MotionVector,
 		SampleHeatmap,
-		// Primary hit's metallic in R and roughness in G. Exists mostly as evidence: these are the
-		// only material channels no shading path consumes yet, so without a view of them a
-		// regression in the metallic-roughness lookup would be completely silent.
+		// Primary hit's metallic in R and roughness in G.
 		MetallicRoughness,
 		// Primary hit's emissive radiance.
 		Emission,
+		// The specular indirect bounce alone, with the diffuse channel and the sun removed.
+		SpecularOnly,
+		// Directional albedo of the specular lobe, measured by averaging VNDF sample weights with
+		// F0 forced to 1. Traces no rays: it asks only whether D, V, F and the VNDF sampler agree
+		// with each other. A single-scattering GGX lobe cannot exceed 1 there, and near-mirror
+		// surfaces must sit close to it, so the two bounds catch the whole class of energy bugs
+		// that otherwise read as "metal looks a bit dull".
+		BrdfFurnace,
 		Count
 	};
 

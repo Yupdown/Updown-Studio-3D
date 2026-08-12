@@ -36,9 +36,14 @@ namespace
 	namespace thresholds
 	{
 		constexpr double NanCount = 0.0;
-		// Max luminance over the p99.9 luminance. Generous because the sun / bright sky can
-		// legitimately sit far above the scene's bulk; the poisoned self-test injects 1e6.
-		constexpr double FireflyRatio = 1e4;
+		// Max luminance over the p99.9 luminance. This was 1e4, which is loose enough to catch
+		// only the self-test's injected 1e6 and nothing a renderer would ever do by accident --
+		// so it gated nothing. The specular bounce is the first thing in this renderer that can
+		// genuinely produce fireflies, and it is not spatially filtered, so the threshold has to
+		// mean something. Measured 1.57 on this pose once GGX landed (1.25 before it, and stable
+		// to 0.2% between runs); 5.0 leaves better than 3x headroom while still failing long
+		// before a stray sample is bright enough to be visible. The self-test's 1e6 is unaffected.
+		constexpr double FireflyRatio = 5.0;
 		constexpr double LumMeanMin = 0.005;
 		constexpr double LumMeanMax = 50.0;
 		constexpr double LumStddevMin = 1e-4;
@@ -75,6 +80,19 @@ namespace
 		// Peak emissive radiance. DamagedHelmet's emissive factor is 1 and its texture is [0,1],
 		// so anything far above 1 means a runaway emissive strength.
 		constexpr double EmissionMax = 16.0;
+		// Directional albedo of the specular lobe with F0 forced to 1, measured without tracing.
+		// A single-scattering GGX lobe cannot return more energy than it receives, so exceeding 1
+		// means D, V, F and the VNDF sampler disagree -- the estimator weight is not collapsing to
+		// F * G2/G1 the way the identity says it must. The small headroom is Monte Carlo noise at
+		// 64 samples, not a licence to create energy.
+		constexpr double FurnaceMax = 1.001;
+		// The same measurement from below, restricted to the smoothest surfaces in the frame. Rough
+		// GGX legitimately loses energy to the missing multi-scatter term, so only the narrow-lobe
+		// end can be held to a floor -- and that is where a normalisation error would otherwise
+		// hide, because losing 15% there just reads as "metal looks a bit dull".
+		constexpr double FurnaceSmoothMin = 0.98;
+		// One specular bounce after the BRDF weight, which gSpecularFireflyClamp caps at 64.
+		constexpr double SpecularMax = 64.0 * 1.01;
 	}
 
 	constexpr int kWarmupTimeoutFrames = 120;
@@ -621,6 +639,51 @@ namespace
 			"peak emissive radiance stays sane (catches a runaway emissive strength)");
 	}
 
+	// The furnace test asks a question no image comparison can: are D, V, F and the VNDF sampler
+	// consistent with each other? With F0 forced to 1 the estimator's own sample weights average to
+	// the lobe's directional albedo, which for a lossless single-scattering lobe is 1. Nothing is
+	// traced, so a failure is a BRDF bug and cannot be transport, geometry or a denoiser.
+	//
+	// Both bounds ride the frame maximum. Holding the minimum instead would only measure the
+	// roughest surface in view, where single-scattering GGX legitimately loses energy to the
+	// multi-scatter term it does not model; the maximum lands on the smoothest surface, which is
+	// where the lobe should conserve and where a normalisation error would otherwise pass for
+	// "metal looks a bit dull".
+	void EvaluateAovFurnace(CaseState& cs)
+	{
+		AddCheck(cs, "nan_inf", CountNonFinite(cs.A) == 0,
+			static_cast<double>(CountNonFinite(cs.A)), 0.0, "non-finite texels in the furnace AOV");
+
+		// Weights are achromatic here (F_Schlick with f0 = 1 is 1), so one channel is the whole
+		// story. Note the HDR target is R11G11B10_FLOAT: near 1.0 its quantum is about 0.008, so
+		// these bounds resolve energy errors down to roughly a percent, not to their printed digits.
+		const ChannelStats furnace = ComputeChannelStats(cs.A, 0, kGeometryRowsFrom);
+		AddCheck(cs, "furnace_max", furnace.Max <= thresholds::FurnaceMax,
+			furnace.Max, thresholds::FurnaceMax,
+			"directional albedo of the specular lobe must not exceed 1 (energy creation)");
+		AddCheck(cs, "furnace_smooth", furnace.Max >= thresholds::FurnaceSmoothMin,
+			furnace.Max, thresholds::FurnaceSmoothMin,
+			"the narrowest lobe in frame must conserve energy (energy loss / bad normalisation)");
+	}
+
+	// Deliberately whole-frame, unlike the other AOV checks: Sponza's floor is a rough dielectric,
+	// so restricting to the lower rows would sample exactly the surfaces with the least specular.
+	void EvaluateAovSpecular(CaseState& cs)
+	{
+		AddCheck(cs, "nan_inf", CountNonFinite(cs.A) == 0,
+			static_cast<double>(CountNonFinite(cs.A)), 0.0, "non-finite texels in the specular AOV");
+
+		LumStats stats = ComputeLumStats(cs.A);
+		AddCheck(cs, "specular_present", stats.Max > 0.0, stats.Max, 0.0,
+			"peak specular indirect radiance (zero means the bounce never fires)");
+		AddCheck(cs, "specular_bounded", stats.Max <= thresholds::SpecularMax,
+			stats.Max, thresholds::SpecularMax,
+			"peak specular indirect stays under the firefly clamp");
+		AddCheck(cs, "specular_varies", stats.Stddev >= thresholds::LumStddevMin,
+			stats.Stddev, thresholds::LumStddevMin,
+			"specular indirect has structure (a constant would mean it is not material-driven)");
+	}
+
 	void EvaluateHeatmap(CaseState& cs)
 	{
 		// The heatmap ramps black -> blue -> green -> red -> white with effective sample count;
@@ -980,6 +1043,9 @@ namespace
 			{ "aov_motion",      RaytracingDebugMode::MotionVector,  kAovConvergeFrames, false, false, &EvaluateAovMotion },
 			{ "aov_material",    RaytracingDebugMode::MetallicRoughness, kAovConvergeFrames, false, false, &EvaluateAovMaterial },
 			{ "aov_emission",    RaytracingDebugMode::Emission,      kAovConvergeFrames, false, false, &EvaluateAovEmission },
+			{ "aov_furnace",     RaytracingDebugMode::BrdfFurnace,   kAovConvergeFrames, false, false, &EvaluateAovFurnace },
+			// Stochastic, unlike the other AOVs, so it gets the full convergence budget.
+			{ "aov_specular",    RaytracingDebugMode::SpecularOnly,  -1,                 false, false, &EvaluateAovSpecular },
 			{ "heatmap",         RaytracingDebugMode::SampleHeatmap, -1,                 false, false, &EvaluateHeatmap },
 		};
 

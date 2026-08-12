@@ -1491,7 +1491,7 @@ namespace udsdx
 			ImGui::SliderFloat("Specular Sky Clamp", &options.RaytracingSpecularSkyMaxRadiance, 1.0f, 256.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
 			ImGui::SliderFloat("Specular Firefly Clamp", &options.RaytracingSpecularFireflyClamp, 1.0f, 256.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
 
-			static const char* debugModeNames[] = { "None", "Albedo", "Normal", "Direct Only", "Indirect Only", "Motion Vector", "Sample Heatmap", "Metallic/Roughness", "Emission" };
+			static const char* debugModeNames[] = { "None", "Albedo", "Normal", "Direct Only", "Indirect Only", "Motion Vector", "Sample Heatmap", "Metallic/Roughness", "Emission", "Specular Only", "BRDF Furnace" };
 			static_assert(IM_ARRAYSIZE(debugModeNames) == static_cast<int>(RaytracingDebugMode::Count),
 				"Debug mode names must cover every RaytracingDebugMode.");
 			int debugMode = static_cast<int>(options.RaytracingDebug);

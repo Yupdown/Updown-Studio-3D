@@ -19,6 +19,8 @@
 #define RT_DEBUG_HEATMAP        6u
 #define RT_DEBUG_METALROUGH     7u
 #define RT_DEBUG_EMISSION       8u
+#define RT_DEBUG_SPECULAR       9u
+#define RT_DEBUG_FURNACE        10u
 
 #define RT_INVALID_INSTANCE     0xFFFFFFFFu
 
