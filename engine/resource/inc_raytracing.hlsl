@@ -220,8 +220,10 @@ struct RtVertex
 };
 
 // Vertex layout from vertex.h: float3 position @0, float2 uv @12, float3 normal @20,
-// float3 tangent @32; stride 44. BaseVertexLocation is applied here for the same reason the BLAS
-// geometry desc folded it into VertexBuffer.StartAddress.
+// float4 tangent @32 (w = bitangent handedness); stride 48 for Vertex, 68 for RiggedVertex, which
+// is why the stride comes from GeometryInfo rather than being assumed here.
+// BaseVertexLocation is applied here for the same reason the BLAS geometry desc folded it into
+// VertexBuffer.StartAddress.
 RtVertex LoadVertex(GeometryInfo info, uint index)
 {
     ByteAddressBuffer buffer = gRawBuffers[info.VertexBufferSrvIndex];

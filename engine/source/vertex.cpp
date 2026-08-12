@@ -8,10 +8,10 @@ namespace udsdx
 		position = { 0.0f, 0.0f, 0.0f };
 		uv = { 0.0f, 0.0f };
 		normal = { 0.0f, 0.0f, 1.0f };
-		tangent = { 0.0f, 1.0f, 0.0f };
+		tangent = { 0.0f, 1.0f, 0.0f, 1.0f };
 	}
 
-	Vertex::Vertex(const XMFLOAT3& position, const XMFLOAT2& uv, const XMFLOAT3& normal, const XMFLOAT3& tangent)
+	Vertex::Vertex(const XMFLOAT3& position, const XMFLOAT2& uv, const XMFLOAT3& normal, const XMFLOAT4& tangent)
 	{
 		this->position = position;
 		this->uv = uv;
@@ -24,12 +24,12 @@ namespace udsdx
 		position = { 0.0f, 0.0f, 0.0f };
 		uv = { 0.0f, 0.0f };
 		normal = { 0.0f, 0.0f, 1.0f };
-		tangent = { 0.0f, 1.0f, 0.0f };
+		tangent = { 0.0f, 1.0f, 0.0f, 1.0f };
 		boneIndices = 0;
 		boneWeights = { 0.0f, 0.0f, 0.0f, 0.0f };
 	}
 
-	RiggedVertex::RiggedVertex(const XMFLOAT3& position, const XMFLOAT2& uv, const XMFLOAT3& normal, const XMFLOAT3& tangent, const BYTE boneIndices[4], const XMFLOAT4& boneWeights)
+	RiggedVertex::RiggedVertex(const XMFLOAT3& position, const XMFLOAT2& uv, const XMFLOAT3& normal, const XMFLOAT4& tangent, const BYTE boneIndices[4], const XMFLOAT4& boneWeights)
 	{
 		this->position = position;
 		this->uv = uv;

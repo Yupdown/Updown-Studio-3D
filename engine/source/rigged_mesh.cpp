@@ -61,7 +61,11 @@ namespace udsdx
 				}
 				if (mesh->HasTangentsAndBitangents())
 				{
-					vertex.tangent = XMFLOAT3(mesh->mTangents[i].x, mesh->mTangents[i].y, mesh->mTangents[i].z);
+					// See Mesh::Mesh for why the handedness sign is stored alongside the tangent.
+					const aiVector3D& t = mesh->mTangents[i];
+					const float handedness =
+						((mesh->mNormals[i] ^ t) * mesh->mBitangents[i]) < 0.0f ? -1.0f : 1.0f;
+					vertex.tangent = XMFLOAT4(t.x, t.y, t.z, handedness);
 				}
 				vertex.boneIndices = 0;
 				vertex.boneWeights = XMFLOAT4(0.0f, 0.0f, 0.0f, 0.0f);

@@ -9,7 +9,10 @@ namespace udsdx
 		XMFLOAT3 position;
 		XMFLOAT2 uv;
 		XMFLOAT3 normal;
-		XMFLOAT3 tangent;
+		// xyz = tangent, w = bitangent handedness (+/-1). Without the sign the bitangent has to be
+		// reconstructed as cross(N, T), which is inverted wherever the UV island is mirrored -- so
+		// normal mapping lights those regions backwards. glTF stores the same sign in TANGENT.w.
+		XMFLOAT4 tangent;
 
 		// Input Layout:
 		// used to make vertex propertices associate with the semantics of shaders
@@ -21,7 +24,7 @@ namespace udsdx
 			// Vertex::normal
 			{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 20, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 			// Vertex::tangent
-			{ "TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 32, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+			{ "TANGENT", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 32, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 			// Vertex::instanceTransform
 			{ "INSTANCETRANSFORM", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 0, D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
 			{ "INSTANCETRANSFORM", 1, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 16, D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
@@ -31,7 +34,7 @@ namespace udsdx
 		constexpr static UINT DescriptionTableSize = sizeof(DescriptionTable) / sizeof(D3D12_INPUT_ELEMENT_DESC);
 
 		Vertex();
-		Vertex(const XMFLOAT3& position, const XMFLOAT2& uv, const XMFLOAT3& normal, const XMFLOAT3& tangent);
+		Vertex(const XMFLOAT3& position, const XMFLOAT2& uv, const XMFLOAT3& normal, const XMFLOAT4& tangent);
 	};
 
 	struct RiggedVertex
@@ -39,7 +42,8 @@ namespace udsdx
 		XMFLOAT3 position;
 		XMFLOAT2 uv;
 		XMFLOAT3 normal;
-		XMFLOAT3 tangent;
+		// xyz = tangent, w = bitangent handedness; see Vertex::tangent.
+		XMFLOAT4 tangent;
 		uint32_t boneIndices;
 		XMFLOAT4 boneWeights;
 
@@ -53,11 +57,11 @@ namespace udsdx
 			// RiggedVertex::normal
 			{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 20, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 			// RiggedVertex::tangent
-			{ "TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 32, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+			{ "TANGENT", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 32, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 			// RiggedVertex::boneIndices
-			{ "BONEINDICES", 0, DXGI_FORMAT_R32_UINT, 0, 44, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+			{ "BONEINDICES", 0, DXGI_FORMAT_R32_UINT, 0, 48, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 			// RiggedVertex::boneWeights
-			{ "BONEWEIGHTS", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 48, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+			{ "BONEWEIGHTS", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 52, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 			// Vertex::instanceTransform
 			{ "INSTANCETRANSFORM", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 0, D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
 			{ "INSTANCETRANSFORM", 1, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 16, D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
@@ -67,6 +71,6 @@ namespace udsdx
 		constexpr static UINT DescriptionTableSize = sizeof(DescriptionTable) / sizeof(D3D12_INPUT_ELEMENT_DESC);
 
 		RiggedVertex();
-		RiggedVertex(const XMFLOAT3& position, const XMFLOAT2& uv, const XMFLOAT3& normal, const XMFLOAT3& tangent, const BYTE boneIndices[4], const XMFLOAT4& boneWeights);
+		RiggedVertex(const XMFLOAT3& position, const XMFLOAT2& uv, const XMFLOAT3& normal, const XMFLOAT4& tangent, const BYTE boneIndices[4], const XMFLOAT4& boneWeights);
 	};
 }

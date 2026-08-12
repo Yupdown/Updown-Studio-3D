@@ -105,7 +105,8 @@ struct VertexIn
 	float3 PosL         : POSITION;
     float2 Tex          : TEXCOORD;
     float3 Normal       : NORMAL;
-    float3 Tangent	    : TANGENT;
+    // w carries the bitangent handedness; see Vertex::tangent.
+    float4 Tangent	    : TANGENT;
     float4x4 InstanceTransform : INSTANCETRANSFORM;
 #ifdef RIGGED
 	uint   BoneIndices  : BONEINDICES;
@@ -123,6 +124,7 @@ struct VertexOut
     float4 PosW         : POSITION0;
     float2 Tex          : TEXCOORD;
     float4 NormalW      : NORMAL;
+    // xyz world-space tangent, w the handedness carried through from the vertex.
     float4 TangentW     : TANGENT;
     float4 PrevPosH     : POSITION2;
 };
@@ -204,7 +206,7 @@ inline float3 LocalToWorldNormal(float3 normalL)
 	vout.PosH = WorldToClipPos(vout.PosW, vin);                                     \
 	vout.Tex = vin.Tex;                                                             \
 	vout.NormalW = ObjectToWorldNormal(LocalToObjectNormal(vin, vin.Normal));       \
-    vout.TangentW = ObjectToWorldNormal(LocalToObjectNormal(vin, vin.Tangent));     \
+    vout.TangentW = float4(ObjectToWorldNormal(LocalToObjectNormal(vin, vin.Tangent.xyz)).xyz, vin.Tangent.w); \
     ConstructPrevPosH(vin, vout);                                                   \
 
 #if defined(GENERATE_SHADOWS) && !defined(USE_CUSTOM_SHADOWPS)
@@ -224,13 +226,15 @@ float SpecularValue(float posW, float3 normalW)
 	return spec;
 }
 
-float3 NormalSampleToWorldSpace(float3 normalSample, float3 normalW, float3 tangentW)
+// tangentW.w is the bitangent handedness: without it the bitangent is inverted wherever the UV
+// island is mirrored, and the surface lights backwards there.
+float3 NormalSampleToWorldSpace(float3 normalSample, float3 normalW, float4 tangentW)
 {
     float3 normalT = normalize(normalSample * 2.0f - 1.0f);
 
     float3 N = normalW;
-    float3 T = normalize(tangentW - dot(tangentW, N) * N);
-    float3 B = cross(N, T);
+    float3 T = normalize(tangentW.xyz - dot(tangentW.xyz, N) * N);
+    float3 B = cross(N, T) * tangentW.w;
 
     float3x3 TBN = float3x3(T, B, N);
     return mul(normalT, TBN);

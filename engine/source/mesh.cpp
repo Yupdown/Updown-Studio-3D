@@ -40,7 +40,13 @@ namespace udsdx
 			}
 			if (mesh->HasTangentsAndBitangents())
 			{
-				vertex.tangent = XMFLOAT3(mesh->mTangents[vertexIndex].x, mesh->mTangents[vertexIndex].y, mesh->mTangents[vertexIndex].z);
+				const aiVector3D& t = mesh->mTangents[vertexIndex];
+				// Assimp hands back an explicit bitangent; shaders rebuild it as cross(N, T), which
+				// is inverted on mirrored UV islands. Store the sign that reconciles the two.
+				// (^ is assimp's cross product, binary * its dot product.)
+				const float handedness =
+					((mesh->mNormals[vertexIndex] ^ t) * mesh->mBitangents[vertexIndex]) < 0.0f ? -1.0f : 1.0f;
+				vertex.tangent = XMFLOAT4(t.x, t.y, t.z, handedness);
 			}
 			vertices.emplace_back(vertex);
 		}

@@ -154,8 +154,11 @@ void MCTilemapMeshGenerator::AddPlaneGreedyMesh(int map[][MCTileChunk::CHUNK_WID
 
                 std::vector<Vector3> positions = vertexAddCallback(x, y, x + 1, y + 1);
 
-                Vector3 tangent = positions[1] - positions[0];
-                tangent.Normalize();
+                Vector3 tangentDir = positions[1] - positions[0];
+                tangentDir.Normalize();
+                // These quads are generated with a consistent, never-mirrored winding, so the
+                // bitangent is always the plain cross(N, T): handedness +1.
+                XMFLOAT4 tangent(tangentDir.x, tangentDir.y, tangentDir.z, 1.0f);
 
                 vertices.push_back(udsdx::Vertex{ positions[0], Vector2(uvOffsetX, 1.0f), normal, tangent });
                 vertices.push_back(udsdx::Vertex{ positions[1], Vector2(uvOffsetX + uvUnitX, 1.0f), normal, tangent });
