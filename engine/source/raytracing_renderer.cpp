@@ -9,6 +9,7 @@
 #include "camera.h"
 #include "scene.h"
 #include "core.h"
+#include "material_table.h"
 #include "debug_console.h"
 #include "compiled_shaders/vs_drawscreen.h"
 #include "compiled_shaders/ps_raytracing_resolve.h"
@@ -129,7 +130,7 @@ namespace udsdx
 			CD3DX12_DESCRIPTOR_RANGE environmentRange;
 			environmentRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 3);
 
-			CD3DX12_ROOT_PARAMETER slotRootParameter[8]{};
+			CD3DX12_ROOT_PARAMETER slotRootParameter[9]{};
 			slotRootParameter[0].InitAsConstantBufferView(0, 0);        // b0: cbRaytracing
 			slotRootParameter[1].InitAsShaderResourceView(0, 0);        // t0 space0: TLAS
 			slotRootParameter[2].InitAsShaderResourceView(1, 0);        // t1 space0: gGeometryInfo
@@ -138,6 +139,9 @@ namespace udsdx
 			slotRootParameter[5].InitAsDescriptorTable(1, &textureRange);
 			slotRootParameter[6].InitAsDescriptorTable(1, &rawBufferRange);
 			slotRootParameter[7].InitAsDescriptorTable(1, &environmentRange);
+			// space0 is the only choice left: space1 and space2 hold unbounded ranges starting at
+			// t0, and space3 is the environment cube.
+			slotRootParameter[8].InitAsShaderResourceView(3, 0);        // t3 space0: gMaterials
 
 			// No anisotropic sampler: anisotropic filtering is illegal in raytracing shaders.
 			CD3DX12_STATIC_SAMPLER_DESC samplerDesc[] = {
@@ -1289,6 +1293,8 @@ namespace udsdx
 		dxrCommandList->SetComputeRootDescriptorTable(6, heapStart);
 		dxrCommandList->SetComputeRootDescriptorTable(7, hasEnvironmentMap
 			? environmentMap->GetCubeMapSrvGpu() : m_dummyEnvironmentGpuSrv);
+		dxrCommandList->SetComputeRootShaderResourceView(8,
+			INSTANCE(Core)->GetMaterialTable()->GetAddress(frameResourceIndex));
 
 		dxrCommandList->SetPipelineState1(m_stateObject.Get());
 		dxrCommandList->DispatchRays(&m_dispatchDesc);

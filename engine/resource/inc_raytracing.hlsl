@@ -7,14 +7,13 @@
 // declares Texture2D gTextures[] at (t0, space0), all of which would collide with the raytracing
 // global root signature laid out below.
 
-#define GEOM_FLAG_ALPHA_TEST    0x1u
 #define INVALID_SRV_INDEX       0xFFFFFFFFu
 
 #include "inc_raytracing_common.hlsl"
 
 #define RT_PI                   3.14159265359f
 
-// Mirrors RaytracingGeometryInfo in acceleration_structure.h (48 bytes).
+// Mirrors RaytracingGeometryInfo in acceleration_structure.h (32 bytes).
 struct GeometryInfo
 {
     uint VertexBufferSrvIndex;
@@ -22,12 +21,39 @@ struct GeometryInfo
     uint StartIndexLocation;
     uint BaseVertexLocation;
 
-    uint AlbedoTexIndex;
-    uint SamplerMode;
-    uint Flags;
     uint VertexStride;
+    uint MaterialIndex;
+    uint2 Pad;
+};
 
-    float4 BaseColor;
+#define MAT_FLAG_ALPHA_TEST     0x1u
+#define MAT_FLAG_ALPHA_BLEND    0x2u
+#define MAT_FLAG_DOUBLE_SIDED   0x4u
+#define MAT_FLAG_FLIP_GREEN_Y   0x8u
+#define MAT_FLAG_ORM_PACKED     0x10u
+
+// Mirrors udsdx::MaterialGpu in material_gpu.h (96 bytes). inc_common.hlsl carries an identical
+// copy; all three must be edited together. The duplication is deliberate -- this header does not
+// include inc_common.hlsl.
+struct MaterialData
+{
+    float4 BaseColorFactor;
+    float3 EmissiveFactor;
+    float  EmissiveStrength;
+    float  MetallicFactor;
+    float  RoughnessFactor;
+    float  NormalScale;
+    float  OcclusionStrength;
+    float  AlphaCutoff;
+    float  Ior;
+    uint   Flags;
+    uint   SamplerMode;
+    uint   BaseColorTexIndex;
+    uint   MetalRoughTexIndex;
+    uint   NormalTexIndex;
+    uint   OcclusionTexIndex;
+    uint   EmissiveTexIndex;
+    uint3  Pad;
 };
 
 // Mirrors RaytracingConstants in frame_resource.h.
@@ -87,6 +113,7 @@ struct InstanceInfo
 RaytracingAccelerationStructure gScene          : register(t0, space0);
 StructuredBuffer<GeometryInfo>  gGeometryInfo   : register(t1, space0);
 StructuredBuffer<InstanceInfo>  gInstanceInfo   : register(t2, space0);
+StructuredBuffer<MaterialData>  gMaterials      : register(t3, space0);
 
 // Ray generation outputs.
 //
@@ -217,6 +244,7 @@ struct RtVertex
     float3 Position;
     float2 Uv;
     float3 Normal;
+    float4 Tangent; // w = bitangent handedness
 };
 
 // Vertex layout from vertex.h: float3 position @0, float2 uv @12, float3 normal @20,
@@ -233,7 +261,16 @@ RtVertex LoadVertex(GeometryInfo info, uint index)
     v.Position = asfloat(buffer.Load3(offset + 0u));
     v.Uv       = asfloat(buffer.Load2(offset + 12u));
     v.Normal   = asfloat(buffer.Load3(offset + 20u));
+    v.Tangent  = asfloat(buffer.Load4(offset + 32u));
     return v;
+}
+
+// Any-hit needs nothing but the UV and runs far more often than closest-hit, so it avoids pulling
+// in the position, normal and tangent it would immediately discard.
+float2 LoadVertexUv(GeometryInfo info, uint index)
+{
+    uint offset = (info.BaseVertexLocation + index) * info.VertexStride;
+    return asfloat(gRawBuffers[info.VertexBufferSrvIndex].Load2(offset + 12u));
 }
 
 float3 BarycentricWeights(float2 barycentrics)
@@ -241,19 +278,64 @@ float3 BarycentricWeights(float2 barycentrics)
     return float3(1.0f - barycentrics.x - barycentrics.y, barycentrics.x, barycentrics.y);
 }
 
+MaterialData LoadMaterial(GeometryInfo info)
+{
+    // Always in range: submeshes with no material of their own resolve to record 0 on the CPU
+    // side, and a root SRV would not bounds-check this anyway.
+    return gMaterials[info.MaterialIndex];
+}
+
 // Raytracing shaders have no implicit derivatives, so Sample() and anisotropic filtering are
 // illegal here -- every texture read has to be an explicit-LOD SampleLevel.
-float4 SampleAlbedo(GeometryInfo info, float2 uv)
+float4 SampleMaterialTex(uint texIndex, uint samplerMode, float2 uv)
 {
-    if (info.AlbedoTexIndex == INVALID_SRV_INDEX)
+    if (texIndex == INVALID_SRV_INDEX)
     {
         return float4(1.0f, 1.0f, 1.0f, 1.0f);
     }
-    if (info.SamplerMode == 0u)
+    if (samplerMode == 0u)
     {
-        return gTextures[info.AlbedoTexIndex].SampleLevel(gSamplerPointWrap, uv, 0.0f);
+        return gTextures[texIndex].SampleLevel(gSamplerPointWrap, uv, 0.0f);
     }
-    return gTextures[info.AlbedoTexIndex].SampleLevel(gSamplerLinearWrap, uv, 0.0f);
+    return gTextures[texIndex].SampleLevel(gSamplerLinearWrap, uv, 0.0f);
+}
+
+// Tangent-space normal into world space. A tangent is a direction along the surface, so it rides
+// the plain object-to-world -- unlike a normal, which needs the inverse transpose.
+float3 ApplyNormalMap(MaterialData mat, float3 shadingNormal, float4 objectTangent, float2 uv)
+{
+    float3 sample = SampleMaterialTex(mat.NormalTexIndex, mat.SamplerMode, uv).rgb;
+    if ((mat.Flags & MAT_FLAG_FLIP_GREEN_Y) != 0u)
+    {
+        sample.g = 1.0f - sample.g;
+    }
+    float3 normalT = sample * 2.0f - 1.0f;
+    normalT.xy *= mat.NormalScale;
+
+    // Every normalize() below is guarded, because both of its inputs can legitimately be zero:
+    // assimp emits a zero tangent for triangles with no usable UV gradient, and a normal-map texel
+    // of exactly 0.5 decodes to the zero vector. Unguarded, either produces NaN -- which then
+    // propagates through accumulation and poisons the pixel permanently. The comparisons are
+    // written as !(x > eps) so a NaN input also takes the fallback.
+    float normalLenSq = dot(normalT, normalT);
+    if (!(normalLenSq > 1e-12f))
+    {
+        return shadingNormal;
+    }
+    normalT *= rsqrt(normalLenSq);
+
+    float3 N = shadingNormal;
+    float3 tangentW = mul(objectTangent.xyz, (float3x3)ObjectToWorld4x3());
+    float3 T = tangentW - dot(tangentW, N) * N; // Gram-Schmidt against the shading normal
+    float tangentLenSq = dot(T, T);
+    if (!(tangentLenSq > 1e-12f))
+    {
+        return shadingNormal;
+    }
+    T *= rsqrt(tangentLenSq);
+
+    float3 B = cross(N, T) * objectTangent.w;
+    return normalize(mul(normalT, float3x3(T, B, N)));
 }
 
 //------------------------------------------------------------------------------------------------

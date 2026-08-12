@@ -286,14 +286,28 @@ float SpecularValue(float posW, float3 normalW)
 // island is mirrored, and the surface lights backwards there.
 float3 NormalSampleToWorldSpace(float3 normalSample, float3 normalW, float4 tangentW)
 {
-    float3 normalT = normalize(normalSample * 2.0f - 1.0f);
+    // Guarded like the raytracing copy in inc_raytracing.hlsl: assimp emits zero tangents for
+    // triangles with no usable UV gradient, and a 0.5 texel decodes to the zero vector. Either
+    // would make normalize() return NaN. !(x > eps) also catches a NaN input.
+    float3 normalT = normalSample * 2.0f - 1.0f;
+    float normalLenSq = dot(normalT, normalT);
+    if (!(normalLenSq > 1e-12f))
+    {
+        return normalW;
+    }
+    normalT *= rsqrt(normalLenSq);
 
     float3 N = normalW;
-    float3 T = normalize(tangentW.xyz - dot(tangentW.xyz, N) * N);
-    float3 B = cross(N, T) * tangentW.w;
+    float3 T = tangentW.xyz - dot(tangentW.xyz, N) * N;
+    float tangentLenSq = dot(T, T);
+    if (!(tangentLenSq > 1e-12f))
+    {
+        return normalW;
+    }
+    T *= rsqrt(tangentLenSq);
 
-    float3x3 TBN = float3x3(T, B, N);
-    return mul(normalT, TBN);
+    float3 B = cross(N, T) * tangentW.w;
+    return normalize(mul(normalT, float3x3(T, B, N)));
 }
 
 float2 PackMotion(float4 posH, float4 prevPosH)

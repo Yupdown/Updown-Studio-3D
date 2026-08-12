@@ -34,6 +34,7 @@ void MissShadow(inout SurfacePayload payload)
 void ClosestHitSurface(inout SurfacePayload payload, in BuiltInTriangleIntersectionAttributes attr)
 {
     GeometryInfo info = gGeometryInfo[gGeometryIndex];
+    MaterialData mat = LoadMaterial(info);
     float3 weights = BarycentricWeights(attr.barycentrics);
 
     uint3 indices = LoadTriangleIndices(info, PrimitiveIndex());
@@ -61,19 +62,32 @@ void ClosestHitSurface(inout SurfacePayload payload, in BuiltInTriangleIntersect
         shadingNormal = -shadingNormal;
     }
 
-    float3 albedo = info.BaseColor.rgb;
-    if (info.AlbedoTexIndex != INVALID_SRV_INDEX)
+    if (mat.NormalTexIndex != INVALID_SRV_INDEX)
     {
-        // No pow(): base colour textures are compressed as BC7_UNORM_SRGB, so the sampler returns
-        // linear values already.
-        albedo *= SampleAlbedo(info, uv).rgb;
+        float4 objectTangent = v0.Tangent * weights.x + v1.Tangent * weights.y + v2.Tangent * weights.z;
+        shadingNormal = ApplyNormalMap(mat, shadingNormal, objectTangent, uv);
+        // A perturbed normal can cross the geometric hemisphere, which would let light leak
+        // through the surface.
+        if (dot(shadingNormal, geometricNormal) < 0.0f)
+        {
+            shadingNormal = -shadingNormal;
+        }
     }
+
+    // No pow(): base colour textures are BC7_UNORM_SRGB, so the sampler already returned linear.
+    float3 albedo = mat.BaseColorFactor.rgb
+        * SampleMaterialTex(mat.BaseColorTexIndex, mat.SamplerMode, uv).rgb;
+
+    // Occlusion is deliberately loaded but not applied: the path tracer derives real occlusion
+    // from the bounce ray, and multiplying a baked AO map on top would darken it twice.
+    float3 emission = mat.EmissiveFactor * mat.EmissiveStrength
+        * SampleMaterialTex(mat.EmissiveTexIndex, mat.SamplerMode, uv).rgb;
 
     payload.Albedo = albedo;
     payload.Normal = shadingNormal;
     payload.HitT = RayTCurrent();
-    payload.Emission = 0.0f;
-    payload.Flags = info.Flags;
+    payload.Emission = emission;
+    payload.Flags = mat.Flags;
 
     // Carry the hit point into the previous frame. ObjectRayOrigin/Direction are already in
     // object space and RayTCurrent() is the same parameter in both spaces, so this is the
@@ -87,21 +101,23 @@ void ClosestHitSurface(inout SurfacePayload payload, in BuiltInTriangleIntersect
 void AnyHitAlphaTest(inout SurfacePayload payload, in BuiltInTriangleIntersectionAttributes attr)
 {
     GeometryInfo info = gGeometryInfo[gGeometryIndex];
-    if ((info.Flags & GEOM_FLAG_ALPHA_TEST) == 0u || info.AlbedoTexIndex == INVALID_SRV_INDEX)
+    MaterialData mat = LoadMaterial(info);
+    if ((mat.Flags & MAT_FLAG_ALPHA_TEST) == 0u)
     {
         return; // accept the hit
     }
 
     float3 weights = BarycentricWeights(attr.barycentrics);
     uint3 indices = LoadTriangleIndices(info, PrimitiveIndex());
-    float2 uv = LoadVertex(info, indices.x).Uv * weights.x
-              + LoadVertex(info, indices.y).Uv * weights.y
-              + LoadVertex(info, indices.z).Uv * weights.z;
+    float2 uv = LoadVertexUv(info, indices.x) * weights.x
+              + LoadVertexUv(info, indices.y) * weights.y
+              + LoadVertexUv(info, indices.z) * weights.z;
 
-    // Port of color.hlsl's clip(texColor.a - 0.1f). clip() is illegal in an any-hit shader;
-    // IgnoreHit() is the equivalent. This shader must stay side-effect free -- it runs an
-    // unspecified number of times per ray, in unspecified order.
-    if (SampleAlbedo(info, uv).a < 0.1f)
+    // clip() is illegal in an any-hit shader; IgnoreHit() is the equivalent. This shader must stay
+    // side-effect free -- it runs an unspecified number of times per ray, in unspecified order.
+    float alpha = mat.BaseColorFactor.a
+        * SampleMaterialTex(mat.BaseColorTexIndex, mat.SamplerMode, uv).a;
+    if (alpha < mat.AlphaCutoff)
     {
         IgnoreHit();
     }
@@ -214,7 +230,10 @@ void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 ind
     }
 
     float3 position = ray.Origin + ray.Direction * primary.HitT;
-    float3 direct = DirectSun(position, primary.Normal, primary.Albedo, rng);
+    // Emission rides the direct channel, which is never albedo-demodulated. Putting it in the
+    // indirect channel instead would divide it by the primary albedo and blow up wherever that is
+    // near zero -- exactly the surfaces an emissive material tends to have.
+    float3 direct = DirectSun(position, primary.Normal, primary.Albedo, rng) + primary.Emission;
 
     // One diffuse indirect bounce. This is the radiosity term: light from the directional light
     // that reached another surface first and scattered from it onto this one.
@@ -237,7 +256,11 @@ void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 ind
     else
     {
         float3 bouncePosition = bounce.Origin + bounce.Direction * secondary.HitT;
-        incoming = DirectSun(bouncePosition, secondary.Normal, secondary.Albedo, rng);
+        // A bounce hit's emission genuinely is light arriving at the shading point, so here it
+        // belongs in the demodulated channel: the resolve re-multiplies by the primary albedo,
+        // which is the correct transport factor.
+        incoming = DirectSun(bouncePosition, secondary.Normal, secondary.Albedo, rng)
+                 + secondary.Emission;
     }
 
     // Debug views stay unfogged so they show the raw quantity being inspected.

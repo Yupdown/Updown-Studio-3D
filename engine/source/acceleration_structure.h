@@ -1,6 +1,7 @@
 #pragma once
 
 #include "pch.h"
+#include "material_gpu.h"
 
 namespace udsdx
 {
@@ -20,16 +21,15 @@ namespace udsdx
 		UINT StartIndexLocation = 0;
 		UINT BaseVertexLocation = 0;
 
-		UINT AlbedoTexIndex = InvalidSrvIndex;
-		UINT SamplerMode = 2;
-		UINT Flags = 0; // bit0: alpha tested
 		UINT VertexStride = 0;
-
-		Vector4 BaseColor = Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+		// Slot in the MaterialTable. Never InvalidMaterialIndex by construction -- submeshes past
+		// the renderer's material count fall back to record 0 -- because a root SRV does no bounds
+		// checking and the hit shader indexes it unconditionally.
+		UINT MaterialIndex = DefaultMaterialIndex;
+		UINT Pad0 = 0;
+		UINT Pad1 = 0;
 	};
-	static_assert(sizeof(RaytracingGeometryInfo) == 48, "RaytracingGeometryInfo must match the HLSL StructuredBuffer stride.");
-
-	static constexpr UINT RaytracingGeometryFlagAlphaTest = 0x1u;
+	static_assert(sizeof(RaytracingGeometryInfo) == 32, "RaytracingGeometryInfo must match the HLSL StructuredBuffer stride.");
 
 	// Per-instance record indexed by InstanceIndex() in the hit shaders. Holds the previous
 	// frame's object-to-world so a hit point can be re-projected into the previous frame,
@@ -91,9 +91,15 @@ namespace udsdx
 			UINT GeometryCount = 0;
 			UINT64 LastSeenFrame = 0;
 			bool Ready = false;
+			// Which submeshes were built non-opaque, as of whichever renderer triggered the build.
+			// A different renderer sharing this mesh may disagree; the instance flags reconcile it.
+			UINT64 NonOpaqueMask = 0;
 		};
 
-		BlasEntry* AcquireBlas(MeshBase* mesh, ID3D12GraphicsCommandList4* commandList, UINT& buildBudget);
+		BlasEntry* AcquireBlas(MeshBase* mesh, RaytracingMeshRenderer* renderer, ID3D12GraphicsCommandList4* commandList, UINT& buildBudget);
+		// Bit i set means submesh i needs the any-hit alpha test. Capped at 64 submeshes; beyond
+		// that everything is treated as non-opaque, which is slow but never wrong.
+		static UINT64 NonOpaqueMaskFor(RaytracingMeshRenderer* renderer, size_t submeshCount);
 		bool CreateGeometrySrvs(MeshBase* mesh, BlasEntry& entry);
 		void EnsureScratchCapacity(UINT64 sizeInBytes);
 		void EnsureUploadCapacity(int frameResourceIndex, UINT instanceCount, UINT geometryCount);

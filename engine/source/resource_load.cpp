@@ -7,6 +7,7 @@
 #include "audio_system.h"
 #include "audio_clip.h"
 #include "font.h"
+#include "core.h"
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
@@ -72,6 +73,12 @@ namespace udsdx
 			return nullptr;
 		}
 		m_resources[key].emplace_back(std::move(loaded));
+
+		// Initialize's directory scan pre-loads every texture under the sRGB key and
+		// RegisterDescriptorsToHeaps gives those an SRV. A linear request is a different key, so it
+		// misses that cache and lands here after the heaps already exist -- without this it would
+		// stay at InvalidSrvIndex and read as an empty slot in every shader.
+		INSTANCE(Core)->EnsureTextureShaderResourceView(casted);
 		return casted;
 	}
 

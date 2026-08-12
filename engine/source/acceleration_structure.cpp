@@ -129,7 +129,30 @@ namespace udsdx
 			D3D12_HEAP_TYPE_DEFAULT);
 	}
 
-	AccelerationStructure::BlasEntry* AccelerationStructure::AcquireBlas(MeshBase* mesh, ID3D12GraphicsCommandList4* commandList, UINT& buildBudget)
+	UINT64 AccelerationStructure::NonOpaqueMaskFor(RaytracingMeshRenderer* renderer, size_t submeshCount)
+	{
+		UINT64 mask = 0ull;
+		for (size_t i = 0; i < submeshCount; ++i)
+		{
+			if (i >= 64)
+			{
+				// More submeshes than the mask can hold: fall back to any-hit for the tail rather
+				// than silently marking it opaque and dropping alpha-tested geometry.
+				mask |= ~0ull << 63;
+				break;
+			}
+			const Material* material = renderer->GetMaterial(static_cast<int>(i));
+			const bool alphaTested = material != nullptr
+				&& material->GetAlphaMode() != MaterialAlphaMode::Opaque;
+			if (alphaTested)
+			{
+				mask |= 1ull << i;
+			}
+		}
+		return mask;
+	}
+
+	AccelerationStructure::BlasEntry* AccelerationStructure::AcquireBlas(MeshBase* mesh, RaytracingMeshRenderer* renderer, ID3D12GraphicsCommandList4* commandList, UINT& buildBudget)
 	{
 		auto found = m_blasCache.find(mesh);
 		if (found != m_blasCache.end() && found->second.Ready)
@@ -170,16 +193,23 @@ namespace udsdx
 		const UINT vertexStride = mesh->GetVertexByteStride();
 		const UINT vertexCount = mesh->GetVertexCount();
 
+		// Which submeshes this renderer needs any-hit for. A BLAS is cached per mesh and shared
+		// between renderers that may carry different materials, so the mask is recorded and any
+		// disagreement is fixed up per instance below.
+		entry.NonOpaqueMask = NonOpaqueMaskFor(renderer, submeshes.size());
+
 		std::vector<D3D12_RAYTRACING_GEOMETRY_DESC> geometryDescs(submeshes.size());
 		for (size_t i = 0; i < submeshes.size(); ++i)
 		{
 			const Submesh& submesh = submeshes[i];
 			D3D12_RAYTRACING_GEOMETRY_DESC& desc = geometryDescs[i];
 			desc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
-			// Never OPAQUE: the any-hit alpha test must be allowed to run. Fully opaque instances
-			// opt out through D3D12_RAYTRACING_INSTANCE_FLAG_FORCE_OPAQUE instead, which is a
-			// per-instance decision -- the BLAS itself is shared between materials.
-			desc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_NONE;
+			// OPAQUE skips the any-hit invocation entirely, which is most of the cost of a shadow
+			// ray. Only alpha-tested materials opt out of it.
+			const bool needsAnyHit = i < 64 && (entry.NonOpaqueMask & (1ull << i)) != 0ull;
+			desc.Flags = needsAnyHit
+				? D3D12_RAYTRACING_GEOMETRY_FLAG_NONE
+				: D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
 			desc.Triangles.Transform3x4 = 0;
 			desc.Triangles.IndexFormat = MeshBase::INDEX_FORMAT;
 			desc.Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
@@ -331,7 +361,7 @@ namespace udsdx
 			// Idempotent within a frame, so calling it for skipped renderers costs nothing.
 			renderer->ValidateTransformCache();
 
-			BlasEntry* entry = AcquireBlas(mesh, commandList, buildBudget);
+			BlasEntry* entry = AcquireBlas(mesh, renderer, commandList, buildBudget);
 			if (entry == nullptr || !entry->Ready || entry->GeometryCount == 0)
 			{
 				continue;
@@ -354,11 +384,7 @@ namespace udsdx
 
 				if (const Material* material = renderer->GetMaterial(static_cast<int>(i)))
 				{
-					info.AlbedoTexIndex = material->GetSourceTextureIndex();
-					info.SamplerMode = static_cast<UINT>(material->GetSamplerMode());
-					// Every textured surface is alpha tested, matching color.hlsl's
-					// clip(texColor.a - 0.1f) and inc_common.hlsl's ShadowPS.
-					info.Flags = info.AlbedoTexIndex != InvalidSrvIndex ? RaytracingGeometryFlagAlphaTest : 0u;
+					info.MaterialIndex = material->GetIndex();
 				}
 
 				m_geometryScratch.push_back(info);
@@ -375,7 +401,20 @@ namespace udsdx
 			// hit group record (geometryBase + j), whose local root constant is that same flat
 			// gGeometryInfo index.
 			instance.InstanceContributionToHitGroupIndex = geometryBase;
+
+			// The BLAS was built for whichever renderer happened to trigger it. When this renderer
+			// disagrees about opacity, override at instance level -- instance flags beat geometry
+			// flags, so this is exact for every combination without duplicating the BLAS.
 			instance.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
+			const UINT64 needMask = NonOpaqueMaskFor(renderer, submeshes.size());
+			if (needMask == 0ull && entry->NonOpaqueMask != 0ull)
+			{
+				instance.Flags |= D3D12_RAYTRACING_INSTANCE_FLAG_FORCE_OPAQUE;
+			}
+			else if ((needMask & ~entry->NonOpaqueMask) != 0ull)
+			{
+				instance.Flags |= D3D12_RAYTRACING_INSTANCE_FLAG_FORCE_NON_OPAQUE;
+			}
 			instance.AccelerationStructure = entry->Result->GetGPUVirtualAddress();
 			m_instanceScratch.push_back(instance);
 
