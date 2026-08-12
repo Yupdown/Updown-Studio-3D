@@ -40,7 +40,7 @@ namespace udsdx
 
 		MaterialConstants materialConstants;
 		materialConstants.SamplerMode = static_cast<UINT>(m_materials[0]->GetSamplerMode());
-		materialConstants.MainTexIndex = m_materials[0]->GetSourceTextureIndex(0);
+		materialConstants.MainTexIndex = m_materials[0]->GetSourceTextureIndex();
 
 		param.CommandList->SetGraphicsRoot32BitConstants(RootParam::PerObjectCBV, sizeof(ObjectConstants) / 4, &objectConstants, 0);
 		param.CommandList->SetGraphicsRoot32BitConstants(RootParam::PerMaterialCBV, sizeof(MaterialConstants) / 4, &materialConstants, 0);

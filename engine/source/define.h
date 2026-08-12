@@ -226,7 +226,6 @@ namespace udsdx
 
 	static constexpr int FrameResourceCount = 2;
 	static constexpr int SwapChainBufferCount = 2;
-	static constexpr int NumTextureSlots = 16;
 
 	// Sentinel for a texture without a registered SRV (no bindless heap index assigned).
 	static constexpr UINT InvalidSrvIndex = 0xFFFFFFFFu;

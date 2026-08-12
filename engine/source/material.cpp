@@ -1,7 +1,7 @@
 #include "pch.h"
-#include "shader.h"
 #include "material.h"
 #include "texture.h"
+#include "debug_console.h"
 
 namespace udsdx
 {
@@ -9,9 +9,15 @@ namespace udsdx
 	{
 	}
 
-	void Material::SetSourceTexture(Texture* texture, UINT index)
+	void Material::SetSourceTexture(Texture* texture, MaterialTextureSlot slot)
 	{
-		m_mainTex[index] = texture;
+		const UINT index = static_cast<UINT>(slot);
+		if (index >= NumMaterialTextureSlots)
+		{
+			DebugConsole::LogError("Material texture slot " + std::to_string(index) + " is out of range.");
+			return;
+		}
+		m_textures[index] = texture;
 	}
 
 	void Material::SetSamplerMode(MaterialSamplerMode samplerMode)
@@ -19,23 +25,15 @@ namespace udsdx
 		m_samplerMode = samplerMode;
 	}
 
-	Texture* Material::GetSourceTexture(UINT index) const
+	Texture* Material::GetSourceTexture(MaterialTextureSlot slot) const
 	{
-		return m_mainTex[index];
+		const UINT index = static_cast<UINT>(slot);
+		return index < NumMaterialTextureSlots ? m_textures[index] : nullptr;
 	}
 
-	UINT Material::GetSourceTextureIndex(UINT index) const
+	UINT Material::GetSourceTextureIndex(MaterialTextureSlot slot) const
 	{
-		return m_mainTex[index] != nullptr ? m_mainTex[index]->GetSrvIndex() : InvalidSrvIndex;
-	}
-
-	UINT Material::GetTextureCount() const
-	{
-		return static_cast<UINT>(m_mainTex.size());
-	}
-
-	MaterialSamplerMode Material::GetSamplerMode() const
-	{
-		return m_samplerMode;
+		Texture* texture = GetSourceTexture(slot);
+		return texture != nullptr ? texture->GetSrvIndex() : InvalidSrvIndex;
 	}
 }

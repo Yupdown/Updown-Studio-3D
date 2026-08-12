@@ -210,10 +210,10 @@ namespace udsdx
 			return;
 		}
 
-		struct Slot { aiTextureType Type; UINT Index; };
+		struct Slot { aiTextureType Type; MaterialTextureSlot Index; };
 		const Slot slots[] = {
-			{ aiTextureType_DIFFUSE, 0 },
-			{ aiTextureType_NORMALS, 1 },
+			{ aiTextureType_DIFFUSE, MaterialTextureSlot::BaseColor },
+			{ aiTextureType_NORMALS, MaterialTextureSlot::Normal },
 		};
 
 		for (const Slot& slot : slots)

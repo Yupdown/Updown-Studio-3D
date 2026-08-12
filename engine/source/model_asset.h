@@ -75,7 +75,7 @@ namespace udsdx
 		struct PendingEmbedded
 		{
 			int MaterialIndex;
-			UINT Slot;
+			MaterialTextureSlot Slot;
 			int EmbeddedIndex;
 		};
 

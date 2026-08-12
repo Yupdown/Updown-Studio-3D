@@ -354,7 +354,7 @@ namespace udsdx
 
 				if (const Material* material = renderer->GetMaterial(static_cast<int>(i)))
 				{
-					info.AlbedoTexIndex = material->GetSourceTextureIndex(0);
+					info.AlbedoTexIndex = material->GetSourceTextureIndex();
 					info.SamplerMode = static_cast<UINT>(material->GetSamplerMode());
 					// Every textured surface is alpha tested, matching color.hlsl's
 					// clip(texColor.a - 0.1f) and inc_common.hlsl's ShadowPS.
