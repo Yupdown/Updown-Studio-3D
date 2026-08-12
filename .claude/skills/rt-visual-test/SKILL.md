@@ -46,7 +46,13 @@ is the reliable canary: if a change was supposed to be visually neutral and this
 really did change. `primary/*` is NOT bit-stable — it is the first convergence after boot, so
 acceleration-structure warm-up perturbs it by ~1e-7 relative *between runs of the same binary*
 (`lum_mean` wobbles in its 7th significant digit). Never conclude a regression from `primary`
-alone; re-run the same binary first and compare the spread.
+alone; re-run the same binary first and compare the spread. `primary/atrous_*` and
+`primary/temporal_*` are the loosest of the lot — they are small differences of nearly equal
+images, so they amplify that wobble into their 6th significant digit.
+
+Anything read from a capture is quantised by the HDR target's `R11G11B10_FLOAT`: 6 mantissa bits
+on R and G, 5 on B. Near 1.0 that is a quantum of ~0.008, so `aov_furnace`'s bounds resolve energy
+errors to about a percent regardless of how many digits they print.
 
 ## What the cases verify
 
@@ -57,13 +63,20 @@ alone; re-run the same binary first and compare the spread.
 | `determinism_ref` / `determinism` | two warm re-convergences over the same RNG/jitter sequence reproduce the same image (the cold boot convergence is excluded: acceleration-structure warm-up shifts silhouettes deterministically) |
 | `aov_albedo` / `aov_normal` | debug AOVs finite, structured, in encoded range (bottom 30% of the frame only — the miss shader writes radiance, not the encoded quantity, so sky pixels are excluded) |
 | `aov_motion` | motion-vector AOV is uniform 0.5 grey for a static scene (any deviation = motion/jitter-compensation bug) |
-| `aov_material` | roughness **varies** across the frame. Metallic and roughness are the only material channels no shading path consumes yet, so this is the sole thing standing between a broken metallic-roughness lookup and total silence. A constant channel — which is what this measured before the material table existed — fails it. |
+| `aov_material` | roughness **varies** across the frame. A constant channel — which is what this measured before the material table existed — fails it. |
 | `aov_emission` | something in the frame emits. Sponza has no emissive and DamagedHelmet does, so a non-zero peak is threshold-free proof that emissive reaches the shader; the sky is excluded from this view shader-side. |
+| `aov_furnace` | the specular lobe's directional albedo, with F0 forced to 1. **Traces nothing** — it isolates D, V, F and the VNDF sampler from transport, so a failure here is a BRDF bug and can be nothing else. Must not exceed 1 (energy creation) and must reach ~1 somewhere (the narrowest lobe in frame must conserve). |
+| `aov_specular` | the specular indirect bounce alone: present, bounded by the firefly clamp, and structured. Whole-frame, unlike the other AOV checks — Sponza's floor is a rough dielectric, so the usual bottom-rows restriction would sample the least specular surfaces in the scene. |
 | `heatmap` | per-pixel sample count saturates everywhere (accumulation actually progresses) |
 
 `aov_material` is also worth *looking* at: Sponza's stone and fabric read green (rough dielectric),
 the helmet reads red (smooth metal) and the drapes' gold embroidery reads orange. Those are glTF's
 own semantics, so a channel swizzle regression is obvious by eye as well as by the stddev check.
+
+So is `aov_furnace`: it should show a clear gradient — rough drapes visibly dark (single-scattering
+GGX genuinely loses energy at high roughness; that deficit is expected, not a bug), the helmet's
+visor and the stone near white. A *flat* furnace image means roughness is not reaching the BRDF.
+Black speckle at silhouettes is the `NoV <= 0` guard, not an artifact.
 
 ## Why this scene
 
@@ -86,3 +99,10 @@ the frame is always floor, which the AOV range checks depend on.
   the deliberate exception (display-side only).
 - Threshold constants and their rationale live in [testbed/RtTestbed.cpp](testbed/RtTestbed.cpp)
   (`namespace thresholds`).
+- The suite runs the **raytracer only** — `DrawRaytracing` is forced on and the gate skips
+  everything if it is not. Nothing here covers the deferred raster path, and its lighting shader is
+  compiled at *runtime* from `resource/shader/color.hlsl`, so a successful build proves nothing
+  about it. Raster changes need the demo, or a temporary local flip of that flag.
+- The pose is static, so nothing here exercises view-dependent history validation. History is
+  validated geometrically; a camera rotating in place passes every geometric test while the
+  specular lobe sweeps across the surface. That failure mode needs a rotating-camera check.
