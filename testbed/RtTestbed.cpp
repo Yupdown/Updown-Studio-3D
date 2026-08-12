@@ -67,6 +67,14 @@ namespace
 		constexpr double MotionDeviation = 0.02;
 		constexpr double HeatmapMeanMin = 0.95;
 		constexpr double HeatmapP1Min = 0.8;
+		// Roughness must not be flat across the frame. Sponza's metallic-roughness maps measure
+		// ~0.09; a constant channel (what this reported before the material table existed) is
+		// exactly 0, so the floor only has to separate "varies" from "does not".
+		constexpr double MaterialChannelStddevMin = 0.01;
+		constexpr double MaterialChannelMax = 1.01;
+		// Peak emissive radiance. DamagedHelmet's emissive factor is 1 and its texture is [0,1],
+		// so anything far above 1 means a runaway emissive strength.
+		constexpr double EmissionMax = 16.0;
 	}
 
 	constexpr int kWarmupTimeoutFrames = 120;
@@ -259,6 +267,44 @@ namespace
 			}
 		}
 		return maxDev;
+	}
+
+	struct ChannelStats
+	{
+		double Mean = 0.0, Stddev = 0.0, Max = 0.0;
+	};
+
+	// Statistics for one RGB channel over rows [fromFrac, 1). Per-channel rather than per-luminance
+	// because the material AOV packs two unrelated quantities into R and G.
+	ChannelStats ComputeChannelStats(const FloatImage& img, size_t channel, double fromFrac)
+	{
+		ChannelStats stats;
+		double sum = 0.0, sumSq = 0.0;
+		size_t count = 0;
+		const UINT fromRow = static_cast<UINT>(fromFrac * img.Height);
+		for (UINT y = fromRow; y < img.Height; ++y)
+		{
+			const size_t rowStart = static_cast<size_t>(y) * img.Width * 4;
+			for (UINT x = 0; x < img.Width; ++x)
+			{
+				const float v = img.Rgba[rowStart + static_cast<size_t>(x) * 4 + channel];
+				if (!std::isfinite(v))
+				{
+					continue;
+				}
+				sum += v;
+				sumSq += static_cast<double>(v) * v;
+				stats.Max = std::max<double>(stats.Max, v);
+				++count;
+			}
+		}
+		if (count > 0)
+		{
+			const double n = static_cast<double>(count);
+			stats.Mean = sum / n;
+			stats.Stddev = std::sqrt(std::max(0.0, sumSq / n - stats.Mean * stats.Mean));
+		}
+		return stats;
 	}
 
 	double MaxChannelValue(const FloatImage& img)
@@ -534,6 +580,45 @@ namespace
 		AddCheck(cs, "motion_uniform", maxDev <= thresholds::MotionDeviation,
 			maxDev, thresholds::MotionDeviation,
 			"max |value - 0.5| in the motion-vector AOV of a static scene");
+	}
+
+	// Metallic and roughness are the only material channels no shading path consumes yet, so a
+	// regression in the metallic-roughness lookup would be entirely silent. The assertion that
+	// matters is structural: roughness has to VARY across the frame. Before the material table
+	// existed this channel was the literal constant 1, so a spatial spread proves both that the
+	// texture is bound and that its channel swizzle is right.
+	void EvaluateAovMaterial(CaseState& cs)
+	{
+		AddCheck(cs, "nan_inf", CountNonFinite(cs.A) == 0,
+			static_cast<double>(CountNonFinite(cs.A)), 0.0, "non-finite texels in the material AOV");
+
+		const ChannelStats roughness = ComputeChannelStats(cs.A, 1, kGeometryRowsFrom);
+		AddCheck(cs, "roughness_varies", roughness.Stddev >= thresholds::MaterialChannelStddevMin,
+			roughness.Stddev, thresholds::MaterialChannelStddevMin,
+			"stddev of the roughness channel over geometry rows (a constant means the "
+			"metallic-roughness texture never reached the shader)");
+		AddCheck(cs, "roughness_range", roughness.Max <= thresholds::MaterialChannelMax,
+			roughness.Max, thresholds::MaterialChannelMax, "roughness stays within [0,1]");
+
+		const ChannelStats metallic = ComputeChannelStats(cs.A, 0, kGeometryRowsFrom);
+		AddCheck(cs, "metallic_range", metallic.Max <= thresholds::MaterialChannelMax,
+			metallic.Max, thresholds::MaterialChannelMax, "metallic stays within [0,1]");
+	}
+
+	// Sponza carries no emissive at all and DamagedHelmet does, so "something in this frame emits"
+	// is a threshold-free statement about whether emissive reaches the shader. The sky is excluded
+	// from this view on the shader side, so anything non-zero here is a real surface.
+	void EvaluateAovEmission(CaseState& cs)
+	{
+		AddCheck(cs, "nan_inf", CountNonFinite(cs.A) == 0,
+			static_cast<double>(CountNonFinite(cs.A)), 0.0, "non-finite texels in the emission AOV");
+
+		LumStats stats = ComputeLumStats(cs.A);
+		AddCheck(cs, "emission_present", stats.Max > 0.0, stats.Max, 0.0,
+			"peak emissive radiance (the helmet is the only emitter in the scene)");
+		AddCheck(cs, "emission_bounded", stats.Max <= thresholds::EmissionMax,
+			stats.Max, thresholds::EmissionMax,
+			"peak emissive radiance stays sane (catches a runaway emissive strength)");
 	}
 
 	void EvaluateHeatmap(CaseState& cs)
@@ -893,6 +978,8 @@ namespace
 			{ "aov_albedo",      RaytracingDebugMode::Albedo,        kAovConvergeFrames, false, false, &EvaluateAovAlbedo },
 			{ "aov_normal",      RaytracingDebugMode::Normal,        kAovConvergeFrames, false, false, &EvaluateAovNormal },
 			{ "aov_motion",      RaytracingDebugMode::MotionVector,  kAovConvergeFrames, false, false, &EvaluateAovMotion },
+			{ "aov_material",    RaytracingDebugMode::MetallicRoughness, kAovConvergeFrames, false, false, &EvaluateAovMaterial },
+			{ "aov_emission",    RaytracingDebugMode::Emission,      kAovConvergeFrames, false, false, &EvaluateAovEmission },
 			{ "heatmap",         RaytracingDebugMode::SampleHeatmap, -1,                 false, false, &EvaluateHeatmap },
 		};
 

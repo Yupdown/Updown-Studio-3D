@@ -17,6 +17,8 @@
 #define RT_DEBUG_INDIRECT       4u
 #define RT_DEBUG_MOTION         5u
 #define RT_DEBUG_HEATMAP        6u
+#define RT_DEBUG_METALROUGH     7u
+#define RT_DEBUG_EMISSION       8u
 
 #define RT_INVALID_INSTANCE     0xFFFFFFFFu
 

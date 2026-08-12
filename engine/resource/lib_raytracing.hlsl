@@ -83,6 +83,16 @@ void ClosestHitSurface(inout SurfacePayload payload, in BuiltInTriangleIntersect
     float3 emission = mat.EmissiveFactor * mat.EmissiveStrength
         * SampleMaterialTex(mat.EmissiveTexIndex, mat.SamplerMode, uv).rgb;
 
+    // The payload is full at 64 bytes, so the metallic-roughness debug view borrows the albedo
+    // channel rather than growing it. Safe because that view bypasses accumulation and every other
+    // consumer of Albedo is skipped for it.
+    if (gDebugMode == RT_DEBUG_METALROUGH)
+    {
+        float4 mr = SampleMaterialTex(mat.MetalRoughTexIndex, mat.SamplerMode, uv);
+        // glTF channel packing: G is roughness, B is metallic.
+        albedo = float3(mat.MetallicFactor * mr.b, mat.RoughnessFactor * mr.g, 0.0f);
+    }
+
     payload.Albedo = albedo;
     payload.Normal = shadingNormal;
     payload.HitT = RayTCurrent();
@@ -209,6 +219,12 @@ void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 ind
 
     if (primary.HitT < 0.0f)
     {
+        // Surface-property views show nothing for a miss: the sky is not a surface, and letting
+        // its radiance through would make "is anything emissive here" unanswerable.
+        if (gDebugMode == RT_DEBUG_METALROUGH || gDebugMode == RT_DEBUG_EMISSION)
+        {
+            return;
+        }
         // Primary sky hits stay unclamped so open sky matches the rasterized skybox exactly.
         // Deliberately unfogged: ps_skybox.hlsl does not fog the sky either, and fogging it would
         // desaturate the horizon relative to the raster path.
@@ -226,6 +242,16 @@ void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 ind
     if (gDebugMode == RT_DEBUG_NORMAL)
     {
         directOut = primary.Normal * 0.5f + 0.5f;
+        return;
+    }
+    if (gDebugMode == RT_DEBUG_METALROUGH)
+    {
+        directOut = primary.Albedo; // closest-hit packed (metallic, roughness, 0) in here
+        return;
+    }
+    if (gDebugMode == RT_DEBUG_EMISSION)
+    {
+        directOut = primary.Emission;
         return;
     }
 

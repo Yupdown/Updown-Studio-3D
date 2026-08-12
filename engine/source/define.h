@@ -58,6 +58,12 @@ namespace udsdx
 		IndirectOnly,
 		MotionVector,
 		SampleHeatmap,
+		// Primary hit's metallic in R and roughness in G. Exists mostly as evidence: these are the
+		// only material channels no shading path consumes yet, so without a view of them a
+		// regression in the metallic-roughness lookup would be completely silent.
+		MetallicRoughness,
+		// Primary hit's emissive radiance.
+		Emission,
 		Count
 	};
 

@@ -1480,7 +1480,9 @@ namespace udsdx
 			ImGui::SliderFloat("Shadow Ray Offset", &options.RaytracingShadowRayOffset, 1e-4f, 0.1f, "%.5f", ImGuiSliderFlags_Logarithmic);
 			ImGui::SliderFloat("Indirect Sky Clamp", &options.RaytracingSkyMaxRadiance, 1.0f, 64.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
 
-			static const char* debugModeNames[] = { "None", "Albedo", "Normal", "Direct Only", "Indirect Only", "Motion Vector", "Sample Heatmap" };
+			static const char* debugModeNames[] = { "None", "Albedo", "Normal", "Direct Only", "Indirect Only", "Motion Vector", "Sample Heatmap", "Metallic/Roughness", "Emission" };
+			static_assert(IM_ARRAYSIZE(debugModeNames) == static_cast<int>(RaytracingDebugMode::Count),
+				"Debug mode names must cover every RaytracingDebugMode.");
 			int debugMode = static_cast<int>(options.RaytracingDebug);
 			if (ImGui::Combo("Debug Output", &debugMode, debugModeNames, IM_ARRAYSIZE(debugModeNames)))
 			{

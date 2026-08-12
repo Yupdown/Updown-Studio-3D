@@ -57,7 +57,13 @@ alone; re-run the same binary first and compare the spread.
 | `determinism_ref` / `determinism` | two warm re-convergences over the same RNG/jitter sequence reproduce the same image (the cold boot convergence is excluded: acceleration-structure warm-up shifts silhouettes deterministically) |
 | `aov_albedo` / `aov_normal` | debug AOVs finite, structured, in encoded range (bottom 30% of the frame only — the miss shader writes radiance, not the encoded quantity, so sky pixels are excluded) |
 | `aov_motion` | motion-vector AOV is uniform 0.5 grey for a static scene (any deviation = motion/jitter-compensation bug) |
+| `aov_material` | roughness **varies** across the frame. Metallic and roughness are the only material channels no shading path consumes yet, so this is the sole thing standing between a broken metallic-roughness lookup and total silence. A constant channel — which is what this measured before the material table existed — fails it. |
+| `aov_emission` | something in the frame emits. Sponza has no emissive and DamagedHelmet does, so a non-zero peak is threshold-free proof that emissive reaches the shader; the sky is excluded from this view shader-side. |
 | `heatmap` | per-pixel sample count saturates everywhere (accumulation actually progresses) |
+
+`aov_material` is also worth *looking* at: Sponza's stone and fabric read green (rough dielectric),
+the helmet reads red (smooth metal) and the drapes' gold embroidery reads orange. Those are glTF's
+own semantics, so a channel swizzle regression is obvious by eye as well as by the stddev check.
 
 ## Why this scene
 

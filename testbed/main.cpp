@@ -101,7 +101,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	// sit near black -- too little signal for the luminance and firefly checks to mean anything.
 	auto lightObject = SceneObject::MakeShared();
 	auto light = lightObject->AddComponent<LightDirectional>();
-	light->SetIntensity(5.0f);
+	// Raised from 5 when baseColorFactor started being applied: Sponza's is 0.588, which dropped
+	// mean luminance by the same factor and pushed most of the frame toward black. A well-exposed
+	// frame is not cosmetic here -- crushed regions hide exactly the artifacts this scene exists
+	// to surface.
+	light->SetIntensity(8.5f);
 	lightObject->GetTransform()->SetLocalRotation(
 		Quaternion::CreateFromYawPitchRoll(0.9f, 1.15f, 0.0f));
 	scene->AddObject(lightObject);
