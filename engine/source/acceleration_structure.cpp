@@ -352,11 +352,10 @@ namespace udsdx
 				info.BaseVertexLocation = submeshes[i].BaseVertexLocation;
 				info.VertexStride = mesh->GetVertexByteStride();
 
-				if (i < renderer->GetMaterialCount())
+				if (const Material* material = renderer->GetMaterial(static_cast<int>(i)))
 				{
-					const Material material = renderer->GetMaterial(static_cast<int>(i));
-					info.AlbedoTexIndex = material.GetSourceTextureIndex(0);
-					info.SamplerMode = static_cast<UINT>(material.GetSamplerMode());
+					info.AlbedoTexIndex = material->GetSourceTextureIndex(0);
+					info.SamplerMode = static_cast<UINT>(material->GetSamplerMode());
 					// Every textured surface is alpha tested, matching color.hlsl's
 					// clip(texColor.a - 0.1f) and inc_common.hlsl's ShadowPS.
 					info.Flags = info.AlbedoTexIndex != InvalidSrvIndex ? RaytracingGeometryFlagAlphaTest : 0u;

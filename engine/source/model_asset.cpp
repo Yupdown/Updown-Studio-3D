@@ -84,7 +84,7 @@ namespace udsdx
 
 	Material* ModelAsset::GetMaterial(size_t index) const
 	{
-		return index < m_materials.size() ? m_materials[index].get() : nullptr;
+		return index < m_materials.size() ? m_materials[index] : nullptr;
 	}
 
 	const AnimationClip* ModelAsset::GetAnimationClip(std::string_view key) const
@@ -190,12 +190,15 @@ namespace udsdx
 
 	void ModelAsset::BuildMaterials(const aiScene* scene, const std::filesystem::path& resourcePath)
 	{
+		// Resource owns the materials; this asset only keeps pointers. Keying them off the asset
+		// path keeps two models from colliding, and re-loading the same model reuses them.
+		const std::wstring assetKey = resourcePath.wstring();
 		m_materials.reserve(scene->mNumMaterials);
 		for (unsigned int i = 0; i < scene->mNumMaterials; ++i)
 		{
-			auto material = std::make_unique<Material>(); // shader-less template; shader injected at Instantiate
+			Material* material = INSTANCE(Resource)->CreateMaterial(assetKey + L"|mat" + std::to_wstring(i));
 			ExtractMaterialTextures(scene, i, *material, resourcePath);
-			m_materials.push_back(std::move(material));
+			m_materials.push_back(material);
 		}
 	}
 
@@ -309,13 +312,13 @@ namespace udsdx
 		m_embeddedTextureBlobs.shrink_to_fit();
 	}
 
-	Material ModelAsset::MakeMaterial(int materialIndex) const
+	Material* ModelAsset::MaterialForSubmesh(int materialIndex) const
 	{
 		if (materialIndex >= 0 && static_cast<size_t>(materialIndex) < m_materials.size())
 		{
-			return *m_materials[materialIndex]; // copy the template (textures + sampler)
+			return m_materials[materialIndex];
 		}
-		return Material();
+		return INSTANCE(Resource)->GetDefaultMaterial();
 	}
 
 	std::shared_ptr<SceneObject> ModelAsset::Instantiate(Shader* shader, bool enableRaytracing) const
@@ -350,7 +353,7 @@ namespace udsdx
 			const std::vector<int>& submeshMaterials = m_meshSubmeshMaterials[0];
 			for (size_t submeshIndex = 0; submeshIndex < submeshMaterials.size(); ++submeshIndex)
 			{
-				renderer->SetMaterial(MakeMaterial(submeshMaterials[submeshIndex]), static_cast<int>(submeshIndex));
+				renderer->SetMaterial(MaterialForSubmesh(submeshMaterials[submeshIndex]), static_cast<int>(submeshIndex));
 			}
 			renderer->RebindBones();
 
@@ -404,7 +407,7 @@ namespace udsdx
 				renderer->SetMesh(static_cast<Mesh*>(m_meshes[meshIndex].get()));
 				renderer->SetShader(shader);
 				const int materialIndex = submeshMaterials.empty() ? -1 : submeshMaterials[0];
-				renderer->SetMaterial(MakeMaterial(materialIndex), 0);
+				renderer->SetMaterial(MaterialForSubmesh(materialIndex), 0);
 			}
 		}
 

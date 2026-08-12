@@ -5,9 +5,8 @@
 
 namespace udsdx
 {
-	Material::Material(Texture* texture)
+	Material::Material(std::wstring_view key, UINT index) : ResourceObject(key), m_index(index)
 	{
-		m_mainTex[0] = texture;
 	}
 
 	void Material::SetSourceTexture(Texture* texture, UINT index)

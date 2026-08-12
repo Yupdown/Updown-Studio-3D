@@ -67,6 +67,8 @@ namespace udsdx
 		std::unique_ptr<ResourceObject> Load(std::wstring_view path, const std::type_info* requestedType = nullptr) override;
 	};
 
+	class Material;
+
 	class Resource
 	{
 	private:
@@ -77,12 +79,29 @@ namespace udsdx
 		std::unordered_map<std::wstring, std::wstring> m_extensionDictionary;
 		std::unordered_set<std::wstring> m_ignoreFiles;
 
+		// Creation order, which is what gives each material its stable GPU table index.
+		// m_resources is unordered, so it cannot serve this purpose.
+		std::vector<Material*> m_materialOrder;
+		Material* m_defaultMaterial = nullptr;
+
 	public:
 		Resource();
 		~Resource();
 
 		void Initialize(ID3D12Device* device, ID3D12CommandQueue* commandQueue, ID3D12GraphicsCommandList* commandList, ID3D12RootSignature* rootSignature);
 		void SetResourceRootPath(std::wstring_view path);
+
+		// Materials are authored, not loaded from a file, so they bypass the extension dispatch that
+		// Load<T> uses. Returns the existing material when the key is already taken, which is what
+		// makes re-instantiating an asset cheap. Resource owns the result; callers hold it by
+		// pointer and must not delete it.
+		Material* CreateMaterial(std::wstring_view key);
+		// White dielectric, created before anything else so it always lands at index 0. Stands in
+		// for submeshes with no material of their own, which lets shaders index the material table
+		// unconditionally.
+		Material* GetDefaultMaterial() const { return m_defaultMaterial; }
+		// Creation-ordered; a material's position here is its GPU table index.
+		const std::vector<Material*>& GetMaterials() const { return m_materialOrder; }
 
 		// Returns the directory that contains the running executable.
 		static std::filesystem::path GetExecutableDirectory();

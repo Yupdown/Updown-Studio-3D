@@ -32,6 +32,31 @@ namespace udsdx
 
 	}
 
+	Material* Resource::CreateMaterial(std::wstring_view key)
+	{
+		std::wstring normalized = NormalizePath(key);
+
+		auto iter = m_resources.find(normalized);
+		if (iter != m_resources.end())
+		{
+			for (const auto& resource : iter->second)
+			{
+				if (auto* existing = dynamic_cast<Material*>(resource.get()))
+				{
+					return existing;
+				}
+			}
+		}
+
+		// The index is the position in m_materialOrder and never changes: shaders reference
+		// materials by it, so renumbering would silently repaint the scene.
+		auto material = std::make_unique<Material>(normalized, static_cast<UINT>(m_materialOrder.size()));
+		Material* created = material.get();
+		m_resources[normalized].emplace_back(std::move(material));
+		m_materialOrder.push_back(created);
+		return created;
+	}
+
 	void Resource::Initialize(ID3D12Device* device, ID3D12CommandQueue* commandQueue, ID3D12GraphicsCommandList* commandList, ID3D12RootSignature* rootSignature)
 	{ ZoneScoped;
 		ResolveResourceRootPath();
@@ -39,6 +64,10 @@ namespace udsdx
 		InitializeLoaders(device, commandQueue, commandList, rootSignature);
 		InitializeExtensionDictionary();
 		InitializeIgnoreFiles();
+
+		// First material created, so it is index 0 -- the fallback every unassigned submesh and
+		// every out-of-range material lookup resolves to.
+		m_defaultMaterial = CreateMaterial(L"udsdx/default_material");
 
 		DebugConsole::Log("Registering resources...");
 

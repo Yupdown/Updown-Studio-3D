@@ -50,9 +50,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     auto pipelineStateTexture = INSTANCE(Resource)->Load<Shader>(L"resource\\shader\\color.hlsl");
     // maxwell.obj's texture lives in resource/texture/ (not beside the model), so override the
     // instantiated materials with it explicitly.
-    udsdx::Material material = udsdx::Material(INSTANCE(Resource)->Load<udsdx::Texture>(L"resource\\texture\\dingus_nowhiskers.jpg"));
-    udsdx::Material materialTile = udsdx::Material(INSTANCE(Resource)->Load<udsdx::Texture>(L"resource\\texture\\tile.png"));
-    materialTile.SetSamplerMode(udsdx::MaterialSamplerMode::Nearest);
+    udsdx::Material* material = INSTANCE(Resource)->CreateMaterial(L"demo/maxwell");
+    material->SetSourceTexture(INSTANCE(Resource)->Load<udsdx::Texture>(L"resource\\texture\\dingus_nowhiskers.jpg"));
+    udsdx::Material* materialTile = INSTANCE(Resource)->CreateMaterial(L"demo/tile");
+    materialTile->SetSourceTexture(INSTANCE(Resource)->Load<udsdx::Texture>(L"resource\\texture\\tile.png"));
+    materialTile->SetSamplerMode(udsdx::MaterialSamplerMode::Nearest);
 
     tilemap = std::make_shared<MCTilemap>();
     terrainGenerator = std::make_shared<MCTerrainGenerator>();

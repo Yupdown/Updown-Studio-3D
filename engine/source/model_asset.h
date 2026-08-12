@@ -89,7 +89,8 @@ namespace udsdx
 		int RegisterEmbeddedTexture(const aiScene* scene, const char* assimpPath);
 		void ResolveEmbeddedTextures(ID3D12Device* device, ID3D12GraphicsCommandList* commandList);
 		std::shared_ptr<SceneObject> InstantiateNode(int nodeIndex, Shader* shader, bool enableRaytracing) const;
-		Material MakeMaterial(int materialIndex) const;
+		// Resource-owned material for a submesh, or the default material when the index is absent.
+		Material* MaterialForSubmesh(int materialIndex) const;
 
 	private:
 		bool m_isRigged = false;
@@ -102,7 +103,9 @@ namespace udsdx
 		// submesh; the single rigged mesh has one entry per skinned submesh.
 		std::vector<std::vector<int>> m_meshSubmeshMaterials;
 
-		std::vector<std::unique_ptr<Material>> m_materials;
+		// Non-owning: Resource owns every material. They outlive this asset, which is harmless
+		// today because nothing unloads resources individually -- revisit if that changes.
+		std::vector<Material*> m_materials;
 
 		std::vector<std::unique_ptr<Texture>> m_embeddedTextures;
 		std::vector<EmbeddedTextureBlob> m_embeddedTextureBlobs;

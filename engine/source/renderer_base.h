@@ -16,7 +16,9 @@ namespace udsdx
 		virtual void Render(RenderParam& param, int parameter) = 0;
 
 	public:
-		void SetMaterial(const Material& material, int index = 0);
+		// Non-owning; Resource owns every material. Passing null (or leaving a gap) resolves to
+		// Resource::GetDefaultMaterial so no submesh is ever left without one.
+		void SetMaterial(Material* material, int index = 0);
 		// The shader picks the pipeline states every submesh of this renderer draws with. One per
 		// renderer rather than one per material: a submesh needing a different pipeline is really a
 		// different renderer, and the raytracer has no per-material shader concept at all.
@@ -28,7 +30,8 @@ namespace udsdx
 		void SetDrawOutline(bool value) { m_drawOutline = value; }
 
 		D3D_PRIMITIVE_TOPOLOGY GetTopology() const;
-		Material GetMaterial(int index = 0) const;
+		// Null when index is out of range.
+		Material* GetMaterial(int index = 0) const;
 		size_t GetMaterialCount() const { return m_materials.size(); }
 
 		bool GetCastShadow() const;
@@ -47,7 +50,7 @@ namespace udsdx
 		const Matrix4x4& GetPrevTransformCacheRef() const { return m_prevTransformCache; }
 
 	protected:
-		std::vector<Material> m_materials;
+		std::vector<Material*> m_materials;
 		Shader* m_shader = nullptr;
 
 		D3D_PRIMITIVE_TOPOLOGY m_topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
