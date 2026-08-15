@@ -93,6 +93,13 @@ namespace
 		constexpr double FurnaceSmoothMin = 0.98;
 		// One specular bounce after the BRDF weight, which gSpecularFireflyClamp caps at 64.
 		constexpr double SpecularMax = 64.0 * 1.01;
+		// Share of pixels the motion blur has to change, measured separately inside and outside the
+		// render-resolution rectangle. Both regions are held to the same number on purpose: the
+		// bug this guards leaves the outside bit-for-bit untouched while the inside is fully
+		// blurred, so the two diverge completely rather than by a matter of degree. Short of 1
+		// because the blur is a weighted average -- over a flat enough patch it can land back on
+		// the same 8-bit code value.
+		constexpr double MotionBlurTouchedMin = 0.9;
 	}
 
 	constexpr int kWarmupTimeoutFrames = 120;
@@ -102,6 +109,25 @@ namespace
 	constexpr int kAovConvergeFrames = 8;
 	constexpr int kGlobalFrameBudget = 20000;
 	constexpr unsigned int kBaselineAtrous = 4u;
+
+	// Yaw applied for the one frame each motion blur capture is taken on. Rotation, not
+	// translation: a translation's motion field vanishes at the focus of expansion, which sits near
+	// the middle of this pose and would leave the check measuring nothing exactly where the frame
+	// is busiest. A yaw is close to uniform across the width instead.
+	constexpr float kMotionBlurYawDelta = 0.1f;
+	// The shader scales motion by MotionBlurFactor = shutterSpeed / deltaTime, so at the shipped
+	// 0.01 the blur length is a function of how fast the machine is running -- and the testbed's
+	// frames are slow and uneven, being interleaved with queue flushes and readback stalls. Low
+	// enough and the blur falls under the pixel shader's half-pixel early-out and the case measures
+	// nothing at all, which is exactly what it did at the default. Raised until the blur saturates
+	// the 20-pixel clamp across every frame time the runner plausibly sees, which makes the blur
+	// length constant rather than merely large.
+	constexpr float kMotionBlurShutterSpeed = 1.0f;
+	// Well under any client height the runner will hand out, so most of the frame lands outside the
+	// render extent and the seam the bug produces has room to be measured. Deliberately not derived
+	// from the window size, which is whatever the shell gives the testbed: the checks read the
+	// resulting extent back off the renderer instead of assuming what it worked out to.
+	constexpr unsigned int kMotionBlurRenderHeight = 300u;
 
 	// Fixed pose inside the Sponza atrium (world bounds X[-15.4, 14.4], Y[-1, 11.4], Z[-9.5, 8.8])
 	// at eye height near the west end, looking down the long axis toward +X. The DamagedHelmet
@@ -270,6 +296,59 @@ namespace
 		return stats;
 	}
 
+	struct RegionDiff
+	{
+		double MeanAbs = 0.0;         // mean |luminance delta| over the region
+		double TouchedFraction = 0.0; // share of its pixels the delta is non-zero on
+		size_t Count = 0;             // pixels compared; zero means the region is empty
+	};
+
+	// A blur's mean delta scales with local contrast, which is scene content and varies wildly
+	// across a frame, so the mean alone cannot answer "did the blur reach this region". Whether it
+	// touched a pixel at all can: a pass that early-outs writes the source pixel straight back, so
+	// an unreached pixel is bit-exact and a reached one is very nearly never. Well below one
+	// R8G8B8A8 code value in the least-weighted channel (0.0722/255), so only exact copies fall
+	// under it.
+	constexpr double kTouchedEpsilon = 1e-5;
+
+	// Compares two images over the rectangle [0,rectW) x [0,rectH), or over everything outside it
+	// when `outside` is set. Count lets the caller tell an empty region -- a native-resolution case
+	// has no margin -- from one that genuinely did not change.
+	RegionDiff ComputeRegionDiff(const FloatImage& a, const FloatImage& b,
+		UINT rectW, UINT rectH, bool outside)
+	{
+		RegionDiff diff;
+		double sum = 0.0;
+		size_t touched = 0;
+		for (UINT y = 0; y < a.Height; ++y)
+		{
+			for (UINT x = 0; x < a.Width; ++x)
+			{
+				if ((x < rectW && y < rectH) == outside)
+				{
+					continue;
+				}
+				const size_t i = (static_cast<size_t>(y) * a.Width + x) * 4;
+				const double la = Luminance(a.Rgba[i], a.Rgba[i + 1], a.Rgba[i + 2]);
+				const double lb = Luminance(b.Rgba[i], b.Rgba[i + 1], b.Rgba[i + 2]);
+				if (!std::isfinite(la) || !std::isfinite(lb))
+				{
+					continue;
+				}
+				const double d = std::abs(la - lb);
+				sum += d;
+				touched += d > kTouchedEpsilon ? 1 : 0;
+				++diff.Count;
+			}
+		}
+		if (diff.Count != 0)
+		{
+			diff.MeanAbs = sum / static_cast<double>(diff.Count);
+			diff.TouchedFraction = static_cast<double>(touched) / static_cast<double>(diff.Count);
+		}
+		return diff;
+	}
+
 	double MaxDeviationFrom(const FloatImage& img, double target)
 	{
 		double maxDev = 0.0;
@@ -380,6 +459,14 @@ namespace
 		bool Hold;          // second capture kHoldFrames later (temporal stability)
 		bool AtrousToggle;  // third capture with the a-trous filter disabled
 		void (*Evaluate)(CaseState&);
+		// Raytracing render height the case runs at; 0 leaves the display resolution. Defaulted so
+		// the existing positional entries in BuildCaseTable keep compiling untouched.
+		unsigned int RenderHeight = 0u;
+		// Replaces the plain converge-and-capture with the motion blur flow: converge, nudge the
+		// camera one frame and capture with the blur off (A), then replay the identical
+		// convergence and nudge with it on (C). Captures come from the back buffer, because the
+		// HDR target stops at the raytracing resolve and never sees the post-process chain.
+		bool MotionBlurCoverage = false;
 	};
 
 	struct CaseState
@@ -399,6 +486,10 @@ namespace
 		Hold,
 		CaptureB,
 		AtrousSettle,
+		// Motion blur flow, between Converge and CaptureA / CaptureC respectively.
+		MotionNudgeA,
+		MotionReconverge,
+		MotionNudgeC,
 		CaptureC,
 		Evaluate,
 		Finish,
@@ -433,6 +524,22 @@ namespace
 	void PinCamera()
 	{
 		ApplyCameraPose(g_cameraObject);
+	}
+
+	// Turns the camera off the pinned pose so the frame rendered next carries a motion field.
+	// Absolute rather than incremental: both halves of the motion blur case have to land on the
+	// exact same pose for their pre-blur images to be bit-identical.
+	void NudgeCameraYaw()
+	{
+		float yaw = kCameraYaw;
+		float pitch = kCameraPitch;
+		if (g_options.PoseOverride)
+		{
+			yaw = g_options.Pose[3];
+			pitch = g_options.Pose[4];
+		}
+		g_cameraObject->GetTransform()->SetLocalRotation(
+			Quaternion::CreateFromYawPitchRoll(yaw + kMotionBlurYawDelta, pitch, 0.0f));
 	}
 
 	std::string Narrow(const std::wstring& wide)
@@ -600,6 +707,77 @@ namespace
 			"max |value - 0.5| in the motion-vector AOV of a static scene");
 	}
 
+	// Screen-space motion blur is the one post-process that survives into the raytracing path, and
+	// the only pass there that reads the raytracer's buffers from outside. Those buffers are render
+	// sized while the blur's own tile grid is display sized, and the tile pass indexes them by
+	// absolute texel -- so a mismatch does not fail loudly, it just stops the blur at the render
+	// extent and leaves the rest of the frame sharp.
+	//
+	// A and C are the same frame with the blur off and on, rendered over an identical RNG/jitter
+	// sequence from invalidated history, so their difference is the blur's contribution and nothing
+	// else. Splitting that difference at the render extent turns "the blur stops at a seam" into a
+	// number: the blur has to reach as large a share of the pixels outside the extent as inside it.
+	void EvaluateMotionBlurCoverage(CaseState& cs)
+	{
+		if (!cs.A.Valid() || !cs.C.Valid() || cs.A.Rgba.size() != cs.C.Rgba.size()
+			|| cs.A.Width != cs.C.Width || cs.A.Height != cs.C.Height)
+		{
+			AddCheck(cs, "motion_blur_captures", false, 0.0, 1.0,
+				"the blur-off and blur-on captures are not comparable");
+			return;
+		}
+
+		AddCheck(cs, "nan_inf", CountNonFinite(cs.C) == 0,
+			static_cast<double>(CountNonFinite(cs.C)), 0.0, "non-finite texels in the blurred frame");
+
+		RaytracingRenderer* rt = Rt();
+		const UINT renderWidth = rt != nullptr ? rt->GetRenderWidth() : cs.A.Width;
+		const UINT renderHeight = rt != nullptr ? rt->GetRenderHeight() : cs.A.Height;
+
+		// Reported so a failure says what geometry it was measured against rather than leaving the
+		// reader to guess at the window size the runner happened to get.
+		cs.Result.Checks.push_back({ "motion_blur_render_extent", true,
+			static_cast<double>(renderWidth), static_cast<double>(cs.A.Width),
+			"render width (value) against display width (threshold)" });
+		cs.Result.Checks.push_back({ "motion_blur_render_extent_y", true,
+			static_cast<double>(renderHeight), static_cast<double>(cs.A.Height),
+			"render height (value) against display height (threshold)" });
+
+		const RegionDiff interior = ComputeRegionDiff(cs.A, cs.C, renderWidth, renderHeight, false);
+		const RegionDiff margin = ComputeRegionDiff(cs.A, cs.C, renderWidth, renderHeight, true);
+
+		// Without this the coverage check is measuring nothing and every regression passes
+		// silently: a nudge that produced no motion, a blur that never ran, or a capture taken off
+		// the wrong buffer would all leave the frame untouched everywhere and look uniform.
+		AddCheck(cs, "motion_blur_interior_touched",
+			interior.TouchedFraction >= thresholds::MotionBlurTouchedMin,
+			interior.TouchedFraction, thresholds::MotionBlurTouchedMin,
+			"share of pixels the blur changes inside the render-resolution rectangle");
+
+		if (margin.Count == 0)
+		{
+			// Native render height: the render extent covers the frame and there is no margin to
+			// check. That case exists to guard the unscaled path, which the check above already
+			// does -- but a case that asked for a reduced height and got none is a broken case,
+			// not a degenerate one.
+			AddCheck(cs, "motion_blur_margin_touched", cs.Def->RenderHeight == 0u, 0.0, 0.0,
+				"no margin outside the render extent (expected only at native render height)");
+			return;
+		}
+
+		AddCheck(cs, "motion_blur_margin_touched",
+			margin.TouchedFraction >= thresholds::MotionBlurTouchedMin,
+			margin.TouchedFraction, thresholds::MotionBlurTouchedMin,
+			"the same share outside it, which the render/display mismatch drives to zero");
+
+		// Reported, not asserted: how hard the blur hit each region is scene contrast as much as
+		// coverage, and this pose puts the high-frequency arcades in one and mostly floor in the
+		// other. Useful when reading a failure, useless as a gate.
+		cs.Result.Checks.push_back({ "motion_blur_margin_mean_ratio", true,
+			interior.MeanAbs > 0.0 ? margin.MeanAbs / interior.MeanAbs : 0.0, 0.0,
+			"mean |luminance delta| outside the render extent relative to inside it" });
+	}
+
 	// Metallic and roughness are the only material channels no shading path consumes yet, so a
 	// regression in the metallic-roughness lookup would be entirely silent. The assertion that
 	// matters is structural: roughness has to VARY across the frame. Before the material table
@@ -730,9 +908,16 @@ namespace
 		}
 	}
 
-	// Enqueues a PNG (back buffer) + HDR (resolve target) pair for the frame being rendered.
-	void EnqueueCapturePair(const char* label, FloatImage& dst, bool saveHdrFile)
+	// Enqueues a PNG (back buffer) + measurable readback pair for the frame being rendered.
+	// floatSource picks what dst is filled from: the HDR resolve target, which is what the
+	// raytracing checks want because it stops before tonemapping; or the back buffer, which is the
+	// only source that has been through the post-process chain. saveHdrFile applies to the former
+	// only -- there is nothing high-dynamic-range about an R8G8B8A8 back buffer to write out.
+	void EnqueueCapturePair(const char* label, FloatImage& dst, bool saveHdrFile,
+		CaptureRequest::CaptureSource floatSource = CaptureRequest::CaptureSource::HdrTarget)
 	{
+		saveHdrFile = saveHdrFile && floatSource == CaptureRequest::CaptureSource::HdrTarget;
+
 		const std::string caseName = g_current.Def->Name;
 		std::filesystem::path caseDir = std::filesystem::path(g_options.OutDir) / caseName;
 		std::error_code ec;
@@ -759,14 +944,14 @@ namespace
 
 		++g_capturesInFlight;
 		std::wstring hdrFile = saveHdrFile ? hdrPath.wstring() : std::wstring();
-		CaptureRequest hdrRequest;
-		hdrRequest.Source = CaptureRequest::CaptureSource::HdrTarget;
-		hdrRequest.OnCaptured = [&dst, hdrFile](DirectX::ScratchImage&& image)
+		CaptureRequest floatRequest;
+		floatRequest.Source = floatSource;
+		floatRequest.OnCaptured = [&dst, hdrFile](DirectX::ScratchImage&& image)
 		{
 			StoreScratchImage(std::move(image), dst, hdrFile);
 			--g_capturesInFlight;
 		};
-		core->EnqueueCapture(std::move(hdrRequest));
+		core->EnqueueCapture(std::move(floatRequest));
 	}
 
 	// ---------------------------------------------------------------------------------------------
@@ -1047,6 +1232,13 @@ namespace
 			// Stochastic, unlike the other AOVs, so it gets the full convergence budget.
 			{ "aov_specular",    RaytracingDebugMode::SpecularOnly,  -1,                 false, false, &EvaluateAovSpecular },
 			{ "heatmap",         RaytracingDebugMode::SampleHeatmap, -1,                 false, false, &EvaluateHeatmap },
+			// The reduced-height case is the regression itself; the native one guards the path
+			// where the velocity buffer and the tile grid are the same size, which is what every
+			// other configuration in the engine -- including the whole raster path -- runs.
+			{ "motion_blur_native", RaytracingDebugMode::None,      kAovConvergeFrames, false, false,
+			  &EvaluateMotionBlurCoverage, 0u, true },
+			{ "motion_blur_scaled", RaytracingDebugMode::None,      kAovConvergeFrames, false, false,
+			  &EvaluateMotionBlurCoverage, kMotionBlurRenderHeight, true },
 		};
 
 		for (const auto& def : all)
@@ -1222,6 +1414,18 @@ namespace
 			RenderOptions& ro = Ro();
 			ro.RaytracingDebug = g_current.Def->Debug;
 			ro.RaytracingAtrousIterations = kBaselineAtrous;
+			// Core::Render acts on this before the frame is recorded: it flushes the queue,
+			// recreates every raytracing buffer at the new size and drops the history. Warmup
+			// waits on IsHistoryValid afterwards, so the case starts from a settled state.
+			ro.RaytracingRenderHeight = g_current.Def->RenderHeight;
+			// The blur is off for capture A and for every other case; MotionReconverge turns it on
+			// for capture C and CaptureC puts it back. The shutter speed is left raised afterwards
+			// rather than restored: with the blur itself off everywhere else, it reaches nothing.
+			ro.DrawMotionBlur = false;
+			if (g_current.Def->MotionBlurCoverage)
+			{
+				ro.MotionBlurShutterSpeed = kMotionBlurShutterSpeed;
+			}
 			PinCamera();
 			if (RaytracingRenderer* rt = Rt())
 			{
@@ -1263,11 +1467,29 @@ namespace
 		}
 		case Stage::Converge:
 		{
+			if (g_framesInStage == 1 && g_current.Def->MotionBlurCoverage)
+			{
+				// MotionReconverge replays this run frame for frame, so it has to start from a
+				// state that can be reproduced exactly. LoadCase's reset does not survive Warmup,
+				// which runs a variable number of frames and leaves both the frame counter and the
+				// accumulation depth wherever the machine happened to get to -- and a frame counter
+				// off by one is a different jitter phase and a different RNG seed, which shows up
+				// as noise in |A - C| everywhere and swamps the blur being measured.
+				if (RaytracingRenderer* rt = Rt())
+				{
+					rt->InvalidateHistory();
+					rt->ResetFrameCounter();
+				}
+			}
 			if (g_framesInStage >= EffectiveConvergeFrames(*g_current.Def))
 			{
 				if (std::string(g_current.Def->Name) == "gate")
 				{
 					AdvanceStage(Stage::Evaluate);
+				}
+				else if (g_current.Def->MotionBlurCoverage)
+				{
+					AdvanceStage(Stage::MotionNudgeA);
 				}
 				else
 				{
@@ -1277,10 +1499,60 @@ namespace
 			}
 			return;
 		}
+		case Stage::MotionNudgeA:
+		{
+			// The nudge and the capture go out in the same Update: the camera moves before this
+			// frame is recorded, so the frame the request is satisfied against is the one carrying
+			// the motion. The blur is still off -- this is the reference C is differenced against.
+			NudgeCameraYaw();
+			EnqueueCapturePair("blur_off", g_current.A, false,
+				CaptureRequest::CaptureSource::BackBuffer);
+			AdvanceStage(Stage::CaptureA);
+			return;
+		}
+		case Stage::MotionReconverge:
+		{
+			if (g_framesInStage == 1)
+			{
+				// Replay the identical convergence with the blur on. Same pose, same dropped
+				// history, same restarted frame counter as Converge, so the pre-blur image comes
+				// out bit-exact against the first pass -- which is the whole reason |A - C| can be
+				// read as the blur's contribution rather than as accumulated noise.
+				Ro().DrawMotionBlur = true;
+				if (RaytracingRenderer* rt = Rt())
+				{
+					rt->InvalidateHistory();
+					rt->ResetFrameCounter();
+				}
+			}
+			if (g_framesInStage >= EffectiveConvergeFrames(*g_current.Def))
+			{
+				AdvanceStage(Stage::MotionNudgeC);
+			}
+			return;
+		}
+		case Stage::MotionNudgeC:
+		{
+			NudgeCameraYaw();
+			EnqueueCapturePair("blur_on", g_current.C, false,
+				CaptureRequest::CaptureSource::BackBuffer);
+			AdvanceStage(Stage::CaptureC);
+			return;
+		}
 		case Stage::CaptureA:
 		{
 			if (g_capturesInFlight == 0 && g_framesInStage >= 1)
 			{
+				if (g_current.Def->MotionBlurCoverage)
+				{
+					// Put the camera back a frame early so MotionReconverge's first frame sees a
+					// pose that has already been still for one frame -- exactly what Converge's
+					// first frame saw. Pinning inside MotionReconverge instead would give its reset
+					// frame a nudged-to-pinned motion field that the first run never had.
+					PinCamera();
+					AdvanceStage(Stage::MotionReconverge);
+					return;
+				}
 				AdvanceStage(g_current.Def->Hold ? Stage::Hold
 					: (g_current.Def->AtrousToggle ? Stage::AtrousSettle : Stage::Evaluate));
 				return;
@@ -1339,6 +1611,9 @@ namespace
 			if (g_capturesInFlight == 0 && g_framesInStage >= 1)
 			{
 				Ro().RaytracingAtrousIterations = kBaselineAtrous;
+				// Evaluate reads the render extent back off the renderer, so the render height has
+				// to stay put until the next LoadCase resets it -- only the blur goes back here.
+				Ro().DrawMotionBlur = false;
 				AdvanceStage(Stage::Evaluate);
 				return;
 			}

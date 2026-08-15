@@ -882,6 +882,24 @@ namespace udsdx
 				}
 				break;
 			}
+			case CaptureRequest::CaptureSource::BackBuffer:
+			{
+				// m_currBackBuffer only advances after this runs, so CurrentBackBuffer() is still
+				// the buffer that was just presented -- and still in PRESENT, like the PNG path.
+				DirectX::ScratchImage image;
+				HRESULT hr = DirectX::CaptureTexture(
+					m_commandQueue.Get(), CurrentBackBuffer(), false, image,
+					D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_PRESENT);
+				if (FAILED(hr))
+				{
+					DebugConsole::LogError("Back buffer capture failed (hr=" + std::to_string(hr) + ")");
+				}
+				else if (request.OnCaptured)
+				{
+					request.OnCaptured(std::move(image));
+				}
+				break;
+			}
 			}
 		}
 	}

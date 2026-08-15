@@ -36,6 +36,9 @@ with `pwsh scripts/fetch-testbed-assets.ps1`.
 - `testbed-results/report.json` — the same data structured, plus capture paths and metadata.
 - `testbed-results/<case>/*.png` — tonemapped captures, viewable directly with the Read tool.
 - `testbed-results/<case>/converged.hdr` — pre-tonemap HDR resolve target (R11G11B10 source).
+- `testbed-results/motion_blur_*/blur_off.png` and `blur_on.png` — the same frame with the blur off
+  and on. The bug these guard is obvious by eye: a hard seam where the blur stops, at
+  `motion_blur_render_extent` (reported as a value/threshold pair for exactly this reason).
 
 Values are always emitted even on PASS. On a marginal failure (value close to threshold), look at
 the number and the PNG before concluding the renderer regressed — thresholds were calibrated on
@@ -68,6 +71,7 @@ errors to about a percent regardless of how many digits they print.
 | `aov_furnace` | the specular lobe's directional albedo, with F0 forced to 1. **Traces nothing** — it isolates D, V, F and the VNDF sampler from transport, so a failure here is a BRDF bug and can be nothing else. Must not exceed 1 (energy creation) and must reach ~1 somewhere (the narrowest lobe in frame must conserve). |
 | `aov_specular` | the specular indirect bounce alone: present, bounded by the firefly clamp, and structured. Whole-frame, unlike the other AOV checks — Sponza's floor is a rough dielectric, so the usual bottom-rows restriction would sample the least specular surfaces in the scene. |
 | `heatmap` | per-pixel sample count saturates everywhere (accumulation actually progresses) |
+| `motion_blur_native` / `motion_blur_scaled` | the screen-space motion blur reaches the **whole** frame, including when the raytracer renders below the display resolution. The only checks that measure a post-process rather than the raytracer, and so the only ones read off the back buffer. |
 
 `aov_material` is also worth *looking* at: Sponza's stone and fabric read green (rough dielectric),
 the helmet reads red (smooth metal) and the drapes' gold embroidery reads orange. Those are glTF's
@@ -97,6 +101,27 @@ the frame is always floor, which the AOV range checks depend on.
 - Anything that touches `RadianceSettings` (fog, sun, spp, debug mode) mid-case drops the
   accumulation history; settings may only change in `LoadCase`. `RaytracingAtrousIterations` is
   the deliberate exception (display-side only).
+- `DrawMotionBlur` is off for every case **except** the two `motion_blur_*` ones, which also raise
+  `MotionBlurShutterSpeed` and leave it raised (inert while the blur itself is off). It used to be
+  forced off suite-wide; code that assumed that no longer holds.
+- Measuring a post-process means capturing the **back buffer**, not `HdrTarget`. `HdrTarget` is the
+  raytracing resolve, written before bloom/tonemapping and before motion blur — a check reading it
+  would see a frame the post-process chain has not touched yet and pass on anything.
+- `MotionBlurFactor = MotionBlurShutterSpeed / deltaTime`, so blur length depends on how fast the
+  machine is running. The testbed's frames are slow and uneven (queue flushes, readback stalls), and
+  at the shipped shutter speed the blur fell under the pixel shader's half-pixel early-out and the
+  case silently measured nothing. Anything time-scaled needs its input pinned hard enough to
+  saturate, not merely to be large.
+- The motion blur cases need the camera to *move*, which the rest of the suite never does. They
+  converge, turn one frame off the pinned pose, capture, then replay that run bit-for-bit with the
+  blur on. Both halves reset the frame counter **and** invalidate history at the same point, so
+  their pre-blur images are identical and the difference is the blur alone. `LoadCase`'s reset is
+  not enough on its own: `Warmup` runs a variable number of frames after it.
+- Editing a shader with `Copy-Item` does not rebuild it. `Copy-Item` preserves the source's
+  timestamp, so a file restored from a backup can be *older* than the generated header in
+  `build/.../generated/compiled_shaders/` and MSBuild will skip it — leaving the previous shader in
+  the binary while the working tree shows the new one. Results from such a run look like a fix that
+  did not work. Touch the file (or delete the header) after restoring one.
 - Threshold constants and their rationale live in [testbed/RtTestbed.cpp](testbed/RtTestbed.cpp)
   (`namespace thresholds`).
 - The suite runs the **raytracer only** — `DrawRaytracing` is forced on and the gate skips

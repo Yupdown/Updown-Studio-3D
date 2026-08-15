@@ -36,6 +36,11 @@ namespace udsdx
 			// The deferred renderer's HDR intermediate target (pre-tonemap raytracing resolve when
 			// RT is active, R11G11B10_FLOAT), handed to OnCaptured as a ScratchImage; Path unused.
 			HdrTarget,
+			// The same back buffer as BackBufferPng, but handed to OnCaptured as a ScratchImage
+			// instead of written to disk; Path unused. HdrTarget stops at the raytracing resolve,
+			// so this is the only source that sees the post-process chain -- tonemapping, and the
+			// motion blur that reads and writes the back buffer after it.
+			BackBuffer,
 		};
 
 		CaptureSource Source = CaptureSource::BackBufferPng;
