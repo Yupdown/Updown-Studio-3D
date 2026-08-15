@@ -19,10 +19,15 @@ namespace udsdx
 
 		// The velocity and depth sources are supplied by the caller rather than read from the
 		// G-buffer: the raytracing path produces its own motion vectors and has no depth buffer at
-		// all. depthIsLinear selects whether the depth SRV holds reverse-Z NDC that still needs
-		// linearizing, or an already-linear depth.
+		// all. Those buffers are not necessarily the size of the screen either -- the raytracer
+		// traces into smaller ones and lets the upscaler make up the difference -- so the velocity
+		// extent comes with them. The pixel shader reads everything by UV and does not care, but
+		// the tile pass indexes texels directly and has to be told. depthIsLinear selects whether
+		// the depth SRV holds reverse-Z NDC that still needs linearizing, or an already-linear
+		// depth.
 		void Pass(RenderParam& param, D3D12_GPU_VIRTUAL_ADDRESS cbvGpu,
 			D3D12_GPU_DESCRIPTOR_HANDLE velocitySrv,
+			UINT velocityWidth, UINT velocityHeight,
 			D3D12_GPU_DESCRIPTOR_HANDLE depthSrv,
 			bool depthIsLinear);
 

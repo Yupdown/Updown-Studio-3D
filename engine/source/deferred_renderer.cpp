@@ -788,7 +788,9 @@ namespace udsdx
 		// longer history than TAA's blend cap allows.
 		//
 		// It runs on the raytracer's own motion vectors, and on camera distance in place of a
-		// depth buffer this mode never produces.
+		// depth buffer this mode never produces. Those buffers are smaller than the display
+		// whenever a raytracing render height is set, so their extent is handed over with them:
+		// only the tile pass cares, but it indexes texels directly.
 		// IsHistoryValid doubles as "the pass ran to completion this frame": every early-out inside
 		// it clears the flag. Without this the blur would sample a guide buffer that was never
 		// written, which happens while the acceleration structure is still building.
@@ -796,6 +798,7 @@ namespace udsdx
 		{
 			m_motionBlur->Pass(renderParam, cameraCbv,
 				m_raytracingRenderer->GetMotionSrv(),
+				m_raytracingRenderer->GetRenderWidth(), m_raytracingRenderer->GetRenderHeight(),
 				m_raytracingRenderer->GetLinearDepthSrv(),
 				/*depthIsLinear*/ true);
 		}
@@ -889,7 +892,8 @@ namespace udsdx
 		// Motion blur pass
 		if (renderParam.RenderOptions->DrawMotionBlur)
 		{
-			m_motionBlur->Pass(renderParam, cameraCbv, GetGBufferSrv(2), GetDepthBufferSrv(), /*depthIsLinear*/ false);
+			m_motionBlur->Pass(renderParam, cameraCbv, GetGBufferSrv(2), m_width, m_height,
+				GetDepthBufferSrv(), /*depthIsLinear*/ false);
 		}
 
 		// Post-process outline pass

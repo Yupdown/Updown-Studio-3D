@@ -18,9 +18,17 @@ namespace udsdx
 
 	void MotionBlur::Pass(RenderParam& param, D3D12_GPU_VIRTUAL_ADDRESS cbvGpu,
 		D3D12_GPU_DESCRIPTOR_HANDLE velocitySrv,
+		UINT velocityWidth, UINT velocityHeight,
 		D3D12_GPU_DESCRIPTOR_HANDLE depthSrv,
 		bool depthIsLinear)
 	{
+		// Nothing to blur before the buffers exist. Returning leaves the back buffer untouched,
+		// which is the correct no-op -- unlike dispatching against a zero-extent source.
+		if (m_width == 0 || m_height == 0 || velocityWidth == 0 || velocityHeight == 0)
+		{
+			return;
+		}
+
 		auto pCommandList = param.CommandList;
 
 		UINT computeWidth = (m_width + MaxBlurRadius - 1) / MaxBlurRadius;
@@ -28,6 +36,11 @@ namespace udsdx
 
 		// Compute the dominant motion vectors per k * k area
 		pCommandList->SetComputeRootSignature(m_computeRootSignature.Get());
+
+		// Set once for both dispatches: root arguments survive SetPipelineState and are only
+		// dropped by another SetComputeRootSignature.
+		const UINT tileMaxConstants[4] = { velocityWidth, velocityHeight, m_width, m_height };
+		pCommandList->SetComputeRoot32BitConstants(2, 4, tileMaxConstants, 0);
 
 		pCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_tileMaxBuffer.Get(), D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
 
@@ -257,10 +270,14 @@ namespace udsdx
 			CD3DX12_DESCRIPTOR_RANGE texTable2;
 			texTable2.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
 
-			CD3DX12_ROOT_PARAMETER slotRootParameter[2]{};
+			CD3DX12_ROOT_PARAMETER slotRootParameter[3]{};
 
 			slotRootParameter[0].InitAsDescriptorTable(1, &texTable1);
 			slotRootParameter[1].InitAsDescriptorTable(1, &texTable2);
+			// b0: the tile grid is display sized whatever the velocity source is, so TileMax has to
+			// be told both extents to map one into the other. NeighborMax shares this signature and
+			// ignores them -- a root signature is allowed to be a superset of what a shader binds.
+			slotRootParameter[2].InitAsConstants(4, 0);
 
 			CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(_countof(slotRootParameter), slotRootParameter, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
