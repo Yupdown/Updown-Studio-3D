@@ -1,34 +1,11 @@
 #include "framework.h"
 #include "demo.h"
 
-#include "MCTilemap.h"
-#include "MCTerrainGenerator.h"
-#include "MCTilemapMeshGenerator.h"
-
-#include <thread>
-#include <atomic>
-#include <vector>
-#include <algorithm>
-
 using namespace udsdx;
-
-std::array<std::shared_ptr<SceneObject>, 100> objects;
-std::array<float, 100> rotations;
 
 std::shared_ptr<SceneObject> cameraObject;
 std::shared_ptr<SceneObject> lightObject;
 std::shared_ptr<SceneObject> environmentObject;
-std::shared_ptr<SceneObject> riggedObject;
-const udsdx::AnimationClip* characterClip = nullptr;
-
-std::shared_ptr<udsdx::Material> materialTile;
-
-std::shared_ptr<MCTilemap> tilemap;
-std::shared_ptr<MCTerrainGenerator> terrainGenerator;
-std::shared_ptr<MCTilemapMeshGenerator> tilemapMeshGenerator;
-
-std::shared_ptr<SceneObject> chunkObject[MCTilemap::CHUNK_SIZE][MCTilemap::CHUNK_SIZE];
-std::unique_ptr<udsdx::Mesh> chunkMeshes[MCTilemap::CHUNK_SIZE][MCTilemap::CHUNK_SIZE];
 
 void Update(const Time& time);
 
@@ -45,120 +22,47 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     UpdownStudio::RegisterUpdateCallback(Update);
 
     std::shared_ptr<Scene> scene = std::make_shared<Scene>();
-    auto maxwellAsset = INSTANCE(Resource)->Load<udsdx::ModelAsset>(L"resource\\model\\maxwell.obj");
-    auto pipelineState = INSTANCE(Resource)->Load<Shader>(L"resource\\shader\\color.hlsl");
-    auto pipelineStateTexture = INSTANCE(Resource)->Load<Shader>(L"resource\\shader\\color.hlsl");
-    // maxwell.obj's texture lives in resource/texture/ (not beside the model), so override the
-    // instantiated materials with it explicitly.
-    udsdx::Material* material = INSTANCE(Resource)->CreateMaterial(L"demo/maxwell");
-    material->SetSourceTexture(INSTANCE(Resource)->Load<udsdx::Texture>(L"resource\\texture\\dingus_nowhiskers.jpg"));
-    udsdx::Material* materialTile = INSTANCE(Resource)->CreateMaterial(L"demo/tile");
-    materialTile->SetSourceTexture(INSTANCE(Resource)->Load<udsdx::Texture>(L"resource\\texture\\tile.png"));
-    materialTile->SetSamplerMode(udsdx::MaterialSamplerMode::Nearest);
+    auto shader = INSTANCE(Resource)->Load<Shader>(L"resource\\shader\\color.hlsl");
 
-    tilemap = std::make_shared<MCTilemap>();
-    terrainGenerator = std::make_shared<MCTerrainGenerator>();
-    tilemapMeshGenerator = std::make_shared<MCTilemapMeshGenerator>();
-
-    terrainGenerator->Generate(tilemap);
-
-    // Generate chunk meshes in parallel. This is purely CPU-side work (greedy
-    // meshing + system-memory buffer fills), so it scales across all cores.
-    // Tilemap reads are const, and each call writes a distinct chunkMeshes slot.
+    // The rt_testbed reference arrangement (the defaults of testbed/scenarios/rt-suite.json), so
+    // what the suite measures can be inspected interactively -- including the raster path the
+    // testbed does not cover. Both assets carry their own materials; only the shader is injected.
+    auto sponzaAsset = INSTANCE(Resource)->Load<udsdx::ModelAsset>(L"resource\\model\\sponza\\Sponza.gltf");
+    auto helmetAsset = INSTANCE(Resource)->Load<udsdx::ModelAsset>(L"resource\\model\\DamagedHelmet.glb");
+    if (sponzaAsset == nullptr || helmetAsset == nullptr)
     {
-        constexpr int chunkCount = MCTilemap::CHUNK_SIZE * MCTilemap::CHUNK_SIZE;
-        // Parenthesized to dodge the <windows.h> min/max macros.
-        unsigned int threadCount = (std::max)(1u, std::thread::hardware_concurrency());
-        threadCount = (std::min)(threadCount, static_cast<unsigned int>(chunkCount));
-
-        // Atomic cursor balances load across threads since per-chunk cost varies.
-        std::atomic<int> nextChunk{ 0 };
-        std::vector<std::thread> workers;
-        workers.reserve(threadCount);
-        for (unsigned int t = 0; t < threadCount; ++t)
-        {
-            workers.emplace_back([&nextChunk]()
-            {
-                for (int index = nextChunk.fetch_add(1); index < chunkCount; index = nextChunk.fetch_add(1))
-                {
-                    const int i = index / MCTilemap::CHUNK_SIZE;
-                    const int j = index % MCTilemap::CHUNK_SIZE;
-                    chunkMeshes[i][j] = MCTilemapMeshGenerator::CreateMeshFromChunk(tilemap.get(), i, j);
-                }
-            });
-        }
-        for (auto& worker : workers)
-        {
-            worker.join();
-        }
+        MessageBoxW(nullptr, L"Testbed assets missing -- run scripts/fetch-testbed-assets.ps1",
+            L"demo", MB_OK | MB_ICONERROR);
+        return 3;
     }
 
-    // Upload buffers and build scene objects on the main thread: the D3D12
-    // device/command list and scene mutation are not thread-safe.
-    for (int i = 0; i < tilemap->CHUNK_SIZE; i++)
-	{
-		for (int j = 0; j < tilemap->CHUNK_SIZE; j++)
-		{
-            if (chunkMeshes[i][j] == nullptr) {
-                continue;
-            }
-            chunkMeshes[i][j]->UploadBuffers(INSTANCE(Core)->GetDevice(), INSTANCE(Core)->GetCommandList());
-            chunkObject[i][j] = SceneObject::MakeShared();
+    // Sponza's root node transform comes from the asset and is left untouched.
+    auto sponzaObject = sponzaAsset->Instantiate(shader, /*enableRaytracing*/ true);
+    scene->AddObject(sponzaObject);
 
-            auto renderer = chunkObject[i][j]->AddComponent<RaytracingMeshRenderer>();
-            renderer->SetMesh(chunkMeshes[i][j].get());
-            renderer->SetShader(pipelineState);
-            renderer->SetMaterial(materialTile);
-
-            chunkObject[i][j]->GetTransform()->SetLocalPosition(
-                Vector3(static_cast<float>(i), 0.0f, static_cast<float>(j)) * 32.0f);
-
-            scene->AddObject(chunkObject[i][j]);
-		}
-	}
-
-    for (int i = 0; i < objects.size(); i++)
-    {
-		// Wrap the instantiated asset under a placement object so the demo's position/scale layer on
-		// top of the asset's own internal node transforms instead of overwriting them.
-		objects[i] = SceneObject::MakeShared();
-		auto instance = maxwellAsset->Instantiate(pipelineStateTexture, /*enableRaytracing*/ true);
-		for (auto* renderer : instance->GetComponentsInChildren<MeshRenderer>())
-		{
-			renderer->SetMaterial(material);
-		}
-		objects[i]->AddChild(instance);
-		objects[i]->GetTransform()->SetLocalPosition(Vector3(static_cast<float>(i % 10) * 3, 16.0f, static_cast<float>(i / 10) * 3));
-        objects[i]->GetTransform()->SetLocalScale(Vector3::One * 0.001f);
-		scene->AddObject(objects[i]);
-	}
-
-    // Rigged character loaded from a GLB. The asset's embedded textures are already on its
-    // materials; Instantiate spawns the skeleton as named child SceneObjects and an Animator on
-    // the root that auto-plays the first clip looped.
-    auto characterAsset = INSTANCE(Resource)->Load<udsdx::ModelAsset>(L"resource\\model\\samsung_sample.glb");
-
-    riggedObject = characterAsset->Instantiate(pipelineStateTexture, true);
-    riggedObject->GetTransform()->SetLocalPosition(Vector3(0.0f, 16.0f, -4.0f));
-    scene->AddObject(riggedObject);
-
-    // Instantiate auto-plays the first clip; stop it so the character stands in its bind pose.
-    // Pressing Enter (handled in Update) plays the animation.
-    if (auto animator = riggedObject->GetComponent<Animator>())
-    {
-        characterClip = animator->GetCurrentClip();
-        animator->SetTransitionFactor(0.25f);
-    }
+    // Standing in the middle of the atrium floor, turned to face the reference camera.
+    auto helmetObject = helmetAsset->Instantiate(shader, /*enableRaytracing*/ true);
+    helmetObject->GetTransform()->SetLocalPosition(Vector3(1.0f, 1.3f, 0.2f));
+    helmetObject->GetTransform()->SetLocalRotation(
+        Quaternion::CreateFromYawPitchRoll(PIDIV2, -PIDIV2, 0.0f));
+    scene->AddObject(helmetObject);
 
     cameraObject = SceneObject::MakeShared();
     auto camera = cameraObject->AddComponent<CameraPerspective>();
-    camera->SetClearColor(Color(1.0f, 1.0f, 1.0f, 1.0f));
-    cameraObject->GetTransform()->SetLocalPosition(Vector3(0, 0, -10));
+    camera->SetClearColor(Color(0.0f, 0.0f, 0.0f, 1.0f));
+    camera->SetNear(0.05f);
+    camera->SetFar(200.0f);
+    // The testbed's pinned position; the view direction comes from the mouse-look state below.
+    cameraObject->GetTransform()->SetLocalPosition(Vector3(-7.0f, 3.2f, 0.0f));
     scene->AddObject(cameraObject);
 
+    // Steep enough to clear the roof opening and reach the atrium floor, angled along the
+    // arcades. Intensity matches the testbed (irradiance times pi; the BRDFs carry their own
+    // 1/pi).
     lightObject = SceneObject::MakeShared();
     auto light = lightObject->AddComponent<LightDirectional>();
-    lightObject->GetTransform()->SetLocalRotation(Quaternion::CreateFromYawPitchRoll(3.7429f, 0.8652f, 0));
+    light->SetIntensity(8.5f * DirectX::XM_PI);
+    lightObject->GetTransform()->SetLocalRotation(Quaternion::CreateFromYawPitchRoll(0.9f, 1.15f, 0));
     scene->AddObject(lightObject);
 
     environmentObject = SceneObject::MakeShared();
@@ -166,20 +70,15 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     environmentMap->SetEnvironmentMap(L"resource\\texture\\kloofendal_48d_partly_cloudy_puresky_4k.hdr");
     scene->AddObject(environmentObject);
 
-    for (auto& rotation : rotations)
-    {
-        static std::default_random_engine e;
-        static std::uniform_real_distribution<float> d(0, 1);
-        rotation = d(e);
-	}
-
     return UpdownStudio::Run(scene, nCmdShow);
 }
 
 int lastMouseX;
 int lastMouseY;
-int concatenatedMouseX = 0;
-int concatenatedMouseY = 0;
+// Start aimed like the testbed's pinned pose: yaw ~1.571 (down the atrium toward +X), a slight
+// downward pitch. The mouse-look below derives the rotation from these accumulators.
+int concatenatedMouseX = 1571;
+int concatenatedMouseY = 100;
 
 void Update(const Time& time)
 { ZoneScoped;
@@ -187,15 +86,6 @@ void Update(const Time& time)
     {
 		UpdownStudio::Quit();
 	}
-
-    // Enter plays the rigged character's animation (looping).
-    if (INSTANCE(Input)->GetKeyDown(Keyboard::Enter) && characterClip != nullptr)
-    {
-        if (auto animator = riggedObject->GetComponent<Animator>())
-        {
-            animator->Play(characterClip, true, true);
-        }
-    }
 
     // Camera Rotation
     if (INSTANCE(Input)->GetMouseLeftButtonDown())
@@ -247,9 +137,4 @@ void Update(const Time& time)
 
     auto camera = cameraObject->GetComponent<CameraPerspective>();
     camera->SetFov((INSTANCE(Input)->GetMouseScroll() * 0.01f + 60.0f) * DEG2RAD);
-
-    for (int i = 0; i < objects.size(); ++i)
-    {
-        objects[i]->GetTransform()->Rotate(Quaternion::CreateFromAxisAngle(Vector3::Up, time.deltaTime * 10.0f * rotations[i]));
-	}
 }

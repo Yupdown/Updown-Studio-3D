@@ -1,20 +1,11 @@
 set(DEMO_SOURCES
     demo.cpp
-    MCTerrainGenerator.cpp
-    MCTilemap.cpp
-    MCTilemapMeshGenerator.cpp
 )
 
 set(DEMO_HEADERS
-    CustomMath.hpp
+    demo.h
     framework.h
-    MCTerrainGenerator.h
-    MCTilemap.h
-    MCTilemapMeshGenerator.h
-    PerlinNoise.hpp
     Resource.h
-    Vector2D.hpp
-    Vector3D.hpp
 )
 
 add_executable(demo WIN32
