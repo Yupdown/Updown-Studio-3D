@@ -3,9 +3,12 @@
 // demo on purpose -- the demo is an interactive sandbox whose content changes freely, while a
 // verification baseline has to stay comparable across commits.
 //
-// The scene is the two canonical Khronos sample assets: Sponza (a large interior with heavy
-// occlusion, sharp silhouettes and an open roof) with DamagedHelmet (metal/rough PBR with normal
-// maps) standing in the atrium. Fetch them with scripts/fetch-testbed-assets.ps1.
+// What gets rendered and measured is described by a scenario file (--scenario, default
+// testbed/scenarios/rt-suite.json -- the committed regression suite). A scenario that omits the
+// scene section gets the reference scene: the two canonical Khronos sample assets, Sponza (a
+// large interior with heavy occlusion, sharp silhouettes and an open roof) with DamagedHelmet
+// (metal/rough PBR with normal maps) standing in the atrium. Fetch them with
+// scripts/fetch-testbed-assets.ps1.
 
 #include <updown_studio.h>
 
@@ -19,10 +22,6 @@ using namespace udsdx;
 
 namespace
 {
-	const wchar_t* kSponzaPath = L"resource\\model\\sponza\\Sponza.gltf";
-	const wchar_t* kHelmetPath = L"resource\\model\\DamagedHelmet.glb";
-	const wchar_t* kEnvironmentPath = L"resource\\texture\\kloofendal_48d_partly_cloudy_puresky_4k.hdr";
-
 	std::shared_ptr<SceneObject> g_cameraObject;
 
 	// Reports a setup failure where the runner looks for results, so a missing asset surfaces as
@@ -42,6 +41,104 @@ namespace
 		TerminateProcess(GetCurrentProcess(), 3);
 		__assume(false);
 	}
+
+	// For error messages only; scenario paths may be non-ASCII and summary.txt is best-effort
+	// ASCII, so lossy is fine here.
+	std::string NarrowLossy(const std::wstring& wide)
+	{
+		std::string out;
+		out.reserve(wide.size());
+		for (wchar_t c : wide)
+		{
+			out.push_back(c < 128 ? static_cast<char>(c) : '?');
+		}
+		return out;
+	}
+
+	// Builds the scene the scenario describes. A default-constructed scenario reproduces the
+	// reference Sponza+DamagedHelmet scene bit-exactly (the struct defaults in Scenario.h are the
+	// values this file used to hardcode), so this is the only scene path there is.
+	void BuildScenarioScene(Scene& scene, Shader* shader, const rttest::Scenario& sc,
+		const rttest::Options& options)
+	{
+		// Assets carry their own materials and textures (Sponza's beside the .gltf, the helmet's
+		// embedded in the .glb), so only the shader is injected. enableRaytracing puts a model's
+		// static meshes into the acceleration structure -- without any raytraced model the
+		// testbed would trace an empty scene.
+		for (const rttest::ScenarioModel& model : sc.Models)
+		{
+			auto* asset = INSTANCE(Resource)->Load<ModelAsset>(model.Path);
+			if (asset == nullptr)
+			{
+				FailSetup(options.OutDir, "scenario: failed to load model \""
+					+ NarrowLossy(model.Path)
+					+ "\" -- paths are resource-relative; the suite's sample assets come from scripts/fetch-testbed-assets.ps1");
+			}
+			auto object = asset->Instantiate(shader, model.EnableRaytracing);
+			if (object == nullptr)
+			{
+				FailSetup(options.OutDir, "scenario: model \"" + NarrowLossy(model.Path)
+					+ "\" has no root nodes to instantiate");
+			}
+			// Only the transform components the scenario spells out; the instantiated root keeps
+			// the TRS the asset authored otherwise (Sponza's root transform is load-bearing).
+			if (model.HasPosition)
+			{
+				object->GetTransform()->SetLocalPosition(
+					Vector3(model.Position[0], model.Position[1], model.Position[2]));
+			}
+			if (model.HasScale)
+			{
+				object->GetTransform()->SetLocalScale(
+					Vector3(model.Scale[0], model.Scale[1], model.Scale[2]));
+			}
+			if (model.HasRotation)
+			{
+				object->GetTransform()->SetLocalRotation(Quaternion::CreateFromYawPitchRoll(
+					model.RotationYawPitchRoll[0], model.RotationYawPitchRoll[1],
+					model.RotationYawPitchRoll[2]));
+			}
+			scene.AddObject(object);
+		}
+
+		g_cameraObject = SceneObject::MakeShared();
+		auto camera = g_cameraObject->AddComponent<CameraPerspective>();
+		camera->SetClearColor(Color(0.0f, 0.0f, 0.0f, 1.0f));
+		camera->SetNear(sc.Camera.Near);
+		camera->SetFar(sc.Camera.Far);
+		rttest::ApplyCameraPose(g_cameraObject.get());
+		scene.AddObject(g_cameraObject);
+
+		// The reference light is steep enough to clear Sponza's roof opening and actually reach
+		// the atrium floor, angled along the arcades so they cast long shadows across it. Shadow
+		// rays and the indirect bounce are what the visual checks are most sensitive to, and an
+		// interior lit only by sky bounce would sit near black -- too little signal for the
+		// luminance and firefly checks to mean anything.
+		auto lightObject = SceneObject::MakeShared();
+		auto light = lightObject->AddComponent<LightDirectional>();
+		light->SetIntensity(sc.Light.Intensity);
+		light->SetColor(Color(sc.Light.Color[0], sc.Light.Color[1], sc.Light.Color[2], 1.0f));
+		light->SetAngularDiameter(sc.Light.AngularDiameterDegrees);
+		lightObject->GetTransform()->SetLocalRotation(Quaternion::CreateFromYawPitchRoll(
+			sc.Light.YawPitch[0], sc.Light.YawPitch[1], 0.0f));
+		scene.AddObject(lightObject);
+
+		if (sc.HasEnvironment)
+		{
+			// SetEnvironmentMap(path) silently no-ops when the texture fails to load; load it
+			// explicitly so a bad path is a setup error rather than a black sky.
+			auto* environmentTexture = INSTANCE(Resource)->Load<Texture>(sc.EnvironmentPath);
+			if (environmentTexture == nullptr)
+			{
+				FailSetup(options.OutDir, "scenario: failed to load environment map \""
+					+ NarrowLossy(sc.EnvironmentPath) + "\"");
+			}
+			auto environmentObject = SceneObject::MakeShared();
+			auto environmentMap = environmentObject->AddComponent<EnvironmentMap>();
+			environmentMap->SetEnvironmentMap(environmentTexture);
+			scene.AddObject(environmentObject);
+		}
+	}
 }
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
@@ -56,66 +153,46 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	rttest::Options options;
 	rttest::ParseCommandLine(options);
 
+	// Parsed before the engine touches anything: a scenario typo costs milliseconds, not a D3D
+	// device bring-up. Note the cwd still is whatever the launcher set -- the engine only moves
+	// it to the repo root during Initialize -- so the default relative ScenarioPath expects to be
+	// launched from the repo root (the runner script and VS debugger both guarantee that).
+	{
+		rttest::Scenario scenario;
+		std::string error;
+		if (!rttest::LoadScenario(options.ScenarioPath, scenario, error))
+		{
+			FailSetup(options.OutDir, "scenario: " + error);
+		}
+		if (options.SelfTest)
+		{
+			// The self-test verdict and its defect injections key off the "primary" case.
+			bool hasPrimary = false;
+			for (const rttest::ScenarioCase& scenarioCase : scenario.Cases)
+			{
+				if (scenarioCase.Evaluator == rttest::ScenarioEvaluator::Primary
+					&& scenarioCase.Name == "primary")
+				{
+					hasPrimary = true;
+					break;
+				}
+			}
+			if (!hasPrimary)
+			{
+				FailSetup(options.OutDir,
+					"--self-test needs the scenario to contain a case named \"primary\" with evaluator \"primary\"");
+			}
+		}
+		rttest::SetScenario(std::move(scenario));
+	}
+
 	INSTANCE(Resource)->SetResourceRootPath(L"resource");
 	UpdownStudio::Initialize(hInstance, L"Updown Studio RT Testbed");
 	UpdownStudio::RegisterUpdateCallback(rttest::Update);
 
 	auto scene = std::make_shared<Scene>();
 	auto shader = INSTANCE(Resource)->Load<Shader>(L"resource\\shader\\color.hlsl");
-
-	// Both assets carry their own materials and textures (Sponza's beside the .gltf, the helmet's
-	// embedded in the .glb), so only the shader is injected. enableRaytracing puts every static
-	// mesh into the acceleration structure -- without it the testbed would trace an empty scene.
-	auto sponzaAsset = INSTANCE(Resource)->Load<ModelAsset>(kSponzaPath);
-	auto helmetAsset = INSTANCE(Resource)->Load<ModelAsset>(kHelmetPath);
-	if (sponzaAsset == nullptr || helmetAsset == nullptr)
-	{
-		FailSetup(options.OutDir,
-			"testbed assets missing -- run scripts/fetch-testbed-assets.ps1");
-	}
-
-	auto sponzaObject = sponzaAsset->Instantiate(shader, /*enableRaytracing*/ true);
-	scene->AddObject(sponzaObject);
-
-	// Standing in the middle of the atrium floor, turned to face the camera. Sized to read
-	// clearly at the camera's distance without dominating the frame -- the surrounding
-	// architecture is as much a part of the test as the helmet is.
-	auto helmetObject = helmetAsset->Instantiate(shader, /*enableRaytracing*/ true);
-	helmetObject->GetTransform()->SetLocalPosition(Vector3(1.0f, 1.3f, 0.0f));
-	helmetObject->GetTransform()->SetLocalScale(Vector3::One * 0.9f);
-	helmetObject->GetTransform()->SetLocalRotation(
-		Quaternion::CreateFromYawPitchRoll(PIDIV2, -PIDIV2, 0.0f));
-	scene->AddObject(helmetObject);
-
-	g_cameraObject = SceneObject::MakeShared();
-	auto camera = g_cameraObject->AddComponent<CameraPerspective>();
-	camera->SetClearColor(Color(0.0f, 0.0f, 0.0f, 1.0f));
-	camera->SetNear(0.05f);
-	camera->SetFar(200.0f);
-	rttest::ApplyCameraPose(g_cameraObject.get());
-	scene->AddObject(g_cameraObject);
-
-	// Steep enough to clear the roof opening and actually reach the atrium floor, angled along
-	// the arcades so they cast long shadows across it. Shadow rays and the indirect bounce are
-	// what the visual checks are most sensitive to, and an interior lit only by sky bounce would
-	// sit near black -- too little signal for the luminance and firefly checks to mean anything.
-	auto lightObject = SceneObject::MakeShared();
-	auto light = lightObject->AddComponent<LightDirectional>();
-	// Raised from 5 when baseColorFactor started being applied: Sponza's is 0.588, which dropped
-	// mean luminance by the same factor and pushed most of the frame toward black. A well-exposed
-	// frame is not cosmetic here -- crushed regions hide exactly the artifacts this scene exists
-	// to surface.
-	// Times pi because intensity now means irradiance and the BRDFs carry their own 1/pi; the
-	// product is unchanged, so the reference image is too.
-	light->SetIntensity(8.5f * DirectX::XM_PI);
-	lightObject->GetTransform()->SetLocalRotation(
-		Quaternion::CreateFromYawPitchRoll(0.9f, 1.15f, 0.0f));
-	scene->AddObject(lightObject);
-
-	auto environmentObject = SceneObject::MakeShared();
-	auto environmentMap = environmentObject->AddComponent<EnvironmentMap>();
-	environmentMap->SetEnvironmentMap(kEnvironmentPath);
-	scene->AddObject(environmentObject);
+	BuildScenarioScene(*scene, shader, rttest::ActiveScenario(), options);
 
 	rttest::Configure(options, g_cameraObject.get());
 

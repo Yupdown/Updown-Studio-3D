@@ -1,9 +1,13 @@
-# Runs the raytracing visual-quality testbed (rt_testbed.exe: Sponza + DamagedHelmet, fixed
-# camera) and prints its summary.
+# Runs the raytracing visual-quality testbed (rt_testbed.exe) and prints its summary. What runs
+# is described by a scenario file; the default is the committed regression suite
+# testbed/scenarios/rt-suite.json (Sponza + DamagedHelmet, fixed camera).
 #
 #   pwsh scripts/rt-visual-test.ps1 [-SkipBuild] [-Quick] [-SelfTest] [-Case NAME] [-OutDir DIR]
+#                                   [-Scenario FILE] [-MaxSamples N]
 #
-# The scene assets are fetched on demand by scripts/fetch-testbed-assets.ps1.
+# Custom scenarios (any scene/pose/settings, capture-only by default) are documented in
+# .claude/skills/rt-visual-test/SKILL.md; examples live in testbed/scenarios/.
+# The suite's scene assets are fetched on demand by scripts/fetch-testbed-assets.ps1.
 #
 # Exit codes (from rt_testbed.exe):
 #   0  all checks passed
@@ -20,6 +24,8 @@ param(
     [switch]$SelfTest,
     [string]$Case = "",
     [string]$OutDir = "testbed-results",
+    [string]$Scenario = "",
+    [int]$MaxSamples = 0,
     [int]$TimeoutSec = 600
 )
 
@@ -56,6 +62,15 @@ if (-not (Test-Path $exePath)) {
     exit 3
 }
 
+$resolvedScenario = ""
+if ($Scenario -ne "") {
+    if (-not (Test-Path $Scenario)) {
+        Write-Host "Scenario file not found: $Scenario"
+        exit 3
+    }
+    $resolvedScenario = (Resolve-Path $Scenario).Path
+}
+
 $resolvedOut = if ([System.IO.Path]::IsPathRooted($OutDir)) { $OutDir } else { Join-Path $repoRoot $OutDir }
 if (Test-Path $resolvedOut) {
     Remove-Item -Recurse -Force $resolvedOut
@@ -65,6 +80,8 @@ $argList = @("--out", $resolvedOut)
 if ($Quick) { $argList += "--quick" }
 if ($SelfTest) { $argList += "--self-test" }
 if ($Case -ne "") { $argList += @("--case", $Case) }
+if ($resolvedScenario -ne "") { $argList += @("--scenario", $resolvedScenario) }
+if ($MaxSamples -gt 0) { $argList += @("--max-samples", $MaxSamples) }
 
 # cwd must be the repo root: the demo loads assets through relative resource\ paths.
 $process = Start-Process -FilePath $exePath -ArgumentList $argList -WorkingDirectory $repoRoot -PassThru

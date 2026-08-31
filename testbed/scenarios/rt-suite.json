@@ -1,0 +1,61 @@
+// The committed raytracing regression suite. rt_testbed runs this file by default; edit cases
+// here, not in C++. Thresholds and check logic stay calibrated in testbed/RtTestbed.cpp
+// (namespace thresholds) -- this file chooses what runs, never what passes.
+//
+// The scene and camera sections are omitted on purpose: the defaults ARE the reference
+// Sponza+DamagedHelmet scene and the committed pose every threshold was calibrated against.
+// The implicit "gate" case (DXR actually active) always runs first.
+{
+  "schemaVersion": 1,
+  "name": "sponza+damagedhelmet",
+  "cases": [
+    {
+      "name": "primary",
+      "evaluator": "primary",
+      "hold": true,
+      "atrousToggle": true
+    },
+    // Two warm re-convergences over the same RNG/jitter sequence must reproduce the same image
+    // bit-exactly. The cold boot convergence is excluded by construction: acceleration-structure
+    // warm-up shifts silhouettes deterministically, so the ref case is itself already warm.
+    {
+      "name": "determinism_ref",
+      "evaluator": "determinismRef",
+      "skipOnQuick": true
+    },
+    {
+      "name": "determinism",
+      "evaluator": "determinism",
+      "skipOnQuick": true,
+      "requires": ["determinism_ref"]
+    },
+    { "name": "aov_albedo",   "evaluator": "aovAlbedo",   "debugMode": "albedo",            "convergeFrames": 8 },
+    { "name": "aov_normal",   "evaluator": "aovNormal",   "debugMode": "normal",            "convergeFrames": 8 },
+    { "name": "aov_motion",   "evaluator": "aovMotion",   "debugMode": "motionVector",      "convergeFrames": 8 },
+    { "name": "aov_material", "evaluator": "aovMaterial", "debugMode": "metallicRoughness", "convergeFrames": 8 },
+    { "name": "aov_emission", "evaluator": "aovEmission", "debugMode": "emission",          "convergeFrames": 8 },
+    { "name": "aov_furnace",  "evaluator": "aovFurnace",  "debugMode": "brdfFurnace",       "convergeFrames": 8 },
+    // Stochastic, unlike the other AOVs, so it gets the full convergence budget.
+    { "name": "aov_specular", "evaluator": "aovSpecular", "debugMode": "specularOnly" },
+    { "name": "heatmap",      "evaluator": "heatmap",     "debugMode": "sampleHeatmap" },
+    // The reduced-height case is the regression itself; the native one guards the path where the
+    // velocity buffer and the tile grid are the same size, which is what every other
+    // configuration in the engine -- including the whole raster path -- runs.
+    {
+      "name": "motion_blur_native",
+      "evaluator": "motionBlurCoverage",
+      "convergeFrames": 8,
+      "motionBlurCoverage": true
+    },
+    {
+      "name": "motion_blur_scaled",
+      "evaluator": "motionBlurCoverage",
+      "convergeFrames": 8,
+      // Well under any client height the runner will hand out, so most of the frame lands outside
+      // the render extent and the seam the bug produces has room to be measured. Deliberately not
+      // derived from the window size: the checks read the resulting extent back off the renderer.
+      "renderHeight": 300,
+      "motionBlurCoverage": true
+    }
+  ]
+}

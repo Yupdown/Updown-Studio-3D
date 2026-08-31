@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -106,7 +107,6 @@ namespace
 	constexpr int kHoldFrames = 16;
 	constexpr int kAtrousSettleFrames = 2;
 	constexpr int kCaptureTimeoutFrames = 10;
-	constexpr int kAovConvergeFrames = 8;
 	constexpr int kGlobalFrameBudget = 20000;
 	constexpr unsigned int kBaselineAtrous = 4u;
 
@@ -123,12 +123,6 @@ namespace
 	// the 20-pixel clamp across every frame time the runner plausibly sees, which makes the blur
 	// length constant rather than merely large.
 	constexpr float kMotionBlurShutterSpeed = 1.0f;
-	// Well under any client height the runner will hand out, so most of the frame lands outside the
-	// render extent and the seam the bug produces has room to be measured. Deliberately not derived
-	// from the window size, which is whatever the shell gives the testbed: the checks read the
-	// resulting extent back off the renderer instead of assuming what it worked out to.
-	constexpr unsigned int kMotionBlurRenderHeight = 300u;
-
 	// Fixed pose inside the Sponza atrium (world bounds X[-15.4, 14.4], Y[-1, 11.4], Z[-9.5, 8.8])
 	// at eye height near the west end, looking down the long axis toward +X. The DamagedHelmet
 	// sits at the atrium centre a few metres ahead. This framing is deliberate:
@@ -143,6 +137,20 @@ namespace
 	constexpr float kCameraYaw = 1.5708f; // +PI/2: down the atrium toward +X
 	constexpr float kCameraPitch = 0.10f;
 	constexpr float kCameraFovDegrees = 60.0f;
+
+	// What ApplyCameraPose actually applies. The constants above are the committed reference the
+	// thresholds are calibrated against and remain the defaults; SetScenario replaces the
+	// scene-wide values and LoadCase re-derives the per-case ones (a case may carry its own pose).
+	// CLI --pose still overrides everything, inside ApplyCameraPose itself.
+	struct PoseSpec
+	{
+		Vector3 Position = kCameraPosition;
+		float Yaw = kCameraYaw;
+		float Pitch = kCameraPitch;
+	};
+	PoseSpec g_scenePose;
+	PoseSpec g_casePose;
+	float g_fovDegrees = kCameraFovDegrees;
 	// Fraction of the frame (from the top) below which the pose above guarantees geometry, never
 	// sky. Sky-free range checks run only on those rows, because the miss shader writes radiance
 	// into the debug AOVs rather than the encoded quantity.
@@ -467,6 +475,9 @@ namespace
 		// convergence and nudge with it on (C). Captures come from the back buffer, because the
 		// HDR target stops at the raytracing resolve and never sees the post-process chain.
 		bool MotionBlurCoverage = false;
+		// The scenario case this def was built from; null only for the implicit gate case. Points
+		// into g_scenario, which is never mutated after SetScenario.
+		const ScenarioCase* Scenario = nullptr;
 	};
 
 	struct CaseState
@@ -510,6 +521,11 @@ namespace
 	SceneObject* g_cameraObject = nullptr;
 	int g_exitCode = 3; // pessimistic until Finish runs
 	std::string g_errorMessage;
+	std::unique_ptr<Scenario> g_scenario;
+	std::string g_sceneName = "sponza+damagedhelmet";
+	// Ro() exactly as Configure forced it, before any per-case scenario override; LoadCase
+	// restores this so one case's overrides never leak into the next.
+	RenderOptions g_baselineRenderOptions;
 
 	RenderOptions& Ro()
 	{
@@ -531,8 +547,8 @@ namespace
 	// exact same pose for their pre-blur images to be bit-identical.
 	void NudgeCameraYaw()
 	{
-		float yaw = kCameraYaw;
-		float pitch = kCameraPitch;
+		float yaw = g_casePose.Yaw;
+		float pitch = g_casePose.Pitch;
 		if (g_options.PoseOverride)
 		{
 			yaw = g_options.Pose[3];
@@ -876,6 +892,143 @@ namespace
 	}
 
 	// ---------------------------------------------------------------------------------------------
+	// Scenario support: the capture-only evaluator, the override applier, and the registry
+	// BuildCaseTable maps scenario cases through.
+	// ---------------------------------------------------------------------------------------------
+
+	// Threshold for informational checks: always-pass lines whose threshold prints as null in
+	// report.json and summary.txt (JsonNumber maps non-finite to null), so line parsers keep
+	// working while the stat_ prefix marks them as measurements rather than gates.
+	constexpr double kStatOnly = std::numeric_limits<double>::quiet_NaN();
+
+	void EvaluateScenarioCapture(CaseState& cs)
+	{
+		if (!cs.A.Valid())
+		{
+			// StoreScratchImage leaves the image empty when the readback produced nothing, and the
+			// stage machine still advances past it; this turns that into a failure instead of a
+			// silent run over garbage.
+			AddCheck(cs, "capture_valid", false, 0.0, 1.0,
+				"converged capture produced no readable image");
+			return;
+		}
+		const double nonFinite = static_cast<double>(CountNonFinite(cs.A));
+		AddCheck(cs, "nan_inf", nonFinite <= thresholds::NanCount, nonFinite, thresholds::NanCount,
+			"non-finite texels are never intended, even in a capture-only case");
+
+		const LumStats stats = ComputeLumStats(cs.A);
+		AddCheck(cs, "stat_lum_mean", true, stats.Mean, kStatOnly, "mean luminance");
+		AddCheck(cs, "stat_lum_stddev", true, stats.Stddev, kStatOnly, "luminance stddev");
+		AddCheck(cs, "stat_lum_p999", true, stats.P999, kStatOnly, "p99.9 luminance");
+		AddCheck(cs, "stat_lum_max", true, stats.Max, kStatOnly, "max luminance");
+
+		if (cs.B.Valid())
+		{
+			const double holdNonFinite = static_cast<double>(CountNonFinite(cs.B));
+			AddCheck(cs, "nan_inf_hold", holdNonFinite <= thresholds::NanCount, holdNonFinite,
+				thresholds::NanCount, "non-finite texels in the hold capture");
+			const DiffStats diff = ComputeDiffStats(cs.A, cs.B);
+			AddCheck(cs, "stat_temporal_mean", true, diff.MeanAbs, kStatOnly,
+				"mean |luminance delta| over the held frames");
+			AddCheck(cs, "stat_temporal_p99", true, diff.P99Abs, kStatOnly,
+				"p99 |luminance delta| over the held frames");
+		}
+		if (cs.C.Valid())
+		{
+			// C is the atrous_off capture, unless the case ran the motion blur flow, where it is
+			// the blur_on back-buffer capture instead.
+			const bool blur = cs.Def != nullptr && cs.Def->MotionBlurCoverage;
+			const double cNonFinite = static_cast<double>(CountNonFinite(cs.C));
+			AddCheck(cs, blur ? "nan_inf_blur_on" : "nan_inf_atrous_off",
+				cNonFinite <= thresholds::NanCount, cNonFinite, thresholds::NanCount,
+				"non-finite texels in the second capture");
+			const DiffStats diff = ComputeDiffStats(cs.A, cs.C);
+			AddCheck(cs, blur ? "stat_blur_mean" : "stat_atrous_mean", true, diff.MeanAbs,
+				kStatOnly, "mean |luminance delta| between the pair");
+			AddCheck(cs, blur ? "stat_blur_p99" : "stat_atrous_p99", true, diff.P99Abs,
+				kStatOnly, "p99 |luminance delta| between the pair");
+		}
+	}
+
+	// Copies the whitelisted scenario overrides onto the frame's RenderOptions. Only ever called
+	// from LoadCase: several of these live in RadianceSettings, whose memcmp drops accumulation
+	// history, and LoadCase invalidates it deliberately right after.
+	void ApplyScenarioOverrides(RenderOptions& ro, const ScenarioRenderOverrides& o)
+	{
+		const auto apply = [](const auto& value, auto& field)
+		{
+			if (value.has_value())
+			{
+				field = *value;
+			}
+		};
+		apply(o.SamplesPerPixel, ro.RaytracingSamplesPerPixel);
+		apply(o.MaxSamplesMoving, ro.RaytracingMaxSamplesMoving);
+		apply(o.VarianceClipGamma, ro.RaytracingVarianceClipGamma);
+		apply(o.NormalThreshold, ro.RaytracingNormalThreshold);
+		apply(o.DepthThreshold, ro.RaytracingDepthThreshold);
+		apply(o.Fisheye, ro.RaytracingFisheye);
+		apply(o.FisheyeFovDegrees, ro.RaytracingFisheyeFov);
+		apply(o.SunAngularDiameterDegrees, ro.RaytracingSunAngularDiameter);
+		apply(o.RayMaxDistance, ro.RaytracingRayMaxDistance);
+		apply(o.SkyMaxRadiance, ro.RaytracingSkyMaxRadiance);
+		apply(o.SpecularSkyMaxRadiance, ro.RaytracingSpecularSkyMaxRadiance);
+		apply(o.SpecularFireflyClamp, ro.RaytracingSpecularFireflyClamp);
+		apply(o.MaxTransmissionBounces, ro.RaytracingMaxTransmissionBounces);
+		apply(o.AtrousIterations, ro.RaytracingAtrousIterations);
+		apply(o.AtrousLuminanceSigma, ro.RaytracingAtrousLuminanceSigma);
+		apply(o.ShadowRayOffset, ro.RaytracingShadowRayOffset);
+		apply(o.FogDensity, ro.FogDensity);
+		apply(o.FogHeightFalloff, ro.FogHeightFalloff);
+		apply(o.FogDistanceStart, ro.FogDistanceStart);
+		if (o.FogColor.has_value())
+		{
+			ro.FogColor = Color((*o.FogColor)[0], (*o.FogColor)[1], (*o.FogColor)[2], 1.0f);
+		}
+		if (o.FogSunColor.has_value())
+		{
+			ro.FogSunColor = Color((*o.FogSunColor)[0], (*o.FogSunColor)[1], (*o.FogSunColor)[2], 1.0f);
+		}
+	}
+
+	using EvaluateFn = void (*)(CaseState&);
+	// Indexed by ScenarioEvaluator; the static_assert keeps the two in lockstep. Thresholds and
+	// check logic stay in the functions above -- a scenario chooses structure, not calibration.
+	constexpr EvaluateFn kEvaluatorTable[] = {
+		&EvaluateScenarioCapture,    // CaptureOnly
+		&EvaluatePrimary,            // Primary
+		&EvaluateDeterminismRef,     // DeterminismRef
+		&EvaluateDeterminism,        // Determinism
+		&EvaluateAovAlbedo,          // AovAlbedo
+		&EvaluateAovNormal,          // AovNormal
+		&EvaluateAovMotion,          // AovMotion
+		&EvaluateAovMaterial,        // AovMaterial
+		&EvaluateAovEmission,        // AovEmission
+		&EvaluateAovFurnace,         // AovFurnace
+		&EvaluateAovSpecular,        // AovSpecular
+		&EvaluateHeatmap,            // Heatmap
+		&EvaluateMotionBlurCoverage, // MotionBlurCoverage
+	};
+	static_assert(sizeof(kEvaluatorTable) / sizeof(kEvaluatorTable[0])
+		== static_cast<size_t>(ScenarioEvaluator::Count),
+		"evaluator registry out of sync with ScenarioEvaluator");
+
+	// Scenario files parse debug modes into plain numbers so Scenario.h stays engine-free; pin
+	// that numbering to the real enum here, where both sides are visible.
+	static_assert(static_cast<unsigned int>(RaytracingDebugMode::None) == 0u
+		&& static_cast<unsigned int>(RaytracingDebugMode::Albedo) == 1u
+		&& static_cast<unsigned int>(RaytracingDebugMode::Normal) == 2u
+		&& static_cast<unsigned int>(RaytracingDebugMode::DirectOnly) == 3u
+		&& static_cast<unsigned int>(RaytracingDebugMode::IndirectOnly) == 4u
+		&& static_cast<unsigned int>(RaytracingDebugMode::MotionVector) == 5u
+		&& static_cast<unsigned int>(RaytracingDebugMode::SampleHeatmap) == 6u
+		&& static_cast<unsigned int>(RaytracingDebugMode::MetallicRoughness) == 7u
+		&& static_cast<unsigned int>(RaytracingDebugMode::Emission) == 8u
+		&& static_cast<unsigned int>(RaytracingDebugMode::SpecularOnly) == 9u
+		&& static_cast<unsigned int>(RaytracingDebugMode::BrdfFurnace) == 10u,
+		"scenario debug-mode numbering out of sync with RaytracingDebugMode");
+
+	// ---------------------------------------------------------------------------------------------
 	// Capture plumbing
 	// ---------------------------------------------------------------------------------------------
 
@@ -1043,7 +1196,8 @@ namespace
 			out << "  \"schemaVersion\": 1,\n";
 			out << "  \"timestamp\": \"" << timestamp << "\",\n";
 			out << "  \"dxrSupported\": " << (INSTANCE(Core)->IsRaytracingSupported() ? "true" : "false") << ",\n";
-			out << "  \"scene\": \"sponza+damagedhelmet\",\n";
+			out << "  \"scene\": \"" << JsonEscape(g_sceneName) << "\",\n";
+			out << "  \"scenarioPath\": \"" << JsonEscape(Narrow(g_options.ScenarioPath)) << "\",\n";
 			out << "  \"maxSamplesStatic\": " << g_options.MaxSamples << ",\n";
 			out << "  \"selfTest\": " << (g_options.SelfTest ? "true" : "false") << ",\n";
 			out << "  \"status\": \"" << status << "\",\n";
@@ -1218,60 +1372,72 @@ namespace
 
 	void BuildCaseTable()
 	{
-		const std::vector<CaseDef> all = {
-			{ "gate",            RaytracingDebugMode::None,          0,                  false, false, &EvaluateGate },
-			{ "primary",         RaytracingDebugMode::None,          -1,                 true,  true,  &EvaluatePrimary },
-			{ "determinism_ref", RaytracingDebugMode::None,          -1,                 false, false, &EvaluateDeterminismRef },
-			{ "determinism",     RaytracingDebugMode::None,          -1,                 false, false, &EvaluateDeterminism },
-			{ "aov_albedo",      RaytracingDebugMode::Albedo,        kAovConvergeFrames, false, false, &EvaluateAovAlbedo },
-			{ "aov_normal",      RaytracingDebugMode::Normal,        kAovConvergeFrames, false, false, &EvaluateAovNormal },
-			{ "aov_motion",      RaytracingDebugMode::MotionVector,  kAovConvergeFrames, false, false, &EvaluateAovMotion },
-			{ "aov_material",    RaytracingDebugMode::MetallicRoughness, kAovConvergeFrames, false, false, &EvaluateAovMaterial },
-			{ "aov_emission",    RaytracingDebugMode::Emission,      kAovConvergeFrames, false, false, &EvaluateAovEmission },
-			{ "aov_furnace",     RaytracingDebugMode::BrdfFurnace,   kAovConvergeFrames, false, false, &EvaluateAovFurnace },
-			// Stochastic, unlike the other AOVs, so it gets the full convergence budget.
-			{ "aov_specular",    RaytracingDebugMode::SpecularOnly,  -1,                 false, false, &EvaluateAovSpecular },
-			{ "heatmap",         RaytracingDebugMode::SampleHeatmap, -1,                 false, false, &EvaluateHeatmap },
-			// The reduced-height case is the regression itself; the native one guards the path
-			// where the velocity buffer and the tile grid are the same size, which is what every
-			// other configuration in the engine -- including the whole raster path -- runs.
-			{ "motion_blur_native", RaytracingDebugMode::None,      kAovConvergeFrames, false, false,
-			  &EvaluateMotionBlurCoverage, 0u, true },
-			{ "motion_blur_scaled", RaytracingDebugMode::None,      kAovConvergeFrames, false, false,
-			  &EvaluateMotionBlurCoverage, kMotionBlurRenderHeight, true },
-		};
+		// The DXR gate always runs first: every other case silently measures the raster fallback
+		// if the raytracer never actually took over, so nothing may run before it.
+		const CaseDef gateDef = { "gate", RaytracingDebugMode::None, 0, false, false, &EvaluateGate };
 
-		for (const auto& def : all)
+		g_cases.push_back(gateDef);
+
+		// The case list itself comes from the scenario (the committed suite by default);
+		// main.cpp always parses one before Configure runs.
+
+		// --case pulls in the named case plus everything its "requires" list reaches,
+		// transitively (the way determinism pulls in determinism_ref in the suite).
+		std::vector<std::string> wanted;
+		if (!g_options.CaseFilter.empty())
 		{
-			const std::string name = def.Name;
-			if (name == "gate")
+			wanted.push_back(g_options.CaseFilter);
+			for (size_t i = 0; i < wanted.size(); ++i)
 			{
-				g_cases.push_back(def); // always first: everything else depends on it
-				continue;
+				for (const ScenarioCase& sc : g_scenario->Cases)
+				{
+					if (sc.Name != wanted[i])
+					{
+						continue;
+					}
+					for (const std::string& required : sc.Requires)
+					{
+						if (std::find(wanted.begin(), wanted.end(), required) == wanted.end())
+						{
+							wanted.push_back(required);
+						}
+					}
+				}
 			}
+		}
+
+		for (const ScenarioCase& sc : g_scenario->Cases)
+		{
 			if (g_options.SelfTest)
 			{
-				if (name == "primary")
+				// The self-test verdict and the Hold-stage defect injection key off the
+				// primary case; main.cpp rejects scenarios without one up front.
+				if (sc.Evaluator != ScenarioEvaluator::Primary)
 				{
-					g_cases.push_back(def);
+					continue;
 				}
-				continue;
 			}
-			if (!g_options.CaseFilter.empty())
+			else if (!g_options.CaseFilter.empty())
 			{
-				// determinism compares against determinism_ref's capture, so requesting it
-				// pulls the reference case in as well.
-				if (name == g_options.CaseFilter
-					|| (g_options.CaseFilter == "determinism" && name == "determinism_ref"))
+				if (std::find(wanted.begin(), wanted.end(), sc.Name) == wanted.end())
 				{
-					g_cases.push_back(def);
+					continue;
 				}
-				continue;
 			}
-			if (g_options.Quick && (name == "determinism_ref" || name == "determinism"))
+			else if (g_options.Quick && sc.SkipOnQuick)
 			{
 				continue;
 			}
+			CaseDef def{};
+			def.Name = sc.Name.c_str();
+			def.Debug = static_cast<RaytracingDebugMode>(sc.DebugMode);
+			def.ConvergeFrames = sc.ConvergeFrames;
+			def.Hold = sc.Hold;
+			def.AtrousToggle = sc.AtrousToggle;
+			def.Evaluate = kEvaluatorTable[static_cast<size_t>(sc.Evaluator)];
+			def.RenderHeight = sc.RenderHeight;
+			def.MotionBlurCoverage = sc.MotionBlurCoverage;
+			def.Scenario = &sc;
 			g_cases.push_back(def);
 		}
 	}
@@ -1306,6 +1472,10 @@ namespace
 			{
 				options.OutDir = value;
 			}
+			else if (arg == L"--scenario" && nextArg(value))
+			{
+				options.ScenarioPath = value;
+			}
 			else if (arg == L"--case" && nextArg(value))
 			{
 				options.CaseFilter = Narrow(value);
@@ -1334,11 +1504,28 @@ namespace
 		LocalFree(argv);
 	}
 
+	void SetScenario(Scenario&& scenario)
+	{
+		g_scenario = std::make_unique<Scenario>(std::move(scenario));
+		g_sceneName = g_scenario->Name;
+		const ScenarioCamera& camera = g_scenario->Camera;
+		g_scenePose.Position = Vector3(camera.Position[0], camera.Position[1], camera.Position[2]);
+		g_scenePose.Yaw = camera.Yaw;
+		g_scenePose.Pitch = camera.Pitch;
+		g_casePose = g_scenePose;
+		g_fovDegrees = camera.FovDegrees;
+	}
+
+	const Scenario& ActiveScenario()
+	{
+		return *g_scenario;
+	}
+
 	void ApplyCameraPose(SceneObject* cameraObject)
 	{
-		Vector3 position = kCameraPosition;
-		float yaw = kCameraYaw;
-		float pitch = kCameraPitch;
+		Vector3 position = g_casePose.Position;
+		float yaw = g_casePose.Yaw;
+		float pitch = g_casePose.Pitch;
 		if (g_options.PoseOverride)
 		{
 			position = Vector3(g_options.Pose[0], g_options.Pose[1], g_options.Pose[2]);
@@ -1350,7 +1537,7 @@ namespace
 			Quaternion::CreateFromYawPitchRoll(yaw, pitch, 0.0f));
 		if (auto* camera = cameraObject->GetComponent<CameraPerspective>())
 		{
-			camera->SetFov(kCameraFovDegrees * DEG2RAD);
+			camera->SetFov(g_fovDegrees * DEG2RAD);
 		}
 	}
 
@@ -1366,6 +1553,9 @@ namespace
 		ro.RaytracingDenoiser = RaytracingDenoiserMode::Builtin;
 		ro.DrawMotionBlur = false;
 		ro.RaytracingMaxSamplesStatic = static_cast<float>(g_options.MaxSamples);
+		// Snapshot after the forced settings, so LoadCase's baseline restore can never un-force
+		// the harness-owned fields above.
+		g_baselineRenderOptions = ro;
 
 		PinCamera();
 		BuildCaseTable();
@@ -1412,6 +1602,10 @@ namespace
 			}
 
 			RenderOptions& ro = Ro();
+			// Undo the previous case's scenario overrides before the standard per-case settings.
+			// The gate carries no overrides, so the unconditional restore is safe -- and it can
+			// never un-force the harness-owned fields, which are part of the snapshot.
+			ro = g_baselineRenderOptions;
 			ro.RaytracingDebug = g_current.Def->Debug;
 			ro.RaytracingAtrousIterations = kBaselineAtrous;
 			// Core::Render acts on this before the frame is recorded: it flushes the queue,
@@ -1425,6 +1619,22 @@ namespace
 			if (g_current.Def->MotionBlurCoverage)
 			{
 				ro.MotionBlurShutterSpeed = kMotionBlurShutterSpeed;
+			}
+			// Scenario cases may carry render-option overrides and their own camera pose. Applied
+			// here and only here: several overrides live in RadianceSettings, whose change drops
+			// accumulation history, and the InvalidateHistory below makes this the intended,
+			// deterministic point for that to happen.
+			g_casePose = g_scenePose;
+			if (const ScenarioCase* sc = g_current.Def->Scenario)
+			{
+				ApplyScenarioOverrides(ro, sc->Overrides);
+				if (sc->HasPose)
+				{
+					g_casePose.Position =
+						Vector3(sc->Pose.Position[0], sc->Pose.Position[1], sc->Pose.Position[2]);
+					g_casePose.Yaw = sc->Pose.Yaw;
+					g_casePose.Pitch = sc->Pose.Pitch;
+				}
 			}
 			PinCamera();
 			if (RaytracingRenderer* rt = Rt())

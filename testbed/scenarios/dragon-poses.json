@@ -1,0 +1,45 @@
+// Multi-pose showcase: one scene, several viewpoints and per-case render-option overrides in a
+// single run. References resource/model/DragonAttenuation.glb, which is a LOCAL, UNTRACKED asset
+// (the Khronos transmission/attenuation sample) -- on machines without it this scenario exits 3
+// with a clear message; it is committed as syntax documentation, not as a suite.
+{
+  "schemaVersion": 1,
+  "name": "dragon-poses",
+  "description": "DragonAttenuation from several poses; exercises transmission",
+  "scene": {
+    "models": [
+      {
+        // No scale/rotation overrides: the asset's own root TRS is kept.
+        "path": "resource/model/DragonAttenuation.glb",
+        "position": [0.0, 1.0, 0.0]
+      }
+    ],
+    // The reference intensity is tuned for the Sponza interior; the asset's white backdrop
+    // plane blows out under it, so this example runs dimmer.
+    "light": { "intensity": 6.0 }
+  },
+  "camera": {
+    "position": [0.0, 1.8, -6.5],
+    "yaw": 0.0,
+    "pitch": 0.1
+  },
+  "cases": [
+    {
+      "name": "front"
+    },
+    {
+      "name": "side",
+      "pose": { "position": [-6.5, 1.8, 0.0], "yaw": 1.5708 }
+    },
+    {
+      "name": "deep_transmission",
+      "description": "more transmission bounces than the shipping default",
+      "renderOptions": { "maxTransmissionBounces": 16 }
+    },
+    {
+      "name": "material_aov",
+      "debugMode": "metallicRoughness",
+      "convergeFrames": 8
+    }
+  ]
+}

@@ -58,6 +58,12 @@ function(updown_setup_dependencies)
         dxc_bin
         URL https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.9.2602/dxc_2026_02_20.zip
     )
+    # Scenario-file parsing for rt_testbed (the only target that links it). The release tarball is
+    # ~850 KB; the repository it comes from is hundreds of MB of history.
+    FetchContent_Declare(
+        nlohmann_json
+        URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
+    )
 
     set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     set(ASSIMP_BUILD_ASSIMP_TOOLS OFF CACHE BOOL "" FORCE)
@@ -79,6 +85,7 @@ function(updown_setup_dependencies)
     FetchContent_MakeAvailable(directx_headers directxtk12 directxtex tracy assimp)
     FetchContent_MakeAvailable(imgui)
     FetchContent_MakeAvailable(dxc_bin)
+    FetchContent_MakeAvailable(nlohmann_json)
     if(UPDOWN_ENABLE_STREAMLINE)
         FetchContent_MakeAvailable(streamline)
     endif()

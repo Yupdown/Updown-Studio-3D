@@ -1,13 +1,17 @@
 ---
 name: rt-visual-test
-description: Run the raytracing visual-quality testbed (deterministic Sponza + DamagedHelmet captures with machine-readable artifact checks) and interpret its results. Use after changing the raytracing renderer, denoiser, jitter/reprojection, or shaders to verify no visual artifacts were introduced.
+description: Run the raytracing visual-quality testbed (scenario-driven captures with machine-readable checks) and interpret its results. Use after changing the raytracing renderer, denoiser, jitter/reprojection, or shaders to verify no visual artifacts were introduced — and use a custom scenario file whenever you need deterministic target screenshots of any scene/pose/setting without touching C++ or driving the demo by hand.
 ---
 
 # RT visual-quality testbed
 
 `rt_testbed.exe` is a dedicated executable (target `rt_testbed`, sources in [testbed/](testbed/))
-separate from the interactive `demo`. It renders one fixed, fully static scene — Khronos **Sponza**
-with **DamagedHelmet** in the atrium — from a pinned camera, and measures it.
+separate from the interactive `demo`. Everything it renders and measures is described by a
+**scenario file**; the default is the committed regression suite
+[testbed/scenarios/rt-suite.json](testbed/scenarios/rt-suite.json) — the reference Sponza +
+DamagedHelmet scene from the pinned camera. **Suite cases are edited in that JSON, not in C++.**
+Thresholds and check logic stay calibrated in [testbed/RtTestbed.cpp](testbed/RtTestbed.cpp)
+(`namespace thresholds`); a scenario chooses structure, never calibration.
 
 One command, from the repo root:
 
@@ -17,10 +21,95 @@ pwsh scripts/rt-visual-test.ps1 -Quick     # 64-sample fast pass, for iteration
 pwsh scripts/rt-visual-test.ps1 -SkipBuild # reuse the existing Release build
 pwsh scripts/rt-visual-test.ps1 -Case aov_motion   # one case (gate always runs first)
 pwsh scripts/rt-visual-test.ps1 -SelfTest  # verify the testbed itself catches injected defects
+pwsh scripts/rt-visual-test.ps1 -Scenario testbed/scenarios/helmet-basic.json  # custom scenario
+pwsh scripts/rt-visual-test.ps1 -Scenario my.json -MaxSamples 64 -SkipBuild    # fast custom run
 ```
 
-The scene assets (~54 MB, not committed) are fetched automatically on first run, or explicitly
-with `pwsh scripts/fetch-testbed-assets.ps1`.
+The suite's scene assets (~54 MB, not committed) are fetched automatically on first run, or
+explicitly with `pwsh scripts/fetch-testbed-assets.ps1`.
+
+## Scenario files: deterministic captures of anything
+
+To get target screenshots of a new model, pose, or setting: write a small JSON file, run it,
+read the PNGs. No rebuild, no window interaction. Annotated examples:
+[helmet-basic.json](testbed/scenarios/helmet-basic.json) (works after asset fetch),
+[dragon-poses.json](testbed/scenarios/dragon-poses.json) (multi-pose + overrides, local asset).
+
+```jsonc
+{
+  "schemaVersion": 1,                    // required
+  "name": "my-check",                    // optional; report.json "scene". Default: file stem
+  "scene": {                             // omitted entirely => reference Sponza+helmet scene
+    "models": [{ "path": "resource/model/DamagedHelmet.glb",   // resource-relative
+                 "position": [0,1.3,0], "scale": 0.9,          // scale: scalar or [x,y,z]
+                 "rotationYawPitchRoll": [1.5708,-1.5708,0],   // radians
+                 "enableRaytracing": true }],
+    "light": { "intensity": 26.7, "color": [1,1,1],
+               "yawPitch": [0.9,1.15], "angularDiameterDegrees": 0.53 },
+    "environment": "resource/texture/....hdr"    // null => no environment map
+  },
+  "camera": { "position": [-7,3.2,0], "yaw": 1.5708, "pitch": 0.10,
+              "fovDegrees": 60, "near": 0.05, "far": 200 },
+  "cases": [{
+    "name": "front",                     // [A-Za-z0-9_-]{1,64}, unique; names the output dir
+    "evaluator": "captureOnly",          // default; see the registry below
+    "debugMode": "none",                 // none|albedo|normal|directOnly|indirectOnly|motionVector|
+                                         // sampleHeatmap|metallicRoughness|emission|specularOnly|brdfFurnace
+    "convergeFrames": -1,                // -1 => MaxSamples + 64
+    "renderHeight": 0,                   // 0 = display res; else 32..8192
+    "hold": false,                       // + "hold" capture after 16 still frames
+    "atrousToggle": false,               // + "atrous_off" capture
+    "motionBlurCoverage": false,         // converge/nudge/replay flow, back-buffer captures
+    "skipOnQuick": false,                // dropped under -Quick
+    "requires": [],                      // cases -Case pulls in along with this one
+    "pose": { "position": [0,1.5,-3], "yaw": 0, "pitch": 0 },   // per-case camera pose
+    "renderOptions": { "skyMaxRadiance": 1000.0 }               // whitelist, applied per case
+  }]
+}
+```
+
+Rules that matter in practice:
+
+- **Strict parsing.** Any unknown key, wrong type, or out-of-range value exits 3 with the key
+  named in `summary.txt`. `//` comments are allowed.
+- **Radians vs degrees**: rotations/yaw/pitch are radians; anything with `Degrees` in the name
+  (FOV, sun angular diameter) is degrees.
+- **Model transforms are optional overrides**: an omitted `position`/`scale`/`rotationYawPitchRoll`
+  leaves the instantiated root's own TRS (from the asset) untouched — Sponza's root transform is
+  load-bearing, so the suite scene depends on this.
+- **Units of pose**: yaw 0 looks toward +Z, positive yaw turns toward +X, positive pitch looks
+  down.
+- `renderOptions` is a typed whitelist (`samplesPerPixel`, `maxSamplesMoving`, fog fields,
+  `skyMaxRadiance`, `specularFireflyClamp`, `maxTransmissionBounces`, `atrousIterations`, ...).
+  Harness-owned fields are rejected as unknown keys on purpose: `drawRaytracing`, the denoiser,
+  `maxSamplesStatic` (that's `-MaxSamples`), the motion-blur toggles, bloom.
+- The `gate` case (DXR actually active) is implicit, always first; the name is reserved.
+- Each case re-runs from a clean state (history invalidated, RNG/jitter counter reset), so
+  per-case poses and overrides never contaminate the next case.
+- One scene per run. Different scene = different scenario file = separate run.
+- `--pose x,y,z,yaw,pitch` (exe flag) still overrides **every** case's pose — exploratory only.
+- `-SelfTest` requires the scenario to contain a case named `primary` with evaluator `primary`
+  (the default suite does).
+- The global frame budget is 20000 frames: many cases x large `convergeFrames` at high
+  `-MaxSamples` can hit it (exit 3, "state machine stuck"). Use `-MaxSamples 64` for capture runs.
+- Relative `--scenario`/`--out` paths resolve against the launch directory (the scenario is
+  parsed before the engine moves the cwd to the repo root). The runner script and the VS debugger
+  both launch from the repo root, so this only bites bare-exe runs from elsewhere.
+
+## Evaluators
+
+`evaluator` picks the check function; all but `captureOnly` are the calibrated suite checks:
+`primary` (needs `hold`+`atrousToggle`), `determinismRef`/`determinism` (the latter needs an
+earlier ref case), `aovAlbedo`, `aovNormal`, `aovMotion`, `aovMaterial`, `aovEmission`,
+`aovFurnace`, `aovSpecular`, `heatmap`, `motionBlurCoverage` (needs the flag of the same name).
+They are calibrated against the default scene and pose — pointing them at a custom scene is
+allowed but the thresholds no longer mean what they meant.
+
+`captureOnly` (the default) gates only on real defects — `capture_valid` (the readback produced
+an image) and `nan_inf` — and reports everything else as **informational stats**: summary lines
+like `PASS front/stat_lum_mean value=0.42 thr=null`. `stat_*` + `thr=null` = a measurement, not
+a check. With `hold`/`atrousToggle`/`motionBlurCoverage` it also emits pair-diff stats
+(`stat_temporal_*`, `stat_atrous_*`, `stat_blur_*`).
 
 ## Exit codes
 
@@ -28,36 +117,40 @@ with `pwsh scripts/fetch-testbed-assets.ps1`.
 - **1** — a check failed: read `testbed-results/summary.txt` for the failing lines
 - **2** — skipped: DXR unavailable or the raytracer never activated (the engine silently renders
   the raster path in that situation, so nothing visual was actually verified)
-- **3** — timeout, capture failure, missing assets, or state machine stuck
+- **3** — scenario/setup error, timeout, capture failure, or state machine stuck (the ERROR line
+  in summary.txt says which)
 
 ## Reading results
 
 - `testbed-results/summary.txt` — one `PASS|FAIL case/check value=... thr=...` line per check.
-- `testbed-results/report.json` — the same data structured, plus capture paths and metadata.
+- `testbed-results/report.json` — the same data structured, plus capture paths, the scenario
+  path, and metadata.
 - `testbed-results/<case>/*.png` — tonemapped captures, viewable directly with the Read tool.
 - `testbed-results/<case>/converged.hdr` — pre-tonemap HDR resolve target (R11G11B10 source).
-- `testbed-results/motion_blur_*/blur_off.png` and `blur_on.png` — the same frame with the blur off
-  and on. The bug these guard is obvious by eye: a hard seam where the blur stops, at
+- `testbed-results/motion_blur_*/blur_off.png` and `blur_on.png` — the same frame with the blur
+  off and on. The bug these guard is obvious by eye: a hard seam where the blur stops, at
   `motion_blur_render_extent` (reported as a value/threshold pair for exactly this reason).
 
 Values are always emitted even on PASS. On a marginal failure (value close to threshold), look at
 the number and the PNG before concluding the renderer regressed — thresholds were calibrated on
-one machine and the stochastic ones scale with `--max-samples`.
+one machine and the stochastic ones scale with `-MaxSamples`.
 
 **Which numbers are stable enough to diff across builds.** `determinism/*` is bit-exact (0.0) and
 is the reliable canary: if a change was supposed to be visually neutral and this moves, something
 really did change. `primary/*` is NOT bit-stable — it is the first convergence after boot, so
 acceleration-structure warm-up perturbs it by ~1e-7 relative *between runs of the same binary*
 (`lum_mean` wobbles in its 7th significant digit). Never conclude a regression from `primary`
-alone; re-run the same binary first and compare the spread. `primary/atrous_*` and
-`primary/temporal_*` are the loosest of the lot — they are small differences of nearly equal
-images, so they amplify that wobble into their 6th significant digit.
+alone; re-run the same binary first and compare the spread. The same applies to a custom
+scenario's `stat_lum_*` between two process runs: agreement to ~5-6 significant digits is
+expected, bit-exact PNGs are not (within-process warm-vs-warm is the only bit-exact comparison).
+`primary/atrous_*` and `primary/temporal_*` are the loosest of the lot — they are small
+differences of nearly equal images, so they amplify that wobble into their 6th significant digit.
 
 Anything read from a capture is quantised by the HDR target's `R11G11B10_FLOAT`: 6 mantissa bits
 on R and G, 5 on B. Near 1.0 that is a quantum of ~0.008, so `aov_furnace`'s bounds resolve energy
 errors to about a percent regardless of how many digits they print.
 
-## What the cases verify
+## What the suite cases verify
 
 | Case | Invariant |
 |---|---|
@@ -82,7 +175,7 @@ GGX genuinely loses energy at high roughness; that deficit is expected, not a bu
 visor and the stone near white. A *flat* furnace image means roughness is not reaching the BRDF.
 Black speckle at silhouettes is the `NoV <= 0` guard, not an artifact.
 
-## Why this scene
+## Why the default scene
 
 Sponza's arcades give sharp silhouettes and heavy occlusion (where reprojection artifacts appear
 first), the open roof puts sky in frame (exercising the miss shader), the raking sun produces a
@@ -92,31 +185,31 @@ the frame is always floor, which the AOV range checks depend on.
 
 ## Traps
 
-- The camera pose and the scene contents are load-bearing: the committed pose is what the
-  thresholds are calibrated against. `--pose x,y,z,yaw,pitch` overrides it for exploratory runs
-  (re-tuning against captured PNGs without a rebuild) — results from such a run are not comparable.
+- The default scene/camera values live as the `Scenario` struct defaults in
+  [testbed/Scenario.h](testbed/Scenario.h) — the committed pose is what the suite thresholds are
+  calibrated against. `--pose` overrides it for exploratory runs; results from such a run are not
+  comparable.
 - The testbed hard-terminates after writing results to dodge a pre-existing engine teardown crash
   (0xC0000005 on window close, present in the interactive demo too). Don't add teardown-dependent
-  logic after `FinishSuite`.
+  logic after `FinishSuite`, and scenario parse failures terminate via `FailSetup` the same way.
 - Anything that touches `RadianceSettings` (fog, sun, spp, debug mode) mid-case drops the
-  accumulation history; settings may only change in `LoadCase`. `RaytracingAtrousIterations` is
-  the deliberate exception (display-side only).
-- `DrawMotionBlur` is off for every case **except** the two `motion_blur_*` ones, which also raise
-  `MotionBlurShutterSpeed` and leave it raised (inert while the blur itself is off). It used to be
-  forced off suite-wide; code that assumed that no longer holds.
-- Measuring a post-process means capturing the **back buffer**, not `HdrTarget`. `HdrTarget` is the
-  raytracing resolve, written before bloom/tonemapping and before motion blur — a check reading it
-  would see a frame the post-process chain has not touched yet and pass on anything.
+  accumulation history; the harness therefore applies scenario `renderOptions` only while loading
+  a case. `RaytracingAtrousIterations` is the deliberate exception (display-side only).
+- `DrawMotionBlur` is off for every case **except** the `motionBlurCoverage` ones, which also
+  raise `MotionBlurShutterSpeed`. Between cases the whole `RenderOptions` baseline is restored,
+  so overrides never leak forward.
+- Measuring a post-process means capturing the **back buffer**, not `HdrTarget`. `HdrTarget` is
+  the raytracing resolve, written before bloom/tonemapping and before motion blur — a check
+  reading it would see a frame the post-process chain has not touched yet and pass on anything.
 - `MotionBlurFactor = MotionBlurShutterSpeed / deltaTime`, so blur length depends on how fast the
-  machine is running. The testbed's frames are slow and uneven (queue flushes, readback stalls), and
-  at the shipped shutter speed the blur fell under the pixel shader's half-pixel early-out and the
-  case silently measured nothing. Anything time-scaled needs its input pinned hard enough to
+  machine is running. The testbed's frames are slow and uneven (queue flushes, readback stalls),
+  and at the shipped shutter speed the blur fell under the pixel shader's half-pixel early-out and
+  the case silently measured nothing. Anything time-scaled needs its input pinned hard enough to
   saturate, not merely to be large.
 - The motion blur cases need the camera to *move*, which the rest of the suite never does. They
   converge, turn one frame off the pinned pose, capture, then replay that run bit-for-bit with the
   blur on. Both halves reset the frame counter **and** invalidate history at the same point, so
-  their pre-blur images are identical and the difference is the blur alone. `LoadCase`'s reset is
-  not enough on its own: `Warmup` runs a variable number of frames after it.
+  their pre-blur images are identical and the difference is the blur alone.
 - Editing a shader with `Copy-Item` does not rebuild it. `Copy-Item` preserves the source's
   timestamp, so a file restored from a backup can be *older* than the generated header in
   `build/.../generated/compiled_shaders/` and MSBuild will skip it — leaving the previous shader in
@@ -128,6 +221,6 @@ the frame is always floor, which the AOV range checks depend on.
   everything if it is not. Nothing here covers the deferred raster path, and its lighting shader is
   compiled at *runtime* from `resource/shader/color.hlsl`, so a successful build proves nothing
   about it. Raster changes need the demo, or a temporary local flip of that flag.
-- The pose is static, so nothing here exercises view-dependent history validation. History is
-  validated geometrically; a camera rotating in place passes every geometric test while the
+- The suite pose is static, so nothing here exercises view-dependent history validation. History
+  is validated geometrically; a camera rotating in place passes every geometric test while the
   specular lobe sweeps across the surface. That failure mode needs a rotating-camera check.

@@ -1,10 +1,12 @@
 set(TESTBED_SOURCES
     main.cpp
     RtTestbed.cpp
+    Scenario.cpp
 )
 
 set(TESTBED_HEADERS
     RtTestbed.h
+    Scenario.h
 )
 
 add_executable(rt_testbed WIN32
@@ -12,7 +14,7 @@ add_executable(rt_testbed WIN32
     ${TESTBED_HEADERS}
 )
 
-target_link_libraries(rt_testbed PRIVATE engine)
+target_link_libraries(rt_testbed PRIVATE engine nlohmann_json::nlohmann_json)
 
 target_compile_features(rt_testbed PRIVATE cxx_std_20)
 

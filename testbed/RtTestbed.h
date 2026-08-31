@@ -2,6 +2,8 @@
 
 #include <string>
 
+#include "Scenario.h"
+
 namespace udsdx
 {
 	struct Time;
@@ -17,7 +19,13 @@ namespace rttest
 	struct Options
 	{
 		std::wstring OutDir = L"testbed-results";
-		// Empty runs every case; otherwise only the case with this exact name.
+		// Every run is scenario-driven; the default is the committed regression suite. Relative
+		// paths resolve against the launch directory, because the scenario is parsed before
+		// UpdownStudio::Initialize moves the cwd to the repo root -- the runner script and the VS
+		// debugger working directory both make that the repo root already.
+		std::wstring ScenarioPath = L"testbed\\scenarios\\rt-suite.json";
+		// Empty runs every case; otherwise only the case with this exact name (plus the cases its
+		// "requires" list pulls in).
 		std::string CaseFilter;
 		// Effective RaytracingMaxSamplesStatic for the run; convergence frame counts derive
 		// from it, so lowering it shortens the suite proportionally.
@@ -33,8 +41,17 @@ namespace rttest
 	};
 
 	// Fills `options` from the process command line
-	// (--out DIR --case NAME --max-samples N --quick --self-test).
+	// (--scenario FILE --out DIR --case NAME --max-samples N --quick --self-test).
 	void ParseCommandLine(Options& options);
+
+	// Hands the parsed scenario to the driver. Call exactly once, after ParseCommandLine and
+	// before the scene is built: it seeds the camera defaults ApplyCameraPose uses and the
+	// report's scene name. The driver takes ownership -- case names are referenced by pointer for
+	// the rest of the process.
+	void SetScenario(Scenario&& scenario);
+
+	// The scenario handed to SetScenario. Valid from then on; the scene builder reads it.
+	const Scenario& ActiveScenario();
 
 	// The camera pose every case renders from. main.cpp applies it once at startup so the first
 	// frame is already correct; the driver re-applies it per case.

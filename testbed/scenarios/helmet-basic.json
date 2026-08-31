@@ -1,0 +1,45 @@
+// Minimal scenario example that works on any machine after scripts/fetch-testbed-assets.ps1:
+// DamagedHelmet alone against the committed sky, three capture-only cases. Run with
+//   pwsh scripts/rt-visual-test.ps1 -Scenario testbed/scenarios/helmet-basic.json
+// and read testbed-results/<case>/converged.png; the stat_* lines in summary.txt are
+// informational (thr=null), only gate/nan_inf actually gate.
+{
+  "schemaVersion": 1,
+  "name": "helmet-basic",
+  "scene": {
+    "models": [
+      {
+        "path": "resource/model/DamagedHelmet.glb",
+        "position": [0.0, 1.3, 0.0],
+        "rotationYawPitchRoll": [0.0, -1.5708, 0.0]
+      }
+    ],
+    // The reference intensity (8.5*pi) is tuned for the Sponza interior; under an open sky it
+    // blows the sunlit side out, so the example runs dimmer.
+    "light": { "intensity": 9.42478 }
+  },
+  "camera": {
+    "position": [0.0, 1.4, -2.2],
+    "yaw": 0.0,
+    "pitch": 0.05
+  },
+  "cases": [
+    {
+      "name": "converged",
+      "description": "full convergence, plus hold and atrous-off captures for temporal/filter inspection",
+      "hold": true,
+      "atrousToggle": true
+    },
+    {
+      "name": "albedo",
+      "description": "albedo AOV -- textures reaching the shader",
+      "debugMode": "albedo",
+      "convergeFrames": 8
+    },
+    {
+      "name": "half_res",
+      "description": "reduced raytracing render height, upscaled to the display",
+      "renderHeight": 360
+    }
+  ]
+}
