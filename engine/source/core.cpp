@@ -1487,6 +1487,18 @@ namespace udsdx
 			ImGui::SliderFloat("Normal Tolerance (cos)", &options.RaytracingNormalThreshold, 0.5f, 0.999f, "%.3f");
 			ImGui::SliderFloat("Depth Tolerance", &options.RaytracingDepthThreshold, 0.001f, 0.5f, "%.4f", ImGuiSliderFlags_Logarithmic);
 
+			ImGui::SeparatorText("ReSTIR GI");
+			ImGui::Checkbox("ReSTIR GI", &options.RaytracingRestirGi);
+			ImGui::BeginDisabled(!options.RaytracingRestirGi);
+			int restirSpatialSamples = static_cast<int>(options.RaytracingRestirSpatialSamples);
+			if (ImGui::SliderInt("Spatial Samples", &restirSpatialSamples, 0, 16))
+			{
+				options.RaytracingRestirSpatialSamples = static_cast<unsigned int>(restirSpatialSamples);
+			}
+			ImGui::SliderFloat("Spatial Radius (px)", &options.RaytracingRestirSpatialRadius, 1.0f, 64.0f, "%.0f");
+			ImGui::SliderFloat("Temporal M Clamp", &options.RaytracingRestirTemporalMClamp, 0.0f, 64.0f, "%.0f");
+			ImGui::EndDisabled();
+
 			ImGui::SeparatorText("Denoiser");
 			int atrousIterations = static_cast<int>(options.RaytracingAtrousIterations);
 			if (ImGui::SliderInt("A-Trous Iterations", &atrousIterations, 0, 5))

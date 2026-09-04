@@ -1,0 +1,32 @@
+// ReSTIR GI on the reference pose: does resampling change the estimate, and how much noise does
+// it remove? Run with -MaxSamples 1, which makes the accumulator copy each frame, so every
+// capture is one frame's estimate and stat_lum_mean compares the two estimators directly:
+//
+//   pwsh scripts/rt-visual-test.ps1 -Scenario testbed/scenarios/restir-bias.json -MaxSamples 1 -SkipBuild
+//
+// Expect the off/on full-frame means within ~1% and the direct-only pair identical to the digit
+// (ReSTIR touches the indirect channel only). ind_on's stat_lum_stddev is not the noise figure to
+// read: both images are dominated by the same few fireflies. Load the two converged.hdr files and
+// compare a 9x9 box blur against a 64-spp single-frame reference instead -- the share of pixels
+// landing within 25% of it went from 43% to 72% when this was calibrated.
+//
+// Do NOT compare accumulated (-MaxSamples 64+) captures for bias: the accumulator variance-clips
+// history against its 3x3 neighbourhood, and a neighbourhood that is entirely zero halves the
+// history every frame. The sparse one-bounce signal triggers that far more often than the
+// resampled one, so an accumulated reference reads several percent darker than its own per-frame
+// mean and the difference looks like ReSTIR bias.
+{
+  "schemaVersion": 1,
+  "name": "restir-bias",
+  "description": "per-frame estimator comparison with ReSTIR GI off and on",
+  "cases": [
+    { "name": "off",     "convergeFrames": 64, "renderOptions": { "restirGi": false, "atrousIterations": 0 } },
+    { "name": "on",      "convergeFrames": 64, "renderOptions": { "restirGi": true,  "atrousIterations": 0 } },
+    { "name": "dir_off", "convergeFrames": 64, "debugMode": "directOnly", "renderOptions": { "restirGi": false } },
+    { "name": "dir_on",  "convergeFrames": 64, "debugMode": "directOnly", "renderOptions": { "restirGi": true } },
+    { "name": "ind_off", "convergeFrames": 64, "debugMode": "indirectOnly", "renderOptions": { "restirGi": false } },
+    { "name": "ind_on",  "convergeFrames": 64, "debugMode": "indirectOnly", "renderOptions": { "restirGi": true } },
+    // The reference the two above are measured against: one frame, 64 candidates, no resampling.
+    { "name": "ind_ref", "convergeFrames": 64, "debugMode": "indirectOnly", "renderOptions": { "restirGi": false, "samplesPerPixel": 64 } }
+  ]
+}

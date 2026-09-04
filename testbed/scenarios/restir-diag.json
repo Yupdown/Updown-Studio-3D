@@ -1,0 +1,23 @@
+// ReSTIR GI diagnostics on the reference pose, indirect-only view. Each case isolates one part of
+// the estimator so a bias can be attributed: own candidate only (t0_s0), spatial only (t0_s4),
+// temporal only (t20_s0), both (t20_s4). Run with -MaxSamples 1 -- the debug view never
+// accumulates, so every capture is one frame and convergeFrames only sets how long the temporal
+// chain has been running.
+//
+//   pwsh scripts/rt-visual-test.ps1 -Scenario testbed/scenarios/restir-diag.json -MaxSamples 1 -SkipBuild
+//
+// The honest reference to compare against is a single frame at 64 spp with ReSTIR off
+// ("samplesPerPixel": 64, still -MaxSamples 1): same estimator, same absence of accumulation,
+// region means repeatable to ~0.1%. Every case here should land within a couple of percent of it.
+// A case that does not names the guilty stage: t0_s4 the spatial merge, t20_s0 the temporal one.
+{
+  "schemaVersion": 1,
+  "name": "restir-diag",
+  "cases": [
+    { "name": "off",    "debugMode": "indirectOnly", "convergeFrames": 128, "renderOptions": { "restirGi": false } },
+    { "name": "t0_s0",  "debugMode": "indirectOnly", "convergeFrames": 128, "renderOptions": { "restirGi": true, "restirTemporalMClamp": 0, "restirSpatialSamples": 0 } },
+    { "name": "t0_s4",  "debugMode": "indirectOnly", "convergeFrames": 128, "renderOptions": { "restirGi": true, "restirTemporalMClamp": 0, "restirSpatialSamples": 4 } },
+    { "name": "t20_s0", "debugMode": "indirectOnly", "convergeFrames": 128, "renderOptions": { "restirGi": true, "restirTemporalMClamp": 20, "restirSpatialSamples": 0 } },
+    { "name": "t20_s4", "debugMode": "indirectOnly", "convergeFrames": 128, "renderOptions": { "restirGi": true, "restirTemporalMClamp": 20, "restirSpatialSamples": 4 } }
+  ]
+}

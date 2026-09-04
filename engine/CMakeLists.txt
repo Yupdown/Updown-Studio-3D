@@ -271,6 +271,7 @@ add_engine_shader(resource/vs_skybox.hlsl VS vs_6_0)
 add_engine_shader_library(resource/lib_raytracing.hlsl lib_6_3
     DEPENDS_ON
         "${CMAKE_CURRENT_SOURCE_DIR}/resource/inc_raytracing.hlsl"
+        "${CMAKE_CURRENT_SOURCE_DIR}/resource/inc_restir.hlsl"
         "${ENGINE_SHADER_INC_RT_COMMON}"
         "${ENGINE_SHADER_INC_BRDF}")
 

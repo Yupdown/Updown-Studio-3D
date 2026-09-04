@@ -974,6 +974,10 @@ namespace
 		apply(o.SkyMaxRadiance, ro.RaytracingSkyMaxRadiance);
 		apply(o.SpecularSkyMaxRadiance, ro.RaytracingSpecularSkyMaxRadiance);
 		apply(o.SpecularFireflyClamp, ro.RaytracingSpecularFireflyClamp);
+		apply(o.RestirGi, ro.RaytracingRestirGi);
+		apply(o.RestirSpatialSamples, ro.RaytracingRestirSpatialSamples);
+		apply(o.RestirSpatialRadius, ro.RaytracingRestirSpatialRadius);
+		apply(o.RestirTemporalMClamp, ro.RaytracingRestirTemporalMClamp);
 		apply(o.AtrousIterations, ro.RaytracingAtrousIterations);
 		apply(o.AtrousLuminanceSigma, ro.RaytracingAtrousLuminanceSigma);
 		apply(o.ShadowRayOffset, ro.RaytracingShadowRayOffset);

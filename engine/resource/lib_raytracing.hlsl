@@ -330,14 +330,33 @@ float3 TraceSpecularBounce(float3 origin, float3 normal, float3 V, float3 baseCo
     return min(weight * incoming, gSpecularFireflyClamp.xxx);
 }
 
+// What the diffuse bounce found, handed back so ReSTIR can treat it as an initial candidate:
+// where the bounce landed (or the direction it escaped in), the normal there and the radiance
+// sent back. Valid is false on a primary miss and in every debug view that returns before the
+// bounce is traced.
+struct RestirCandidate
+{
+    float3 Pos;
+    float3 Normal;
+    float3 Radiance;
+    uint   Flags;
+    bool   Valid;
+};
+
 // Emits the direct term (sun + primary sky + fog in-scatter) and the indirect term (the one
 // diffuse bounce) separately. Indirect carries nearly all of the estimator's variance -- indoors
 // it is a lottery over which bounce rays find a lit patch -- so the spatial filter downstream
 // smooths only that channel and the crisp sun shapes in the direct channel stay sharp.
-void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 indirectOut)
+void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 indirectOut,
+               out RestirCandidate candidate)
 {
     directOut = 0.0f;
     indirectOut = 0.0f;
+    candidate.Pos = 0.0f;
+    candidate.Normal = 0.0f;
+    candidate.Radiance = 0.0f;
+    candidate.Flags = 0u;
+    candidate.Valid = false;
 
     SurfacePayload primary = TraceSurface(ray);
 
@@ -441,6 +460,23 @@ void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 ind
                  + secondary.Emission;
     }
 
+    // The bounce doubles as ReSTIR's initial candidate. Stored unfogged: fog belongs to the
+    // segment between the camera and whichever visible point ends up reusing the sample.
+    candidate.Valid = true;
+    candidate.Radiance = incoming;
+    if (secondary.HitT < 0.0f)
+    {
+        candidate.Pos = bounce.Direction;
+        candidate.Normal = 0.0f;
+        candidate.Flags = RESTIR_FLAG_SKY;
+    }
+    else
+    {
+        candidate.Pos = bounce.Origin + bounce.Direction * secondary.HitT;
+        candidate.Normal = secondary.Normal;
+        candidate.Flags = 0u;
+    }
+
     float3 specularIndirect = TraceSpecularBounce(bounce.Origin, primary.Normal, primaryV,
                                                   primary.Albedo, primaryMaterial, specularXi, rng);
 
@@ -454,6 +490,15 @@ void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 ind
     }
     if (gDebugMode == RT_DEBUG_INDIRECT)
     {
+        if (gRestirEnabled != 0u)
+        {
+            // The resampled term is added to the direct channel by the spatial pass (the
+            // accumulator zeroes the indirect history in every debug view); only the specular
+            // bounce is known here.
+            directOut = specularIndirect;
+            indirectOut = incoming;
+            return;
+        }
         // Cosine pdf and the 1/pi Lambert term cancel, leaving a plain albedo multiply -- of the
         // DIFFUSE albedo, since metals have no diffuse lobe to gather into.
         directOut = DiffuseAlbedo(primary.Albedo, primaryMaterial.Metallic) * incoming
@@ -516,6 +561,41 @@ RayDesc BuildPrimaryRay(float2 uv)
     return ray;
 }
 
+// Shadow ray from a visible point toward a reservoir's sample. True when nothing is in the way.
+// Same flags as the sun's shadow ray: first hit ends the search and the closest-hit shader is
+// skipped, but any-hit still runs so alpha-tested cutouts occlude correctly.
+bool RestirSampleVisible(float3 visiblePos, float3 nq, GiReservoir r)
+{
+    RayDesc ray;
+    ray.Origin = OffsetOrigin(visiblePos, nq);
+    ray.Direction = RestirDirection(r, visiblePos);
+    ray.TMin = gShadowRayOffset;
+    ray.TMax = (r.Flags & RESTIR_FLAG_SKY) != 0u
+        ? gRayMaxDistance
+        : length(r.SamplePos - ray.Origin) - gShadowRayOffset;
+    if (ray.TMax <= ray.TMin)
+    {
+        return true;
+    }
+
+    SurfacePayload payload;
+    payload.Albedo = 0.0f;
+    payload.HitT = 0.0f;    // assume occluded; MissShadow sets it negative
+    payload.Normal = 0.0f;
+    payload.MatPack0 = 0u;
+    payload.Emission = 0.0f;
+    payload.MatPack1 = 0u;
+    payload.PrevWorldPos = 0.0f;
+    payload.InstanceIdx = 0xFFFFFFFFu;
+
+    TraceRay(gScene,
+             RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER,
+             0xFFu, 0, 1,
+             1,  // MissShaderIndex: MissShadow
+             ray, payload);
+    return payload.HitT < 0.0f;
+}
+
 [shader("raygeneration")]
 void RayGenMain()
 {
@@ -539,6 +619,14 @@ void RayGenMain()
     SurfacePayload guide = TraceSurface(guideRay);
     SurfaceMaterial guideMaterial = UnpackSurfaceMaterial(guide.MatPack0, guide.MatPack1);
 
+    // ReSTIR GI: the guide hit is the reservoir's visible point. It is what the guide buffers
+    // describe and what every validation predicate compares against, so reuse and validation
+    // agree on "same surface" by construction. Its own RNG stream keeps the main stream's
+    // material-independent draw order intact.
+    float3 visiblePos = guideRay.Origin + guideRay.Direction * max(guide.HitT, 0.0f);
+    uint rngRestir = InitRng(pixel, PcgHash(gFrameSeed ^ 0x5bd1e995u));
+    GiReservoir reservoir = RestirEmpty(visiblePos);
+
     float3 directSum = 0.0f;
     float3 indirectSum = 0.0f;
     for (uint sample = 0u; sample < gSamplesPerPixel; ++sample)
@@ -549,9 +637,116 @@ void RayGenMain()
         RayDesc ray = BuildPrimaryRay((float2(pixel) + offset) / float2(dimensions));
         float3 sampleDirect;
         float3 sampleIndirect;
-        TracePath(ray, rng, sampleDirect, sampleIndirect);
+        RestirCandidate candidate;
+        TracePath(ray, rng, sampleDirect, sampleIndirect, candidate);
         directSum += sampleDirect;
         indirectSum += sampleIndirect;
+
+        if (gRestirEnabled != 0u && candidate.Valid && guide.HitT >= 0.0f)
+        {
+            // Treated as generated at the guide hit with pdf cos/pi: the cosine cancels, so the
+            // RIS weight is the candidate's luminance. The sub-pixel offset between this sample's
+            // own hit and the guide hit is ignored (Jacobian 1) -- a pixel footprint of error,
+            // the same class as the spatial reuse accepts.
+            float3 omega = candidate.Pos;
+            if ((candidate.Flags & RESTIR_FLAG_SKY) == 0u)
+            {
+                float3 toSample = candidate.Pos - visiblePos;
+                float sampleDistance = length(toSample);
+                omega = sampleDistance > 1e-6f ? toSample / sampleDistance : 0.0f.xxx;
+            }
+            float weight = dot(guide.Normal, omega) > 0.0f ? RestirLuminance(candidate.Radiance) : 0.0f;
+            RestirUpdate(reservoir, weight, candidate.Pos, candidate.Normal, candidate.Radiance,
+                         candidate.Flags, NextFloat(rngRestir));
+        }
+    }
+
+    if (gRestirEnabled != 0u)
+    {
+        float3 historyVisiblePos = visiblePos;
+        if (guide.HitT >= 0.0f && gHistoryValid != 0u)
+        {
+            // Temporal reuse: last frame's final reservoir at the pixel this surface came from,
+            // validated exactly like the accumulation pass validates its history. WorldToUv is
+            // the projection MotionFromWorld uses, so the fisheye path stays correct.
+            float2 prevUv = WorldToUv(guide.PrevWorldPos, gPrevViewProj, gPrevView);
+            if (all(prevUv >= 0.0f) && all(prevUv < 1.0f))
+            {
+                int2 prevPixel = int2(floor(prevUv * float2(dimensions)));
+                Guide prev = UnpackGuide(gPrevGuide.Load(int3(prevPixel, 0)));
+                float expectedPrevDistance = CameraDistance(guide.PrevWorldPos, gPrevEyePosW.xyz);
+                float3 prevNormal = UnpackNormalRoughness(gPrevNormalRoughness.Load(int3(prevPixel, 0))).Normal;
+                bool valid = prev.InstanceIndex == guide.InstanceIdx
+                          && guide.InstanceIdx != RT_INVALID_INSTANCE
+                          && expectedPrevDistance > 0.0f
+                          && dot(guide.Normal, prevNormal) >= gRestirNormalThreshold
+                          && abs(expectedPrevDistance - prev.Distance)
+                             <= max(gRestirDepthThreshold * prev.Distance, 0.01f);
+                if (valid)
+                {
+                    GiReservoir history = RestirUnpack(gReservoirInSample.Load(int3(prevPixel, 0)),
+                                                       gReservoirInVisible.Load(int3(prevPixel, 0)),
+                                                       gReservoirInPacked.Load(int3(prevPixel, 0)));
+                    history.Age += 1u;
+                    if (history.M > 0u)
+                    {
+                        historyVisiblePos = history.VisiblePos;
+                        // Clamp the history's weight so a long-lived reservoir cannot drown this
+                        // frame's fresh candidates.
+                        uint historyM = min(history.M, uint(gRestirTemporalMClamp * float(max(reservoir.M, 1u))));
+                        // Nothing here may depend on WHICH sample the history happens to hold.
+                        // Dropping the reservoir because its selected sample is old, occluded or
+                        // fails the Jacobian conditions the chain on the outcome of its own draw:
+                        // an age cap of 30 frames measured +15% in shadow, a cap of 1 frame -30%
+                        // in sunlight. A sample that cannot be reused gets weight zero while its M
+                        // keeps diluting, the same rule the spatial pass applies to neighbours.
+                        float jacobian;
+                        float pdfAtQ = RestirJacobian(history, visiblePos, jacobian)
+                            ? RestirTargetPdf(history.Radiance, guide.Normal, RestirDirection(history, visiblePos))
+                            : 0.0f;
+                        RestirMerge(reservoir, history, historyM, pdfAtQ, jacobian, NextFloat(rngRestir));
+                    }
+                }
+            }
+        }
+
+        float pdfSelected = reservoir.M > 0u
+            ? RestirTargetPdf(reservoir.Radiance, guide.Normal, RestirDirection(reservoir, visiblePos))
+            : 0.0f;
+        RestirFinalize(reservoir, pdfSelected);
+
+        // A carried-over sample was seen from wherever this pixel's jittered primary ray landed
+        // in some earlier frame. Inside the pixel footprint that is exactly the set of points the
+        // plain estimator averages over, so re-testing such a sample from the guide point can only
+        // subtract: measured -13% in the arcade shadow, where a grazing footprint spans balusters
+        // and mouldings and one point in five sees a different set of surfaces. The test earns its
+        // ray only when the surface point itself moved further than that (an animated object; a
+        // reprojection that landed on the wrong surface). The verdict is a flag for the spatial
+        // pass to shade by, not a change to W: the stored weight sum belongs to every candidate
+        // the chain ever drew, and zeroing it over the one currently selected was measured to
+        // bleed energy out of the chain frame after frame.
+        reservoir.Flags &= ~RESTIR_FLAG_OCCLUDED;
+        if (reservoir.W > 0.0f && reservoir.Age > 0u)
+        {
+            RayDesc nextPixelRay = BuildPrimaryRay((float2(pixel) + guideOffset + float2(1.0f, 0.0f)) / float2(dimensions));
+            float footprint = guide.HitT * length(nextPixelRay.Direction - guideRay.Direction);
+            float3 shift = visiblePos - historyVisiblePos;
+            if (dot(shift, shift) > 4.0f * footprint * footprint
+                && !RestirSampleVisible(visiblePos, guide.Normal, reservoir))
+            {
+                reservoir.Flags |= RESTIR_FLAG_OCCLUDED;
+            }
+        }
+
+        // Sky pixels land here with an empty reservoir, which is exactly what the spatial pass
+        // expects to find for them.
+        float4 packedSample;
+        float4 packedVisible;
+        uint4 packedWord;
+        RestirPack(reservoir, packedSample, packedVisible, packedWord);
+        gReservoirOutSample[pixel] = packedSample;
+        gReservoirOutVisible[pixel] = packedVisible;
+        gReservoirOutPacked[pixel] = packedWord;
     }
 
     // This shader no longer accumulates: it emits one frame's estimate plus everything the
@@ -619,4 +814,174 @@ void RayGenMain()
         gLinearDepthOut[pixel] = mul(float4(currentWorld, 1.0f), gView).z;
     }
 
+}
+
+// ReSTIR GI spatial pass. Runs as a second DispatchRays once RayGenMain has filled the temporal
+// reservoirs, so every pixel can borrow its neighbours' bounce samples. Every borrowed sample is
+// checked for visibility from this pixel before it is allowed to carry weight (Ouyang et al.,
+// algorithm 4): a sample seen from a neighbour is not necessarily seen from here, and testing
+// only the final selection was measured to bias the estimate by 20-30% either way, depending on
+// whether the discarded reservoir kept its M.
+//
+// What this pass merges is shaded and then forgotten: next frame's temporal reuse reads the
+// temporal reservoir RayGenMain stored, never this result. Feeding the spatial result back was
+// measured (before the renormalisation below existed) to darken the image by ~30%: a neighbour's
+// candidates cannot cover the surfaces its point does not see, and that per-merge deficit,
+// carried into the chain and clamped at twenty times the fresh sample, compounds by roughly one
+// over one minus the retention ratio.
+// The guide, normal/roughness, direct radiance and albedo it needs are read back through the
+// same UAV table the first dispatch wrote them with.
+[shader("raygeneration")]
+void RayGenRestirSpatial()
+{
+    uint2 pixel = DispatchRaysIndex().xy;
+    uint2 dimensions = DispatchRaysDimensions().xy;
+
+    Guide guide = UnpackGuide(gGuideOut[pixel]);
+    if (guide.InstanceIndex == RT_INVALID_INSTANCE)
+    {
+        // Sky: nothing to gather onto. The provisional indirect (zero) stands.
+        return;
+    }
+    float3 visiblePos = gReservoirInVisible[pixel].xyz;
+    GiReservoir reservoir = RestirEmpty(visiblePos);
+
+    float3 nq = gNormalRoughnessOut[pixel].xyz;
+    uint rng = InitRng(pixel, PcgHash(gFrameSeed ^ 0x27d4eb2fu));
+
+    // Every neighbour merged below is remembered so the contribution weight can be normalised by
+    // the candidates that could actually have produced the selected sample (Bitterli 2020, the
+    // MIS-free unbiased combination) rather than by all of them. A neighbour whose own point does
+    // not see the chosen sample never could have generated it; dividing by its M regardless is
+    // what makes the textbook biased variant dark, and it measured -10% in the arcade shadow at
+    // every radius from 8 to 30 pixels.
+    int2 mergedTaps[RESTIR_MAX_SPATIAL_SAMPLES];
+    uint mergedCount = 0u;
+    int selectedFrom = -1;   // -1: the centre reservoir, else an index into mergedTaps
+    GiReservoir centre = RestirUnpack(gReservoirInSample[pixel], gReservoirInVisible[pixel], gReservoirInPacked[pixel]);
+    if (centre.M > 0u)
+    {
+        // RayGenMain re-tested a carried-over sample from this very point; an occluded one is
+        // shaded at weight zero here, exactly like an occluded neighbour sample below.
+        float pdfAtQ = (centre.Flags & RESTIR_FLAG_OCCLUDED) != 0u
+            ? 0.0f
+            : RestirTargetPdf(centre.Radiance, nq, RestirDirection(centre, visiblePos));
+        RestirMerge(reservoir, centre, centre.M, pdfAtQ, 1.0f, NextFloat(rng));
+    }
+
+    [loop]
+    for (uint i = 0u; i < gRestirSpatialSamples; ++i)
+    {
+        float2 u = NextFloat2(rng);
+        float radius = gRestirSpatialRadius * sqrt(u.x);
+        float angle = 2.0f * RT_PI * u.y;
+        int2 tap = int2(pixel) + int2(round(radius * float2(cos(angle), sin(angle))));
+        if (any(tap < int2(0, 0)) || any(tap >= int2(dimensions)) || all(tap == int2(pixel)))
+        {
+            continue;
+        }
+        // Same object and a similar normal, like the accumulation pass. Depth is compared on the
+        // tangent plane rather than as camera distance: a neighbour 30 pixels along a sloped
+        // floor sits at a very different distance but on the very same surface.
+        Guide tapGuide = UnpackGuide(gGuideOut[tap]);
+        if (tapGuide.InstanceIndex != guide.InstanceIndex)
+        {
+            continue;
+        }
+        float3 tapNormal = gNormalRoughnessOut[tap].xyz;
+        if (dot(nq, tapNormal) < gRestirNormalThreshold)
+        {
+            continue;
+        }
+        GiReservoir other = RestirUnpack(gReservoirInSample[tap], gReservoirInVisible[tap], gReservoirInPacked[tap]);
+        if (other.M == 0u)
+        {
+            continue;
+        }
+        if (abs(dot(nq, other.VisiblePos - visiblePos)) > gRestirDepthThreshold * guide.Distance)
+        {
+            continue;
+        }
+        // Rejections below are sample-dependent, so the neighbour's M must stay in the count
+        // either way: a candidate that was drawn but cannot be reused here is a candidate with
+        // weight zero, not a candidate that never existed. Skipping it outright was measured to
+        // brighten the estimate by ~3% per neighbour -- most rejections are bounces that landed a
+        // few centimetres from the neighbour's own surface, whose correct weight is near zero.
+        float jacobian;
+        float pdfAtQ = 0.0f;
+        if (RestirJacobian(other, visiblePos, jacobian))
+        {
+            pdfAtQ = RestirTargetPdf(other.Radiance, nq, RestirDirection(other, visiblePos));
+            // The neighbour saw its sample; this pixel may not.
+            if (pdfAtQ > 0.0f && !RestirSampleVisible(visiblePos, nq, other))
+            {
+                pdfAtQ = 0.0f;
+            }
+        }
+        if (RestirMerge(reservoir, other, other.M, pdfAtQ, jacobian, NextFloat(rng)))
+        {
+            selectedFrom = int(mergedCount);
+        }
+        if (mergedCount < RESTIR_MAX_SPATIAL_SAMPLES)
+        {
+            mergedTaps[mergedCount++] = tap;
+        }
+    }
+
+    // Everything merged here was seen from this pixel footprint: its own reservoir was vetted by
+    // RayGenMain, the neighbours' samples by the test above.
+    float3 omega = RestirDirection(reservoir, visiblePos);
+    float pdfSelected = reservoir.M > 0u ? RestirTargetPdf(reservoir.Radiance, nq, omega) : 0.0f;
+    RestirFinalize(reservoir, pdfSelected);
+
+    if (reservoir.W > 0.0f && mergedCount > 0u)
+    {
+        // Renormalise: count only the candidates of reservoirs whose own point faces and sees the
+        // selected sample. The centre always qualifies (RayGenMain accepted the sample from this
+        // very point), and a neighbour that supplied the sample qualifies by construction; each
+        // remaining neighbour costs one shadow ray from its own point.
+        uint reachable = centre.M;
+        [loop]
+        for (uint j = 0u; j < mergedCount; ++j)
+        {
+            int2 mergedTap = mergedTaps[j];
+            uint tapM = min(gReservoirInPacked[mergedTap].w, RESTIR_MAX_M);
+            if (int(j) == selectedFrom)
+            {
+                reachable += tapM;
+                continue;
+            }
+            float3 tapPos = gReservoirInVisible[mergedTap].xyz;
+            float3 tapNormal = gNormalRoughnessOut[mergedTap].xyz;
+            if (dot(tapNormal, RestirDirection(reservoir, tapPos)) > 0.0f
+                && RestirSampleVisible(tapPos, tapNormal, reservoir))
+            {
+                reachable += tapM;
+            }
+        }
+        reservoir.W = reservoir.WeightSum / (float(max(reachable, 1u)) * pdfSelected);
+    }
+
+    // Demodulated exactly like the one-bounce estimator: with M = 1 and no reuse, W = pi / cos
+    // and this collapses to the candidate's radiance.
+    float3 indirect = reservoir.W > 0.0f
+        ? reservoir.Radiance * max(0.0f, dot(nq, omega)) / RT_PI * reservoir.W
+        : 0.0f.xxx;
+
+    if (gDebugMode == RT_DEBUG_INDIRECT)
+    {
+        // Unfogged, like every debug view. The accumulator zeroes the indirect history in debug
+        // modes, so the resampled term rides the direct channel next to the specular bounce.
+        float4 direct = gRadianceOut[pixel];
+        gRadianceOut[pixel] = float4(direct.rgb + gAlbedoOut[pixel].rgb * indirect, direct.a);
+    }
+    else
+    {
+        float fogAmount;
+        float3 fogColor;
+        EvaluateFog(visiblePos, fogAmount, fogColor);
+        indirect *= 1.0f - fogAmount;
+        gIndirectOut[pixel] = float4(indirect, 0.0f);
+        gNoisyColorOut[pixel] = float4(gRadianceOut[pixel].rgb + gAlbedoOut[pixel].rgb * indirect, 1.0f);
+    }
 }

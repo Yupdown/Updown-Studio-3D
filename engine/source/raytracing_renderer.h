@@ -50,6 +50,11 @@ namespace udsdx
 			UINT HasEnvironmentMap = 0;
 			UINT FisheyeEnabled = 0;
 			float FisheyeFov = 0.0f;
+			// ReSTIR changes the estimator (bias and variance alike), so its knobs restart history.
+			UINT RestirEnabled = 0;
+			UINT RestirSpatialSamples = 0;
+			float RestirSpatialRadius = 0.0f;
+			float RestirTemporalMClamp = 0.0f;
 		};
 
 		static constexpr DXGI_FORMAT HISTORY_FORMAT = DXGI_FORMAT_R32G32B32A32_FLOAT;
@@ -69,6 +74,10 @@ namespace udsdx
 		static constexpr DXGI_FORMAT GUIDE_FORMAT = DXGI_FORMAT_R32G32B32A32_FLOAT;
 		static constexpr DXGI_FORMAT ALBEDO_FORMAT = DXGI_FORMAT_R8G8B8A8_UNORM;
 		static constexpr DXGI_FORMAT RESOLVE_FORMAT = DXGI_FORMAT_R11G11B10_FLOAT;
+		// ReSTIR reservoirs: sample position + weight and visible position in FP32, and one
+		// integer texel of packed radiance/normal/counters (see inc_restir.hlsl).
+		static constexpr DXGI_FORMAT RESERVOIR_SAMPLE_FORMAT = DXGI_FORMAT_R32G32B32A32_FLOAT;
+		static constexpr DXGI_FORMAT RESERVOIR_PACKED_FORMAT = DXGI_FORMAT_R32G32B32A32_UINT;
 
 		RaytracingRenderer(ID3D12Device5* device, ID3D12GraphicsCommandList4* commandList);
 		RaytracingRenderer(const RaytracingRenderer&) = delete;
@@ -194,6 +203,23 @@ namespace udsdx
 		// A-trous ping-pong targets. Display-side only: the temporal feedback always reads the
 		// unfiltered indirect history, so filtering never compounds across frames.
 		std::array<ComPtr<ID3D12Resource>, 2> m_filterBuffers;
+
+		// ReSTIR GI reservoirs, three textures per set (sample, visible, packed), ping-ponged on the
+		// history index. RayGenMain reads last frame's set and writes this frame's -- initial
+		// candidates plus temporal reuse -- and the spatial pass only reads it: what it merges from
+		// the neighbours is shaded, never stored, so a neighbour's missing coverage cannot compound
+		// through the temporal chain.
+		std::array<std::array<ComPtr<ID3D12Resource>, 3>, 2> m_reservoirTemporal;
+		// One SRV run per (pass, phase): the set that pass reads, then last frame's guide and
+		// normal/roughness (used by the temporal validation only). One UAV run per phase.
+		std::array<std::array<CD3DX12_CPU_DESCRIPTOR_HANDLE, 2>, 2> m_restirSrvCpu{};
+		std::array<std::array<CD3DX12_GPU_DESCRIPTOR_HANDLE, 2>, 2> m_restirSrvTable{};
+		std::array<CD3DX12_CPU_DESCRIPTOR_HANDLE, 2> m_reservoirUavCpu{};
+		std::array<CD3DX12_GPU_DESCRIPTOR_HANDLE, 2> m_reservoirUavTable{};
+		// The spatial pass's ray generation record, dispatched with a copy of m_dispatchDesc.
+		D3D12_GPU_VIRTUAL_ADDRESS_RANGE m_restirRayGenRecord{};
+		// Resolved once per frame: the option, and a debug view that can show the result.
+		bool m_restirActive = false;
 
 		// The five ray generation UAVs are allocated consecutively so one descriptor range covers
 		// direct radiance, indirect radiance, motion, the write-side guide and the albedo. One run

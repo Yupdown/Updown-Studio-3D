@@ -124,7 +124,21 @@ namespace udsdx
 		// Ceiling on a single specular bounce's contribution, after the BRDF weight.
 		float SpecularFireflyClamp = 64.0f;
 		float JitterPad2 = 0.0f;
+
+		// ReSTIR GI. RestirEnabled is the effective flag the renderer resolves per frame, not the
+		// raw option. The two thresholds are copies of the accumulation pass's, so reservoir reuse
+		// and history validation agree on what "the same surface" means.
+		UINT RestirEnabled = 1;
+		UINT RestirSpatialSamples = 4;
+		float RestirSpatialRadius = 30.0f;
+		float RestirTemporalMClamp = 20.0f;
+
+		UINT RestirPad1 = 0;
+		float RestirNormalThreshold = 0.9f;
+		float RestirDepthThreshold = 0.05f;
+		float RestirPad = 0.0f;
 	};
+	static_assert(sizeof(RaytracingConstants) == 608, "RaytracingConstants must mirror cbRaytracing in inc_raytracing.hlsl.");
 
 	// Mirrors cbAccumulate in cs_raytracing_accumulate.hlsl. Drives the temporal reprojection pass
 	// that turns this frame's 1spp radiance plus the reprojected history into the running estimate.

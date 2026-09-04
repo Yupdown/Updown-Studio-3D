@@ -134,6 +134,13 @@ namespace udsdx
 		// changing them never invalidates history. 0 disables the filter.
 		unsigned int RaytracingAtrousIterations = 4u;
 		float RaytracingAtrousLuminanceSigma = 1.0f;
+		// ReSTIR GI: the diffuse bounce becomes a per-pixel reservoir that reuses last frame's
+		// and neighbouring pixels' bounce samples, so one traced bounce behaves like many. Changes
+		// the estimator, so toggling it or its knobs restarts the accumulation.
+		bool RaytracingRestirGi = true;
+		unsigned int RaytracingRestirSpatialSamples = 4u;
+		float RaytracingRestirSpatialRadius = 30.0f;   // pixels
+		float RaytracingRestirTemporalMClamp = 20.0f;
 		float RaytracingShadowRayOffset = 1e-3f;
 		RaytracingDebugMode RaytracingDebug = RaytracingDebugMode::None;
 	};

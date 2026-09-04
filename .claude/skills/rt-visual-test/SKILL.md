@@ -80,7 +80,7 @@ Rules that matter in practice:
 - **Units of pose**: yaw 0 looks toward +Z, positive yaw turns toward +X, positive pitch looks
   down.
 - `renderOptions` is a typed whitelist (`samplesPerPixel`, `maxSamplesMoving`, fog fields,
-  `skyMaxRadiance`, `specularFireflyClamp`, `atrousIterations`, ...).
+  `skyMaxRadiance`, `specularFireflyClamp`, `restirGi`, `atrousIterations`, ...).
   Harness-owned fields are rejected as unknown keys on purpose: `drawRaytracing`, the denoiser,
   `maxSamplesStatic` (that's `-MaxSamples`), the motion-blur toggles, bloom.
 - The `gate` case (DXR actually active) is implicit, always first; the name is reserved.

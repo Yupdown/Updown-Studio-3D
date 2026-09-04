@@ -45,6 +45,7 @@ namespace udsdx
 		const wchar_t* kClosestHitName = L"ClosestHitSurface";
 		const wchar_t* kAnyHitName = L"AnyHitAlphaTest";
 		const wchar_t* kHitGroupName = L"HitGroupSurface";
+		const wchar_t* kRayGenRestirSpatialName = L"RayGenRestirSpatial";
 
 		constexpr UINT kShaderIdentifierSize = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;   // 32
 		constexpr UINT kRecordStride = D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT;   // 32
@@ -58,6 +59,8 @@ namespace udsdx
 		// 64-byte aligned and each record is 32-byte aligned, as DXR requires.
 		constexpr UINT kRayGenTableOffset = 0;
 		constexpr UINT kMissTableOffset = 64;
+		// The ReSTIR spatial pass has its own ray generation record after the two miss records.
+		constexpr UINT kRayGenRestirTableOffset = 128;
 		constexpr UINT kShaderTableSize = 192;
 
 		// Frames a retired hit group table is kept alive before release.
@@ -67,6 +70,8 @@ namespace udsdx
 		static_assert(kShaderIdentifierSize + sizeof(UINT) <= kHitGroupRecordStride, "A hit group record must fit its stride.");
 		static_assert(kHitGroupRecordStride % D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT == 0, "Hit group records must be record-aligned.");
 		static_assert(kMissTableOffset % kTableAlignment == 0, "Miss table must be table-aligned.");
+		static_assert(kRayGenRestirTableOffset % kTableAlignment == 0, "Ray generation records must be table-aligned.");
+		static_assert(kRayGenRestirTableOffset + kRecordStride <= kShaderTableSize, "The shader table must hold every record.");
 	}
 
 	RaytracingRenderer::RaytracingRenderer(ID3D12Device5* device, ID3D12GraphicsCommandList4* commandList)
@@ -113,7 +118,7 @@ namespace udsdx
 	{
 		// Global root signature. Every parameter is SHADER_VISIBILITY_ALL: raytracing (like compute)
 		// does not accept stage-specific visibility, and ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT must not
-		// be set. Total cost is 10 of the 64 available DWORDs.
+		// be set. Total cost is 12 of the 64 available DWORDs.
 		{
 			// Nine consecutive UAVs: direct radiance, indirect radiance, motion, the write-side
 			// guide, albedo, the write-side normal/roughness, linear depth, the composed noisy
@@ -130,7 +135,15 @@ namespace udsdx
 			CD3DX12_DESCRIPTOR_RANGE environmentRange;
 			environmentRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 3);
 
-			CD3DX12_ROOT_PARAMETER slotRootParameter[9]{};
+			// ReSTIR: the reservoir set a pass reads plus last frame's guide and normal/roughness
+			// (t4..t8), and the reservoir set it writes (u9..u11). Separate parameters because the
+			// two ray generation passes bind different sets while sharing the u0..u8 run.
+			CD3DX12_DESCRIPTOR_RANGE restirSrvRange;
+			restirSrvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 5, 4, 0);
+			CD3DX12_DESCRIPTOR_RANGE reservoirUavRange;
+			reservoirUavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 3, 9, 0);
+
+			CD3DX12_ROOT_PARAMETER slotRootParameter[11]{};
 			slotRootParameter[0].InitAsConstantBufferView(0, 0);        // b0: cbRaytracing
 			slotRootParameter[1].InitAsShaderResourceView(0, 0);        // t0 space0: TLAS
 			slotRootParameter[2].InitAsShaderResourceView(1, 0);        // t1 space0: gGeometryInfo
@@ -142,6 +155,8 @@ namespace udsdx
 			// space0 is the only choice left: space1 and space2 hold unbounded ranges starting at
 			// t0, and space3 is the environment cube.
 			slotRootParameter[8].InitAsShaderResourceView(3, 0);        // t3 space0: gMaterials
+			slotRootParameter[9].InitAsDescriptorTable(1, &restirSrvRange);
+			slotRootParameter[10].InitAsDescriptorTable(1, &reservoirUavRange);
 
 			// No anisotropic sampler: anisotropic filtering is illegal in raytracing shaders.
 			CD3DX12_STATIC_SAMPLER_DESC samplerDesc[] = {
@@ -313,6 +328,7 @@ namespace udsdx
 		const D3D12_SHADER_BYTECODE bytecode = { g_cso_lib_raytracing, sizeof(g_cso_lib_raytracing) };
 		library->SetDXILLibrary(&bytecode);
 		library->DefineExport(kRayGenName);
+		library->DefineExport(kRayGenRestirSpatialName);
 		library->DefineExport(kMissRadianceName);
 		library->DefineExport(kMissShadowName);
 		library->DefineExport(kClosestHitName);
@@ -380,6 +396,8 @@ namespace udsdx
 			m_stateObjectProperties->GetShaderIdentifier(kMissRadianceName), kShaderIdentifierSize);
 		std::memcpy(mapped + kMissTableOffset + kRecordStride,
 			m_stateObjectProperties->GetShaderIdentifier(kMissShadowName), kShaderIdentifierSize);
+		std::memcpy(mapped + kRayGenRestirTableOffset,
+			m_stateObjectProperties->GetShaderIdentifier(kRayGenRestirSpatialName), kShaderIdentifierSize);
 
 		m_shaderTable->Unmap(0, nullptr);
 
@@ -387,6 +405,7 @@ namespace udsdx
 		m_dispatchDesc = {};
 		m_dispatchDesc.RayGenerationShaderRecord = { base + kRayGenTableOffset, kRecordStride };
 		m_dispatchDesc.MissShaderTable = { base + kMissTableOffset, kRecordStride * 2, kRecordStride };
+		m_restirRayGenRecord = { base + kRayGenRestirTableOffset, kRecordStride };
 	}
 
 	void RaytracingRenderer::EnsureHitGroupTable(UINT geometryCount)
@@ -601,6 +620,12 @@ namespace udsdx
 		createTarget(m_indirectHistoryBuffers[1], HISTORY_FORMAT, L"RaytracingRenderer::IndirectHistory1");
 		createTarget(m_filterBuffers[0], RADIANCE_FORMAT, L"RaytracingRenderer::Filter0");
 		createTarget(m_filterBuffers[1], RADIANCE_FORMAT, L"RaytracingRenderer::Filter1");
+		createTarget(m_reservoirTemporal[0][0], RESERVOIR_SAMPLE_FORMAT, L"RaytracingRenderer::Reservoir0Sample");
+		createTarget(m_reservoirTemporal[0][1], RESERVOIR_SAMPLE_FORMAT, L"RaytracingRenderer::Reservoir0Visible");
+		createTarget(m_reservoirTemporal[0][2], RESERVOIR_PACKED_FORMAT, L"RaytracingRenderer::Reservoir0Packed");
+		createTarget(m_reservoirTemporal[1][0], RESERVOIR_SAMPLE_FORMAT, L"RaytracingRenderer::Reservoir1Sample");
+		createTarget(m_reservoirTemporal[1][1], RESERVOIR_SAMPLE_FORMAT, L"RaytracingRenderer::Reservoir1Visible");
+		createTarget(m_reservoirTemporal[1][2], RESERVOIR_PACKED_FORMAT, L"RaytracingRenderer::Reservoir1Packed");
 
 		m_dispatchDesc.Width = m_renderWidth;
 		m_dispatchDesc.Height = m_renderHeight;
@@ -631,6 +656,26 @@ namespace udsdx
 			claim(nullptr, nullptr); // linear depth UAV
 			claim(nullptr, nullptr); // noisy colour UAV
 			claim(nullptr, nullptr); // specular albedo UAV
+		}
+
+		// ReSTIR: one SRV run per (pass, phase) -- the reservoir set that pass reads, then last
+		// frame's guide and normal/roughness -- and one UAV run per phase for the set written.
+		for (int pass = 0; pass < 2; ++pass)
+		{
+			for (int phase = 0; phase < 2; ++phase)
+			{
+				claim(&m_restirSrvCpu[pass][phase], &m_restirSrvTable[pass][phase]);
+				claim(nullptr, nullptr); // reservoir visible
+				claim(nullptr, nullptr); // reservoir packed
+				claim(nullptr, nullptr); // guide[read]
+				claim(nullptr, nullptr); // normal/roughness[read]
+			}
+		}
+		for (int phase = 0; phase < 2; ++phase)
+		{
+			claim(&m_reservoirUavCpu[phase], &m_reservoirUavTable[phase]);
+			claim(nullptr, nullptr); // reservoir visible
+			claim(nullptr, nullptr); // reservoir packed
 		}
 
 		// Accumulation SRV runs, one per phase: direct radiance, indirect radiance, motion,
@@ -722,8 +767,38 @@ namespace udsdx
 			m_device->CreateShaderResourceView(resource, &srvDesc, handle);
 		};
 
+		// ReSTIR reservoir UAV runs, one per phase: the set RayGenMain writes that frame.
 		for (int phase = 0; phase < 2; ++phase)
 		{
+			const auto& written = m_reservoirTemporal[phase];
+			CD3DX12_CPU_DESCRIPTOR_HANDLE reservoirUav = m_reservoirUavCpu[phase];
+			makeUav(written[0].Get(), RESERVOIR_SAMPLE_FORMAT, reservoirUav);
+			reservoirUav.Offset(1, descriptorSize);
+			makeUav(written[1].Get(), RESERVOIR_SAMPLE_FORMAT, reservoirUav);
+			reservoirUav.Offset(1, descriptorSize);
+			makeUav(written[2].Get(), RESERVOIR_PACKED_FORMAT, reservoirUav);
+		}
+
+		for (int phase = 0; phase < 2; ++phase)
+		{
+			// ReSTIR SRV runs for this phase: RayGenMain reads last frame's set, the spatial pass
+			// this frame's; both get last frame's guide and normal/roughness for the temporal
+			// validation (the spatial pass ignores those two).
+			for (int pass = 0; pass < 2; ++pass)
+			{
+				const auto& read = pass == 0 ? m_reservoirTemporal[1 - phase] : m_reservoirTemporal[phase];
+				CD3DX12_CPU_DESCRIPTOR_HANDLE restirSrv = m_restirSrvCpu[pass][phase];
+				makeSrv(read[0].Get(), RESERVOIR_SAMPLE_FORMAT, restirSrv);
+				restirSrv.Offset(1, descriptorSize);
+				makeSrv(read[1].Get(), RESERVOIR_SAMPLE_FORMAT, restirSrv);
+				restirSrv.Offset(1, descriptorSize);
+				makeSrv(read[2].Get(), RESERVOIR_PACKED_FORMAT, restirSrv);
+				restirSrv.Offset(1, descriptorSize);
+				makeSrv(m_guideBuffers[1 - phase].Get(), GUIDE_FORMAT, restirSrv);
+				restirSrv.Offset(1, descriptorSize);
+				makeSrv(m_normalRoughnessBuffers[1 - phase].Get(), NORMAL_ROUGHNESS_FORMAT, restirSrv);
+			}
+
 			CD3DX12_CPU_DESCRIPTOR_HANDLE uav = m_raygenUavCpu[phase];
 			makeUav(m_radianceBuffer.Get(), RADIANCE_FORMAT, uav);
 			uav.Offset(1, descriptorSize);
@@ -911,6 +986,15 @@ namespace udsdx
 		constants.JitterOffsetX = m_jitterOffset.x;
 		constants.JitterOffsetY = m_jitterOffset.y;
 		constants.JitterGuideRay = m_activeDenoiser == RaytracingDenoiserMode::DlssRayReconstruction ? 1u : 0u;
+
+		constants.RestirEnabled = m_restirActive ? 1u : 0u;
+		// 16 is also RESTIR_MAX_SPATIAL_SAMPLES: the spatial pass keeps one tap coordinate per
+		// merged neighbour in a fixed-size array.
+		constants.RestirSpatialSamples = std::min(options.RaytracingRestirSpatialSamples, 16u);
+		constants.RestirSpatialRadius = std::max(1.0f, options.RaytracingRestirSpatialRadius);
+		constants.RestirTemporalMClamp = std::max(0.0f, options.RaytracingRestirTemporalMClamp);
+		constants.RestirNormalThreshold = options.RaytracingNormalThreshold;
+		constants.RestirDepthThreshold = options.RaytracingDepthThreshold;
 
 		m_constantBuffers[param.FrameResourceIndex]->CopyData(0, constants);
 		m_prevViewProj = viewProj;
@@ -1236,6 +1320,10 @@ namespace udsdx
 		// Switching projection remaps every pixel, so no history survives it.
 		settings.FisheyeEnabled = param.RenderOptions->RaytracingFisheye ? 1u : 0u;
 		settings.FisheyeFov = param.RenderOptions->RaytracingFisheyeFov;
+		settings.RestirEnabled = param.RenderOptions->RaytracingRestirGi ? 1u : 0u;
+		settings.RestirSpatialSamples = param.RenderOptions->RaytracingRestirSpatialSamples;
+		settings.RestirSpatialRadius = param.RenderOptions->RaytracingRestirSpatialRadius;
+		settings.RestirTemporalMClamp = param.RenderOptions->RaytracingRestirTemporalMClamp;
 		if (light != nullptr)
 		{
 			settings.SunDirection = light->GetLightDirection();
@@ -1277,6 +1365,12 @@ namespace udsdx
 			m_activeDenoiser = requested;
 		}
 
+		// The spatial pass only runs where its output has somewhere to go: the normal path, or
+		// the indirect debug view, which shows the resampled term in the direct channel.
+		const RaytracingDebugMode debugMode = param.RenderOptions->RaytracingDebug;
+		m_restirActive = param.RenderOptions->RaytracingRestirGi
+			&& (debugMode == RaytracingDebugMode::None || debugMode == RaytracingDebugMode::IndirectOnly);
+
 		UploadConstants(param, camera, light, hasEnvironmentMap);
 
 		TransitionForWrite(dxrCommandList, m_radianceBuffer.Get());
@@ -1288,6 +1382,13 @@ namespace udsdx
 		TransitionForWrite(dxrCommandList, m_linearDepthBuffer.Get());
 		TransitionForWrite(dxrCommandList, m_specularAlbedoBuffer.Get());
 		TransitionForWrite(dxrCommandList, m_noisyColorBuffer.Get());
+		if (m_restirActive)
+		{
+			for (auto& reservoir : m_reservoirTemporal[m_historyWriteIndex])
+			{
+				TransitionForWrite(dxrCommandList, reservoir.Get());
+			}
+		}
 
 		const CD3DX12_GPU_DESCRIPTOR_HANDLE heapStart(param.SRVDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 
@@ -1303,9 +1404,32 @@ namespace udsdx
 			? environmentMap->GetCubeMapSrvGpu() : m_dummyEnvironmentGpuSrv);
 		dxrCommandList->SetComputeRootShaderResourceView(8,
 			INSTANCE(Core)->GetMaterialTable()->GetAddress(frameResourceIndex));
+		// Always bound so the table slots are never stale; only read when ReSTIR is active.
+		dxrCommandList->SetComputeRootDescriptorTable(9, m_restirSrvTable[0][m_historyWriteIndex]);
+		dxrCommandList->SetComputeRootDescriptorTable(10, m_reservoirUavTable[m_historyWriteIndex]);
 
 		dxrCommandList->SetPipelineState1(m_stateObject.Get());
 		dxrCommandList->DispatchRays(&m_dispatchDesc);
+
+		if (m_restirActive)
+		{
+			// The spatial pass reads what the first dispatch wrote through the same UAV table
+			// (guide, normal/roughness, direct radiance, albedo), so a UAV barrier orders the two.
+			const D3D12_RESOURCE_BARRIER uavBarrier = CD3DX12_RESOURCE_BARRIER::UAV(nullptr);
+			dxrCommandList->ResourceBarrier(1, &uavBarrier);
+			for (auto& reservoir : m_reservoirTemporal[m_historyWriteIndex])
+			{
+				TransitionForRead(dxrCommandList, reservoir.Get());
+			}
+
+			// The spatial pass writes no reservoir; its UAV table is bound to the other phase's
+			// (idle) set only so the parameter is never left dangling.
+			dxrCommandList->SetComputeRootDescriptorTable(9, m_restirSrvTable[1][m_historyWriteIndex]);
+			dxrCommandList->SetComputeRootDescriptorTable(10, m_reservoirUavTable[m_historyReadIndex]);
+			D3D12_DISPATCH_RAYS_DESC spatialDesc = m_dispatchDesc;
+			spatialDesc.RayGenerationShaderRecord = m_restirRayGenRecord;
+			dxrCommandList->DispatchRays(&spatialDesc);
+		}
 
 		// Real state transitions, not UAV barriers: the accumulation pass reads them all as SRVs.
 		TransitionForRead(dxrCommandList, m_radianceBuffer.Get());

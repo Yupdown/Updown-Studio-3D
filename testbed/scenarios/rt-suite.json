@@ -29,6 +29,29 @@
       "skipOnQuick": true,
       "requires": ["determinism_ref"]
     },
+    // ReSTIR GI is on by default, so the cases above measure the shipped estimator. These repeat
+    // the two calibrated checks with it off: the control group for the reuse passes, and the
+    // path every other AOV case implicitly relies on.
+    {
+      "name": "primary_restir_off",
+      "evaluator": "primary",
+      "hold": true,
+      "atrousToggle": true,
+      "renderOptions": { "restirGi": false }
+    },
+    {
+      "name": "determinism_ref_restir_off",
+      "evaluator": "determinismRef",
+      "skipOnQuick": true,
+      "renderOptions": { "restirGi": false }
+    },
+    {
+      "name": "determinism_restir_off",
+      "evaluator": "determinism",
+      "skipOnQuick": true,
+      "requires": ["determinism_ref_restir_off"],
+      "renderOptions": { "restirGi": false }
+    },
     { "name": "aov_albedo",   "evaluator": "aovAlbedo",   "debugMode": "albedo",            "convergeFrames": 8 },
     { "name": "aov_normal",   "evaluator": "aovNormal",   "debugMode": "normal",            "convergeFrames": 8 },
     { "name": "aov_motion",   "evaluator": "aovMotion",   "debugMode": "motionVector",      "convergeFrames": 8 },

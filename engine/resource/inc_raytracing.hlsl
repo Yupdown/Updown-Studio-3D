@@ -16,6 +16,9 @@
 
 #define RT_PI                   3.14159265359f
 
+// ReSTIR GI reservoirs. Resource-free like inc_brdf.hlsl; needs RT_PI, hence the order.
+#include "inc_restir.hlsl"
+
 // Mirrors RaytracingGeometryInfo in acceleration_structure.h (32 bytes).
 struct GeometryInfo
 {
@@ -109,6 +112,19 @@ cbuffer cbRaytracing : register(b0, space0)
     // Ceiling on a single specular bounce's contribution, after the BRDF weight.
     float    gSpecularFireflyClamp;
     float    gJitterPad;
+
+    // ReSTIR GI. gRestirEnabled is the EFFECTIVE flag: the option, and a debug view that can
+    // show the result (none, or indirect only). The thresholds mirror the accumulation pass so
+    // reservoir reuse and history validation agree on what "the same surface" means.
+    uint     gRestirEnabled;
+    uint     gRestirSpatialSamples;   // neighbours merged per pixel
+    float    gRestirSpatialRadius;    // pixels
+    float    gRestirTemporalMClamp;   // M_prev <= clamp * M_current
+
+    uint     gRestirPad1;             // was an age cap; rejecting a reservoir by its selected sample's age biases the chain
+    float    gRestirNormalThreshold;
+    float    gRestirDepthThreshold;
+    float    gRestirPad;
 };
 
 // Per-instance previous object-to-world, indexed by InstanceIndex(). Column-vector 3x4, matching
@@ -138,6 +154,20 @@ RWTexture2D<float4>             gNormalRoughnessOut  : register(u5, space0);  //
 RWTexture2D<float>              gLinearDepthOut      : register(u6, space0);  // view-space Z
 RWTexture2D<float4>             gNoisyColorOut       : register(u7, space0);  // un-accumulated direct + albedo * indirect
 RWTexture2D<float4>             gSpecularAlbedoOut   : register(u8, space0);  // split-sum EnvBRDFApprox(f0, roughness, NoV)
+
+// ReSTIR GI reservoirs (see inc_restir.hlsl for the packing). The set being read comes in as
+// SRVs: for RayGenMain that is last frame's temporal set plus last frame's guide and
+// normal/roughness for temporal validation; for the spatial pass it is this frame's temporal
+// set, and the two extra slots are ignored. RayGenMain writes this frame's set through the UAVs;
+// the spatial pass writes nothing back.
+Texture2D<float4>               gReservoirInSample   : register(t4, space0);
+Texture2D<float4>               gReservoirInVisible  : register(t5, space0);
+Texture2D<uint4>                gReservoirInPacked   : register(t6, space0);
+Texture2D<float4>               gPrevGuide           : register(t7, space0);
+Texture2D<float4>               gPrevNormalRoughness : register(t8, space0);
+RWTexture2D<float4>             gReservoirOutSample  : register(u9, space0);
+RWTexture2D<float4>             gReservoirOutVisible : register(u10, space0);
+RWTexture2D<uint4>              gReservoirOutPacked  : register(u11, space0);
 
 // Two separate unbounded tables over the same shader-visible SRV heap, so a heap index is the
 // bindless lookup index in both cases -- the same convention Texture::GetSrvIndex already uses.

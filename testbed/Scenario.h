@@ -94,6 +94,10 @@ namespace rttest
 		std::optional<float> SkyMaxRadiance;
 		std::optional<float> SpecularSkyMaxRadiance;
 		std::optional<float> SpecularFireflyClamp;
+		std::optional<bool> RestirGi;
+		std::optional<unsigned int> RestirSpatialSamples;
+		std::optional<float> RestirSpatialRadius;
+		std::optional<float> RestirTemporalMClamp;
 		std::optional<unsigned int> AtrousIterations;
 		std::optional<float> AtrousLuminanceSigma;
 		std::optional<float> ShadowRayOffset;
