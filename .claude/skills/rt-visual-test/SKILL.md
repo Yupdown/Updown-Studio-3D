@@ -66,7 +66,6 @@ read the PNGs. No rebuild, no window interaction. Annotated examples:
     "convergeFrames": -1,                // -1 => MaxSamples + 64
     "renderHeight": 0,                   // 0 = display res; else 32..8192
     "hold": false,                       // + "hold" capture after 16 still frames
-    "atrousToggle": false,               // + "atrous_off" capture
     "motionBlurCoverage": false,         // converge/nudge/replay flow, back-buffer captures
     "skipOnQuick": false,                // dropped under -Quick
     "requires": [],                      // cases -Case pulls in along with this one
@@ -89,7 +88,7 @@ Rules that matter in practice:
   down.
 - `renderOptions` is a typed whitelist (`samplesPerPixel`, `maxSamplesMoving`, fog fields,
   `skyMaxRadiance`, `specularFireflyClamp`, `restirGi`, `restirSpatialSamples`,
-  `restirSpatialRadius`, `restirTemporalMClamp`, `restirPermutation`, `atrousIterations`, ...).
+  `restirSpatialRadius`, `restirTemporalMClamp`, `restirPermutation`, ...).
   Harness-owned fields are rejected as unknown keys on purpose: `drawRaytracing`,
   `maxSamplesStatic` (that's `-MaxSamples`), the motion-blur toggles, bloom. The denoiser is a
   case-level `denoiser` key, not a render option: the suite's baseline forces the built-in one,
@@ -113,7 +112,7 @@ Rules that matter in practice:
 ## Evaluators
 
 `evaluator` picks the check function; all but `captureOnly` are the calibrated suite checks:
-`primary` (needs `hold`+`atrousToggle`), `determinismRef`/`determinism` (the latter needs an
+`primary` (needs `hold`), `determinismRef`/`determinism` (the latter needs an
 earlier ref case), `aovAlbedo`, `aovNormal`, `aovMotion`, `aovMaterial`, `aovEmission`,
 `aovFurnace`, `aovSpecular`, `heatmap`, `motionBlurCoverage` (needs the flag of the same name).
 They are calibrated against the default scene and pose — pointing them at a custom scene is
@@ -122,8 +121,8 @@ allowed but the thresholds no longer mean what they meant.
 `captureOnly` (the default) gates only on real defects — `capture_valid` (the readback produced
 an image) and `nan_inf` — and reports everything else as **informational stats**: summary lines
 like `PASS front/stat_lum_mean value=0.42 thr=null`. `stat_*` + `thr=null` = a measurement, not
-a check. With `hold`/`atrousToggle`/`motionBlurCoverage` it also emits pair-diff stats
-(`stat_temporal_*`, `stat_atrous_*`, `stat_blur_*`). `stat_lum_stddev` is a firefly meter, not a
+a check. With `hold`/`motionBlurCoverage` it also emits pair-diff stats
+(`stat_temporal_*`, `stat_blur_*`). `stat_lum_stddev` is a firefly meter, not a
 noise meter; for noise or bias, load the `converged.hdr` files, box-blur them and compare against
 a 64-spp single-frame reference case (`"samplesPerPixel": 64` with `-MaxSamples 1`).
 
@@ -159,8 +158,8 @@ acceleration-structure warm-up perturbs it by ~1e-7 relative *between runs of th
 alone; re-run the same binary first and compare the spread. The same applies to a custom
 scenario's `stat_lum_*` between two process runs: agreement to ~5-6 significant digits is
 expected, bit-exact PNGs are not (within-process warm-vs-warm is the only bit-exact comparison).
-`primary/atrous_*` and `primary/temporal_*` are the loosest of the lot — they are small
-differences of nearly equal images, so they amplify that wobble into their 6th significant digit.
+`primary/temporal_*` is the loosest of the lot — it is a small difference of nearly equal
+images, so it amplifies that wobble into its 6th significant digit.
 
 Anything read from a capture is quantised by the HDR target's `R11G11B10_FLOAT`: 6 mantissa bits
 on R and G, 5 on B. Near 1.0 that is a quantum of ~0.008, so `aov_furnace`'s bounds resolve energy
@@ -171,7 +170,7 @@ errors to about a percent regardless of how many digits they print.
 | Case | Invariant |
 |---|---|
 | `gate` | DXR is supported AND the raytracer actually replaced the raster path |
-| `primary` | no NaN/Inf, no fireflies, sane luminance; the converged image stays put over 16 held frames (temporal stability — catches jitter/reprojection bugs); a-trous on/off shifts image energy < 5% |
+| `primary` | no NaN/Inf, no fireflies, sane luminance; the converged image stays put over 16 held frames (temporal stability — catches jitter/reprojection bugs) |
 | `determinism_ref` / `determinism` | two warm re-convergences over the same RNG/jitter sequence reproduce the same image (the cold boot convergence is excluded: acceleration-structure warm-up shifts silhouettes deterministically) |
 | `aov_albedo` / `aov_normal` | debug AOVs finite, structured, in encoded range (bottom 30% of the frame only — the miss shader writes radiance, not the encoded quantity, so sky pixels are excluded) |
 | `aov_motion` | motion-vector AOV is uniform 0.5 grey for a static scene (any deviation = motion/jitter-compensation bug) |
@@ -210,7 +209,10 @@ the frame is always floor, which the AOV range checks depend on.
   logic after `FinishSuite`, and scenario parse failures terminate via `FailSetup` the same way.
 - Anything that touches `RadianceSettings` (fog, sun, spp, debug mode) mid-case drops the
   accumulation history; the harness therefore applies scenario `renderOptions` only while loading
-  a case. `RaytracingAtrousIterations` is the deliberate exception (display-side only).
+  a case.
+- The built-in denoiser is **temporal accumulation only**. Spatial locality comes from ReSTIR GI's
+  resampling upstream (`restirGi`, on by default); there is no spatial filter to toggle, so a
+  noise comparison is a ReSTIR on/off pair, not a filter on/off pair.
 - `DrawMotionBlur` is off for every case **except** the `motionBlurCoverage` ones, which also
   raise `MotionBlurShutterSpeed`. Between cases the whole `RenderOptions` baseline is restored,
   so overrides never leak forward.

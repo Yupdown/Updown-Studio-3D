@@ -14,7 +14,6 @@
 #include "compiled_shaders/vs_drawscreen.h"
 #include "compiled_shaders/ps_raytracing_resolve.h"
 #include "compiled_shaders/cs_raytracing_accumulate.h"
-#include "compiled_shaders/cs_raytracing_atrous.h"
 #include "compiled_shaders/lib_raytracing.h"
 
 namespace udsdx
@@ -96,7 +95,6 @@ namespace udsdx
 			BuildShaderTables();
 		}
 		BuildAccumulatePipelineState();
-		BuildAtrousPipelineState();
 		BuildResolvePipelineState();
 		CreateDummyEnvironmentCube();
 	}
@@ -241,44 +239,8 @@ namespace udsdx
 			m_accumulateRootSignature->SetName(L"RaytracingRenderer::Accumulate");
 		}
 
-		// A-trous filter root signature: root constants plus separate single-descriptor tables,
-		// because the source alternates between the indirect history and the filter ping-pong.
-		{
-			CD3DX12_DESCRIPTOR_RANGE sourceRange;
-			sourceRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
-			CD3DX12_DESCRIPTOR_RANGE guideRange;
-			guideRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
-			CD3DX12_DESCRIPTOR_RANGE normalRoughnessRange;
-			normalRoughnessRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2);
-			CD3DX12_DESCRIPTOR_RANGE destinationRange;
-			destinationRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
-
-			CD3DX12_ROOT_PARAMETER slotRootParameter[5]{};
-			slotRootParameter[0].InitAsConstants(8, 0);
-			slotRootParameter[1].InitAsDescriptorTable(1, &sourceRange);
-			slotRootParameter[2].InitAsDescriptorTable(1, &guideRange);
-			slotRootParameter[3].InitAsDescriptorTable(1, &normalRoughnessRange);
-			slotRootParameter[4].InitAsDescriptorTable(1, &destinationRange);
-
-			CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(_countof(slotRootParameter), slotRootParameter,
-				0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_NONE);
-
-			ComPtr<ID3DBlob> serializedRootSig;
-			ComPtr<ID3DBlob> errorBlob;
-			HRESULT hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1,
-				serializedRootSig.GetAddressOf(), errorBlob.GetAddressOf());
-			if (errorBlob != nullptr)
-			{
-				::OutputDebugStringA(static_cast<char*>(errorBlob->GetBufferPointer()));
-			}
-			ThrowIfFailed(hr);
-			ThrowIfFailed(m_device->CreateRootSignature(0, serializedRootSig->GetBufferPointer(),
-				serializedRootSig->GetBufferSize(), IID_PPV_ARGS(m_atrousRootSignature.GetAddressOf())));
-			m_atrousRootSignature->SetName(L"RaytracingRenderer::Atrous");
-		}
-
-		// Resolve pass root signature: debug constants plus the direct history and the filtered
-		// indirect.
+		// Resolve pass root signature: debug constants plus the direct and indirect histories and
+		// the albedo the indirect term is re-modulated with.
 		{
 			CD3DX12_DESCRIPTOR_RANGE accumulationRange;
 			accumulationRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
@@ -463,16 +425,6 @@ namespace udsdx
 		m_accumulatePipelineState->SetName(L"RaytracingRenderer::Accumulate");
 	}
 
-	void RaytracingRenderer::BuildAtrousPipelineState()
-	{
-		D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc = {};
-		psoDesc.pRootSignature = m_atrousRootSignature.Get();
-		psoDesc.CS = { g_cso_cs_raytracing_atrous, sizeof(g_cso_cs_raytracing_atrous) };
-
-		ThrowIfFailed(m_device->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(m_atrousPipelineState.GetAddressOf())));
-		m_atrousPipelineState->SetName(L"RaytracingRenderer::Atrous");
-	}
-
 	void RaytracingRenderer::BuildResolvePipelineState()
 	{
 		D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc;
@@ -618,8 +570,6 @@ namespace udsdx
 		createTarget(m_historyBuffers[1], HISTORY_FORMAT, L"RaytracingRenderer::History1");
 		createTarget(m_indirectHistoryBuffers[0], HISTORY_FORMAT, L"RaytracingRenderer::IndirectHistory0");
 		createTarget(m_indirectHistoryBuffers[1], HISTORY_FORMAT, L"RaytracingRenderer::IndirectHistory1");
-		createTarget(m_filterBuffers[0], RADIANCE_FORMAT, L"RaytracingRenderer::Filter0");
-		createTarget(m_filterBuffers[1], RADIANCE_FORMAT, L"RaytracingRenderer::Filter1");
 		createTarget(m_reservoirTemporal[0][0], RESERVOIR_SAMPLE_FORMAT, L"RaytracingRenderer::Reservoir0Sample");
 		createTarget(m_reservoirTemporal[0][1], RESERVOIR_SAMPLE_FORMAT, L"RaytracingRenderer::Reservoir0Visible");
 		createTarget(m_reservoirTemporal[0][2], RESERVOIR_PACKED_FORMAT, L"RaytracingRenderer::Reservoir0Packed");
@@ -710,30 +660,12 @@ namespace udsdx
 		}
 		for (int i = 0; i < 2; ++i)
 		{
-			claim(&m_guideCpuSrv[i], &m_guideGpuSrv[i]);
-		}
-		for (int i = 0; i < 2; ++i)
-		{
-			claim(&m_normalRoughnessCpuSrv[i], &m_normalRoughnessGpuSrv[i]);
-		}
-
-		for (int i = 0; i < 2; ++i)
-		{
 			claim(&m_historyCpuSrv[i], &m_historyGpuSrv[i]);
 		}
 		for (int i = 0; i < 2; ++i)
 		{
 			claim(&m_indirectHistoryCpuSrv[i], &m_indirectHistoryGpuSrv[i]);
 		}
-		for (int i = 0; i < 2; ++i)
-		{
-			claim(&m_filterCpuSrv[i], &m_filterGpuSrv[i]);
-		}
-		for (int i = 0; i < 2; ++i)
-		{
-			claim(&m_filterCpuUav[i], &m_filterGpuUav[i]);
-		}
-
 		claim(&m_dummyEnvironmentCpuSrv, &m_dummyEnvironmentGpuSrv);
 
 		RebuildDescriptors();
@@ -862,12 +794,8 @@ namespace udsdx
 			depthDesc.Texture2D.MipLevels = 1;
 			m_device->CreateShaderResourceView(m_guideBuffers[i].Get(), &depthDesc, m_guideDepthCpuSrv[i]);
 
-			makeSrv(m_guideBuffers[i].Get(), GUIDE_FORMAT, m_guideCpuSrv[i]);
-			makeSrv(m_normalRoughnessBuffers[i].Get(), NORMAL_ROUGHNESS_FORMAT, m_normalRoughnessCpuSrv[i]);
 			makeSrv(m_historyBuffers[i].Get(), HISTORY_FORMAT, m_historyCpuSrv[i]);
 			makeSrv(m_indirectHistoryBuffers[i].Get(), HISTORY_FORMAT, m_indirectHistoryCpuSrv[i]);
-			makeSrv(m_filterBuffers[i].Get(), RADIANCE_FORMAT, m_filterCpuSrv[i]);
-			makeUav(m_filterBuffers[i].Get(), RADIANCE_FORMAT, m_filterCpuUav[i]);
 		}
 
 		if (m_dummyEnvironmentCube != nullptr && m_dummyEnvironmentCpuSrv.ptr != 0)
@@ -1125,67 +1053,6 @@ namespace udsdx
 		return evaluated;
 	}
 
-	void RaytracingRenderer::AtrousFilter(RenderParam& param)
-	{
-		// The temporal feedback path is untouched by design: next frame reprojects the UNFILTERED
-		// indirect history, so smoothing applies once per displayed frame and never compounds.
-		const UINT iterations = std::min(param.RenderOptions->RaytracingAtrousIterations, 5u);
-		if (iterations == 0u)
-		{
-			m_resolveIndirectSrv = m_indirectHistoryGpuSrv[m_historyWriteIndex];
-			return;
-		}
-
-		ZoneScopedN("Raytracing Atrous");
-		TracyD3D12Zone(*param.TracyQueueContext, param.CommandList, "Raytracing Atrous");
-
-		auto* commandList = param.CommandList;
-
-		struct AtrousConstants
-		{
-			float RenderTargetWidth;
-			float RenderTargetHeight;
-			UINT StepSize;
-			float LuminanceSigma;
-			float NormalPower;
-			float DepthTolerance;
-			float Pad0;
-			float Pad1;
-		};
-
-		commandList->SetComputeRootSignature(m_atrousRootSignature.Get());
-		commandList->SetPipelineState(m_atrousPipelineState.Get());
-
-		for (UINT i = 0; i < iterations; ++i)
-		{
-			const int destination = static_cast<int>(i & 1u);
-
-			AtrousConstants constants = {};
-			constants.RenderTargetWidth = static_cast<float>(m_renderWidth);
-			constants.RenderTargetHeight = static_cast<float>(m_renderHeight);
-			constants.StepSize = 1u << i;
-			constants.LuminanceSigma = std::max(0.01f, param.RenderOptions->RaytracingAtrousLuminanceSigma);
-			constants.NormalPower = 32.0f;
-			constants.DepthTolerance = 0.1f;
-
-			TransitionForWrite(commandList, m_filterBuffers[destination].Get());
-
-			commandList->SetComputeRoot32BitConstants(0, 8, &constants, 0);
-			commandList->SetComputeRootDescriptorTable(1, i == 0u
-				? m_indirectHistoryGpuSrv[m_historyWriteIndex]
-				: m_filterGpuSrv[1 - destination]);
-			commandList->SetComputeRootDescriptorTable(2, m_guideGpuSrv[m_historyWriteIndex]);
-			commandList->SetComputeRootDescriptorTable(3, m_normalRoughnessGpuSrv[m_historyWriteIndex]);
-			commandList->SetComputeRootDescriptorTable(4, m_filterGpuUav[destination]);
-
-			commandList->Dispatch((m_renderWidth + 7u) / 8u, (m_renderHeight + 7u) / 8u, 1u);
-
-			TransitionForRead(commandList, m_filterBuffers[destination].Get());
-		}
-
-		m_resolveIndirectSrv = m_filterGpuSrv[(iterations - 1u) & 1u];
-	}
-
 	void RaytracingRenderer::ResolveToTarget(RenderParam& param)
 	{
 		auto* commandList = param.CommandList;
@@ -1219,15 +1086,11 @@ namespace udsdx
 			primary = m_noisyColorGpuSrv;
 		}
 
-		// Only the built-in path leaves a filtered indirect term behind. The other modes still have
-		// to bind something real here: the shader ignores it, but a root descriptor table cannot be
-		// left pointing at nothing.
-		const D3D12_GPU_DESCRIPTOR_HANDLE indirect = m_activeDenoiser == RaytracingDenoiserMode::Builtin
-			? m_resolveIndirectSrv
-			: m_indirectHistoryGpuSrv[m_historyWriteIndex];
-
+		// The built-in path re-modulates the accumulated indirect history with the albedo. The other
+		// modes ignore this table under gPassthrough, but a root descriptor table cannot be left
+		// pointing at nothing, so they bind the same real view.
 		commandList->SetGraphicsRootDescriptorTable(1, primary);
-		commandList->SetGraphicsRootDescriptorTable(2, indirect);
+		commandList->SetGraphicsRootDescriptorTable(2, m_indirectHistoryGpuSrv[m_historyWriteIndex]);
 		commandList->SetGraphicsRootDescriptorTable(3, m_albedoGpuSrv);
 		commandList->DrawInstanced(6, 1, 0, 0);
 	}
@@ -1455,8 +1318,9 @@ namespace udsdx
 		}
 		else if (m_activeDenoiser == RaytracingDenoiserMode::Builtin)
 		{
+			// Temporal accumulation is the whole of the built-in denoiser: spatial locality comes
+			// from ReSTIR GI's resampling upstream, not from a filter here.
 			AccumulateTemporal(param);
-			AtrousFilter(param);
 		}
 
 		ResolveToTarget(param);

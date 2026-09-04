@@ -90,7 +90,6 @@ namespace udsdx
 		void BuildShaderTables();
 		void EnsureHitGroupTable(UINT geometryCount);
 		void BuildAccumulatePipelineState();
-		void BuildAtrousPipelineState();
 		void BuildResolvePipelineState();
 		void BuildResources();
 		void BuildDescriptors(DescriptorParam& descriptorParam);
@@ -141,7 +140,6 @@ namespace udsdx
 		// Runs DLSS Ray Reconstruction in place of the two passes above. Returns false when
 		// anything is missing, which leaves the caller to fall back for this frame.
 		bool DenoiseWithRayReconstruction(RenderParam& param);
-		void AtrousFilter(RenderParam& param);
 		void ResolveToTarget(RenderParam& param);
 		void TransitionForWrite(ID3D12GraphicsCommandList* commandList, ID3D12Resource* resource);
 		void TransitionForRead(ID3D12GraphicsCommandList* commandList, ID3D12Resource* resource);
@@ -175,18 +173,17 @@ namespace udsdx
 
 		ComPtr<ID3D12RootSignature> m_accumulateRootSignature;
 		ComPtr<ID3D12PipelineState> m_accumulatePipelineState;
-		ComPtr<ID3D12RootSignature> m_atrousRootSignature;
-		ComPtr<ID3D12PipelineState> m_atrousPipelineState;
 		ComPtr<ID3D12RootSignature> m_resolveRootSignature;
 		ComPtr<ID3D12PipelineState> m_resolvePipelineState;
 
 		// Ray generation outputs, consumed by the accumulation pass in the same frame. Direct and
-		// indirect radiance are separate so the a-trous filter can smooth only the indirect term.
+		// indirect radiance are separate: the indirect term is demodulated by the primary albedo
+		// before accumulation (and resampled by ReSTIR), and the resolve re-multiplies it.
 		ComPtr<ID3D12Resource> m_radianceBuffer;
 		ComPtr<ID3D12Resource> m_indirectRadianceBuffer;
-		// Primary-surface albedo from the centre guide ray. The indirect channel accumulates and
-		// filters demodulated irradiance; the resolve multiplies this back in per pixel, so texture
-		// detail never passes through the a-trous blur.
+		// Primary-surface albedo from the centre guide ray. The indirect channel accumulates
+		// demodulated irradiance; the resolve multiplies this back in per pixel, so texture detail
+		// never rides the accumulated (temporally blended) channel.
 		ComPtr<ID3D12Resource> m_albedoBuffer;
 		ComPtr<ID3D12Resource> m_motionBuffer;
 		// Written for DLSS Ray Reconstruction, and read by the engine's own denoiser wherever the
@@ -204,9 +201,6 @@ namespace udsdx
 		std::array<ComPtr<ID3D12Resource>, 2> m_guideBuffers;
 		std::array<ComPtr<ID3D12Resource>, 2> m_historyBuffers;
 		std::array<ComPtr<ID3D12Resource>, 2> m_indirectHistoryBuffers;
-		// A-trous ping-pong targets. Display-side only: the temporal feedback always reads the
-		// unfiltered indirect history, so filtering never compounds across frames.
-		std::array<ComPtr<ID3D12Resource>, 2> m_filterBuffers;
 
 		// ReSTIR GI reservoirs, three textures per set (sample, visible, packed), ping-ponged on the
 		// history index. RayGenMain reads last frame's set and writes this frame's -- initial
@@ -245,16 +239,6 @@ namespace udsdx
 		std::array<CD3DX12_GPU_DESCRIPTOR_HANDLE, 2> m_historyGpuSrv{};
 		std::array<CD3DX12_CPU_DESCRIPTOR_HANDLE, 2> m_indirectHistoryCpuSrv{};
 		std::array<CD3DX12_GPU_DESCRIPTOR_HANDLE, 2> m_indirectHistoryGpuSrv{};
-		// Plain per-phase guide SRVs for the a-trous passes' edge weights.
-		std::array<CD3DX12_CPU_DESCRIPTOR_HANDLE, 2> m_guideCpuSrv{};
-		std::array<CD3DX12_GPU_DESCRIPTOR_HANDLE, 2> m_guideGpuSrv{};
-		std::array<CD3DX12_CPU_DESCRIPTOR_HANDLE, 2> m_filterCpuSrv{};
-		std::array<CD3DX12_GPU_DESCRIPTOR_HANDLE, 2> m_filterGpuSrv{};
-		std::array<CD3DX12_CPU_DESCRIPTOR_HANDLE, 2> m_filterCpuUav{};
-		std::array<CD3DX12_GPU_DESCRIPTOR_HANDLE, 2> m_filterGpuUav{};
-		// Where the resolve reads its indirect term this frame: the last a-trous target, or the raw
-		// indirect history when the filter is disabled.
-		D3D12_GPU_DESCRIPTOR_HANDLE m_resolveIndirectSrv{};
 		CD3DX12_CPU_DESCRIPTOR_HANDLE m_albedoCpuSrv{};
 		CD3DX12_GPU_DESCRIPTOR_HANDLE m_albedoGpuSrv{};
 		// The resolve reads whichever of these the selected denoiser produced.
@@ -262,10 +246,6 @@ namespace udsdx
 		CD3DX12_GPU_DESCRIPTOR_HANDLE m_noisyColorGpuSrv{};
 		CD3DX12_CPU_DESCRIPTOR_HANDLE m_dlssOutputCpuSrv{};
 		CD3DX12_GPU_DESCRIPTOR_HANDLE m_dlssOutputGpuSrv{};
-		// For the a-trous passes' normal edge stop. The accumulation pass reads its own pair out
-		// of the contiguous SRV run below.
-		std::array<CD3DX12_CPU_DESCRIPTOR_HANDLE, 2> m_normalRoughnessCpuSrv{};
-		std::array<CD3DX12_GPU_DESCRIPTOR_HANDLE, 2> m_normalRoughnessGpuSrv{};
 
 		// Contiguous SRV run the accumulation pass binds as one table:
 		// radiance, motion, guide[write], guide[read], history[read].

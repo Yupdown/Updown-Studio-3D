@@ -26,9 +26,8 @@
   "cases": [
     {
       "name": "converged",
-      "description": "full convergence, plus hold and atrous-off captures for temporal/filter inspection",
-      "hold": true,
-      "atrousToggle": true
+      "description": "full convergence, plus a hold capture for temporal inspection",
+      "hold": true
     },
     {
       "name": "albedo",

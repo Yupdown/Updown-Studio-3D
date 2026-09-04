@@ -130,10 +130,6 @@ namespace udsdx
 		// clamp above: a mirror reflecting sky at that ceiling is a legitimate 64, and capping
 		// lower would make the roughness interpolation inert.
 		float RaytracingSpecularFireflyClamp = 64.0f;
-		// Edge-aware a-trous passes over the accumulated indirect radiance. Display-side only, so
-		// changing them never invalidates history. 0 disables the filter.
-		unsigned int RaytracingAtrousIterations = 4u;
-		float RaytracingAtrousLuminanceSigma = 1.0f;
 		// ReSTIR GI: the diffuse bounce becomes a per-pixel reservoir that reuses last frame's
 		// and neighbouring pixels' bounce samples, so one traced bounce behaves like many. Changes
 		// the estimator, so toggling it or its knobs restarts the accumulation.

@@ -246,8 +246,6 @@ add_engine_shader(resource/cs_motion_blur_neighbormax.hlsl CS cs_6_0)
 add_engine_shader(resource/cs_motion_blur_tilemax.hlsl CS cs_6_0)
 add_engine_shader(resource/cs_raytracing_accumulate.hlsl CS cs_6_0
     DEPENDS_ON "${ENGINE_SHADER_INC_RT_COMMON}")
-add_engine_shader(resource/cs_raytracing_atrous.hlsl CS cs_6_0
-    DEPENDS_ON "${ENGINE_SHADER_INC_RT_COMMON}")
 add_engine_shader(resource/cs_screenspace_ao_blur.hlsl CS cs_6_0)
 add_engine_shader(resource/cs_env_equirect_to_cubemap.hlsl CS cs_6_0)
 add_engine_shader(resource/cs_env_irradiance_convolution.hlsl CS cs_6_0

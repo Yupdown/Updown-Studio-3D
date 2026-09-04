@@ -419,7 +419,6 @@ namespace
 			"rayMaxDistance", "skyMaxRadiance", "specularSkyMaxRadiance", "specularFireflyClamp",
 			"restirGi", "restirSpatialSamples", "restirSpatialRadius", "restirTemporalMClamp",
 			"restirPermutation",
-			"atrousIterations", "atrousLuminanceSigma",
 			"shadowRayOffset", "fogColor", "fogSunColor", "fogDensity", "fogHeightFalloff",
 			"fogDistanceStart" });
 
@@ -477,8 +476,6 @@ namespace
 		{
 			overrides.RestirPermutation = GetBool(obj, context, "restirPermutation", true);
 		}
-		optionalUInt("atrousIterations", overrides.AtrousIterations);
-		optionalFloat("atrousLuminanceSigma", overrides.AtrousLuminanceSigma);
 		optionalFloat("shadowRayOffset", overrides.ShadowRayOffset);
 		optionalColor("fogColor", overrides.FogColor);
 		optionalColor("fogSunColor", overrides.FogSunColor);
@@ -502,7 +499,7 @@ namespace
 
 		RequireKnownKeys(obj, context,
 			{ "name", "description", "evaluator", "debugMode", "denoiser", "convergeFrames",
-			  "renderHeight", "hold", "atrousToggle", "motionBlurCoverage", "skipOnQuick",
+			  "renderHeight", "hold", "motionBlurCoverage", "skipOnQuick",
 			  "requires", "pose", "renderOptions" });
 
 		if (result.Name.empty() || result.Name.size() > 64)
@@ -540,7 +537,6 @@ namespace
 			FailAt(context, "renderHeight", "must be 0 (display resolution) or 32..8192");
 		}
 		result.Hold = GetBool(obj, context, "hold", false);
-		result.AtrousToggle = GetBool(obj, context, "atrousToggle", false);
 		result.MotionBlurCoverage = GetBool(obj, context, "motionBlurCoverage", false);
 		result.SkipOnQuick = GetBool(obj, context, "skipOnQuick", false);
 
@@ -625,21 +621,19 @@ namespace
 				}
 			}
 
-			// The motion blur flow replaces the plain converge-and-capture, so the hold/atrous
-			// captures would silently never happen -- reject instead of ignoring.
-			if (c.MotionBlurCoverage && (c.Hold || c.AtrousToggle))
+			// The motion blur flow replaces the plain converge-and-capture, so the hold capture
+			// would silently never happen -- reject instead of ignoring.
+			if (c.MotionBlurCoverage && c.Hold)
 			{
-				FailAt(context, "motionBlurCoverage",
-					"cannot be combined with \"hold\" or \"atrousToggle\"");
+				FailAt(context, "motionBlurCoverage", "cannot be combined with \"hold\"");
 			}
 
 			switch (c.Evaluator)
 			{
 			case ScenarioEvaluator::Primary:
-				if (!c.Hold || !c.AtrousToggle)
+				if (!c.Hold)
 				{
-					FailAt(context, "evaluator",
-						"reads the hold and atrous_off captures -- set \"hold\" and \"atrousToggle\" to true");
+					FailAt(context, "evaluator", "reads the hold capture -- set \"hold\" to true");
 				}
 				break;
 			case ScenarioEvaluator::Determinism:

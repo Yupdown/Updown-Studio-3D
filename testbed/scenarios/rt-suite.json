@@ -12,8 +12,7 @@
     {
       "name": "primary",
       "evaluator": "primary",
-      "hold": true,
-      "atrousToggle": true
+      "hold": true
     },
     // Two warm re-convergences over the same RNG/jitter sequence must reproduce the same image
     // bit-exactly. The cold boot convergence is excluded by construction: acceleration-structure
@@ -36,7 +35,6 @@
       "name": "primary_restir_off",
       "evaluator": "primary",
       "hold": true,
-      "atrousToggle": true,
       "renderOptions": { "restirGi": false }
     },
     {

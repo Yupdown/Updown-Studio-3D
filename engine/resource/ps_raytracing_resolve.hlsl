@@ -20,10 +20,10 @@ cbuffer cbResolve : register(b0)
 // Direct history: rgb running mean, a = effective sample count. Never spatially filtered, so sun
 // patches, sky and fog stay pixel-sharp.
 Texture2D gHistory : register(t0);
-// Indirect IRRADIANCE after the a-trous filter chain (or the raw indirect history when the filter
-// is off). Demodulated: the primary albedo was factored out before accumulation and filtering.
+// Accumulated indirect IRRADIANCE. Demodulated: the primary albedo was factored out before ReSTIR
+// resampling and temporal accumulation.
 Texture2D gIndirect : register(t1);
-// Full-resolution primary albedo from the centre guide ray, re-applied here after the blur.
+// Full-resolution primary albedo from the centre guide ray, re-applied here.
 Texture2D gAlbedo : register(t2);
 
 SamplerState gsamPointClamp : register(s0);

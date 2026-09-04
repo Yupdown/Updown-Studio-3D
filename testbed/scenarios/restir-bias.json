@@ -20,8 +20,8 @@
   "name": "restir-bias",
   "description": "per-frame estimator comparison with ReSTIR GI off and on",
   "cases": [
-    { "name": "off",     "convergeFrames": 64, "renderOptions": { "restirGi": false, "atrousIterations": 0 } },
-    { "name": "on",      "convergeFrames": 64, "renderOptions": { "restirGi": true,  "atrousIterations": 0 } },
+    { "name": "off",     "convergeFrames": 64, "renderOptions": { "restirGi": false } },
+    { "name": "on",      "convergeFrames": 64, "renderOptions": { "restirGi": true } },
     { "name": "dir_off", "convergeFrames": 64, "debugMode": "directOnly", "renderOptions": { "restirGi": false } },
     { "name": "dir_on",  "convergeFrames": 64, "debugMode": "directOnly", "renderOptions": { "restirGi": true } },
     { "name": "ind_off", "convergeFrames": 64, "debugMode": "indirectOnly", "renderOptions": { "restirGi": false } },

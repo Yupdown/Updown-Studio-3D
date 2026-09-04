@@ -24,8 +24,8 @@
 
 #define RT_INVALID_INSTANCE     0xFFFFFFFFu
 
-// Per-pixel geometric identity written by the ray generation shader and consumed by both the
-// temporal validation and the spatial filter's edge-stopping weights.
+// Per-pixel geometric identity written by the ray generation shader and consumed by the temporal
+// validation and by ReSTIR's neighbour tests.
 //
 // Normals used to live here octahedral-encoded, which was a concession to fitting everything in
 // one RGBA32F. DLSS Ray Reconstruction wants an uncompressed 3-channel normal anyway, so the

@@ -42,7 +42,8 @@ Texture2D<float4>   gPrevNormalRoughness : register(t8); // previous frame
 
 // Both channels reproject through the same motion vector, validate against the same guide and
 // share one sample count; only the radiance being averaged differs. Keeping them separate is what
-// lets the spatial filter smooth the noisy indirect estimate without touching sharp direct light.
+// lets the indirect estimate be demodulated (and resampled by ReSTIR) without touching sharp,
+// view-dependent direct light.
 RWTexture2D<float4> gHistoryOut         : register(u0);
 RWTexture2D<float4> gIndirectHistoryOut : register(u1);
 

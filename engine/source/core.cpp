@@ -1304,7 +1304,7 @@ namespace udsdx
 		ImGui::SetNextWindowPos(ImVec2(410, 0), ImGuiCond_FirstUseEver);
 		if (ImGui::Begin("Raytracing (DXR)", &m_showRaytracingWindow))
 		{
-			// Several labels here are long ("Max Samples (in motion)", "A-Trous Luminance Sigma"),
+			// Several labels here are long ("Max Samples (in motion)", "Normal Tolerance (cos)"),
 			// so the widgets are given a fixed share and the rest is left for text.
 			ImGui::PushItemWidth(300.0f);
 
@@ -1499,14 +1499,6 @@ namespace udsdx
 			ImGui::SliderFloat("Temporal M Clamp", &options.RaytracingRestirTemporalMClamp, 0.0f, 64.0f, "%.0f");
 			ImGui::Checkbox("Temporal Permutation", &options.RaytracingRestirPermutation);
 			ImGui::EndDisabled();
-
-			ImGui::SeparatorText("Denoiser");
-			int atrousIterations = static_cast<int>(options.RaytracingAtrousIterations);
-			if (ImGui::SliderInt("A-Trous Iterations", &atrousIterations, 0, 5))
-			{
-				options.RaytracingAtrousIterations = static_cast<unsigned int>(atrousIterations);
-			}
-			ImGui::SliderFloat("A-Trous Luminance Sigma", &options.RaytracingAtrousLuminanceSigma, 0.1f, 4.0f, "%.2f");
 
 			ImGui::SeparatorText("Fisheye");
 			ImGui::Checkbox("Fisheye Projection", &options.RaytracingFisheye);

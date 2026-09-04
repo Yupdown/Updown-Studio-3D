@@ -53,10 +53,6 @@ namespace
 		// so a healthy accumulator moves each pixel by a small fraction of its noise floor.
 		constexpr double TemporalMeanAbs = 0.002;
 		constexpr double TemporalP99 = 0.05;
-		// A-trous on vs off after convergence: the filter redistributes indirect radiance but
-		// must not create or destroy energy at image scale.
-		constexpr double AtrousMeanShift = 0.05;
-		constexpr double AtrousP99 = 1.0;
 		// Full re-convergence from invalidated history vs the first convergence, same process,
 		// same RNG/jitter sequence (the frame counter is reset per case). Isolated silhouette
 		// pixels may still flip on GPU BVH-build variance, hence the robust p99.9 as the primary
@@ -105,10 +101,8 @@ namespace
 
 	constexpr int kWarmupTimeoutFrames = 120;
 	constexpr int kHoldFrames = 16;
-	constexpr int kAtrousSettleFrames = 2;
 	constexpr int kCaptureTimeoutFrames = 10;
 	constexpr int kGlobalFrameBudget = 20000;
-	constexpr unsigned int kBaselineAtrous = 4u;
 
 	// Yaw applied for the one frame each motion blur capture is taken on. Rotation, not
 	// translation: a translation's motion field vanishes at the focus of expansion, which sits near
@@ -465,7 +459,6 @@ namespace
 		RaytracingDebugMode Debug;
 		int ConvergeFrames; // -1 => MaxSamples + 64
 		bool Hold;          // second capture kHoldFrames later (temporal stability)
-		bool AtrousToggle;  // third capture with the a-trous filter disabled
 		void (*Evaluate)(CaseState&);
 		// Raytracing render height the case runs at; 0 leaves the display resolution. Defaulted so
 		// the existing positional entries in BuildCaseTable keep compiling untouched.
@@ -500,7 +493,6 @@ namespace
 		CaptureA,
 		Hold,
 		CaptureB,
-		AtrousSettle,
 		// Motion blur flow, between Converge and CaptureA / CaptureC respectively.
 		MotionNudgeA,
 		MotionReconverge,
@@ -643,18 +635,6 @@ namespace
 		AddCheck(cs, "temporal_p99", temporal.P99Abs <= thresholds::TemporalP99 * sampleScale,
 			temporal.P99Abs, thresholds::TemporalP99 * sampleScale,
 			"p99 |luminance delta| across held frames");
-
-		LumStats withAtrous = ComputeLumStats(cs.A);
-		LumStats withoutAtrous = ComputeLumStats(cs.C);
-		const double meanShift =
-			std::abs(withAtrous.Mean - withoutAtrous.Mean) / std::max(withAtrous.Mean, 1e-6);
-		AddCheck(cs, "atrous_mean_shift", meanShift <= thresholds::AtrousMeanShift,
-			meanShift, thresholds::AtrousMeanShift,
-			"relative mean-luminance shift when the a-trous filter is disabled");
-		DiffStats atrous = ComputeDiffStats(cs.A, cs.C);
-		AddCheck(cs, "atrous_p99", atrous.P99Abs <= thresholds::AtrousP99,
-			atrous.P99Abs, thresholds::AtrousP99,
-			"p99 |luminance delta| between filtered and unfiltered indirect");
 	}
 
 	// First of two warm re-convergences: only records the reference image. The cold first
@@ -947,17 +927,15 @@ namespace
 		}
 		if (cs.C.Valid())
 		{
-			// C is the atrous_off capture, unless the case ran the motion blur flow, where it is
-			// the blur_on back-buffer capture instead.
-			const bool blur = cs.Def != nullptr && cs.Def->MotionBlurCoverage;
+			// C only exists for the motion blur flow: the blur_on back-buffer capture.
 			const double cNonFinite = static_cast<double>(CountNonFinite(cs.C));
-			AddCheck(cs, blur ? "nan_inf_blur_on" : "nan_inf_atrous_off",
+			AddCheck(cs, "nan_inf_blur_on",
 				cNonFinite <= thresholds::NanCount, cNonFinite, thresholds::NanCount,
 				"non-finite texels in the second capture");
 			const DiffStats diff = ComputeDiffStats(cs.A, cs.C);
-			AddCheck(cs, blur ? "stat_blur_mean" : "stat_atrous_mean", true, diff.MeanAbs,
+			AddCheck(cs, "stat_blur_mean", true, diff.MeanAbs,
 				kStatOnly, "mean |luminance delta| between the pair");
-			AddCheck(cs, blur ? "stat_blur_p99" : "stat_atrous_p99", true, diff.P99Abs,
+			AddCheck(cs, "stat_blur_p99", true, diff.P99Abs,
 				kStatOnly, "p99 |luminance delta| between the pair");
 		}
 	}
@@ -991,8 +969,6 @@ namespace
 		apply(o.RestirSpatialRadius, ro.RaytracingRestirSpatialRadius);
 		apply(o.RestirTemporalMClamp, ro.RaytracingRestirTemporalMClamp);
 		apply(o.RestirPermutation, ro.RaytracingRestirPermutation);
-		apply(o.AtrousIterations, ro.RaytracingAtrousIterations);
-		apply(o.AtrousLuminanceSigma, ro.RaytracingAtrousLuminanceSigma);
 		apply(o.ShadowRayOffset, ro.RaytracingShadowRayOffset);
 		apply(o.FogDensity, ro.FogDensity);
 		apply(o.FogHeightFalloff, ro.FogHeightFalloff);
@@ -1394,7 +1370,7 @@ namespace
 	{
 		// The DXR gate always runs first: every other case silently measures the raster fallback
 		// if the raytracer never actually took over, so nothing may run before it.
-		const CaseDef gateDef = { "gate", RaytracingDebugMode::None, 0, false, false, &EvaluateGate };
+		const CaseDef gateDef = { "gate", RaytracingDebugMode::None, 0, false, &EvaluateGate };
 
 		g_cases.push_back(gateDef);
 
@@ -1453,7 +1429,6 @@ namespace
 			def.Debug = static_cast<RaytracingDebugMode>(sc.DebugMode);
 			def.ConvergeFrames = sc.ConvergeFrames;
 			def.Hold = sc.Hold;
-			def.AtrousToggle = sc.AtrousToggle;
 			def.Evaluate = kEvaluatorTable[static_cast<size_t>(sc.Evaluator)];
 			def.RenderHeight = sc.RenderHeight;
 			def.MotionBlurCoverage = sc.MotionBlurCoverage;
@@ -1629,7 +1604,6 @@ namespace
 			// never un-force the harness-owned fields, which are part of the snapshot.
 			ro = g_baselineRenderOptions;
 			ro.RaytracingDebug = g_current.Def->Debug;
-			ro.RaytracingAtrousIterations = kBaselineAtrous;
 			// Core::Render acts on this before the frame is recorded: it flushes the queue,
 			// recreates every raytracing buffer at the new size and drops the history. Warmup
 			// waits on IsHistoryValid afterwards, so the case starts from a settled state.
@@ -1788,8 +1762,7 @@ namespace
 					AdvanceStage(Stage::MotionReconverge);
 					return;
 				}
-				AdvanceStage(g_current.Def->Hold ? Stage::Hold
-					: (g_current.Def->AtrousToggle ? Stage::AtrousSettle : Stage::Evaluate));
+				AdvanceStage(g_current.Def->Hold ? Stage::Hold : Stage::Evaluate);
 				return;
 			}
 			if (g_framesInStage >= kCaptureTimeoutFrames)
@@ -1817,7 +1790,7 @@ namespace
 		{
 			if (g_capturesInFlight == 0 && g_framesInStage >= 1)
 			{
-				AdvanceStage(g_current.Def->AtrousToggle ? Stage::AtrousSettle : Stage::Evaluate);
+				AdvanceStage(Stage::Evaluate);
 				return;
 			}
 			if (g_framesInStage >= kCaptureTimeoutFrames)
@@ -1826,26 +1799,10 @@ namespace
 			}
 			return;
 		}
-		case Stage::AtrousSettle:
-		{
-			if (g_framesInStage == 1)
-			{
-				// Display-side only: disabling the a-trous filter does not invalidate history,
-				// so this compares two presentations of the same converged accumulation.
-				Ro().RaytracingAtrousIterations = 0u;
-			}
-			if (g_framesInStage >= kAtrousSettleFrames)
-			{
-				EnqueueCapturePair("atrous_off", g_current.C, false);
-				AdvanceStage(Stage::CaptureC);
-			}
-			return;
-		}
 		case Stage::CaptureC:
 		{
 			if (g_capturesInFlight == 0 && g_framesInStage >= 1)
 			{
-				Ro().RaytracingAtrousIterations = kBaselineAtrous;
 				// Evaluate reads the render extent back off the renderer, so the render height has
 				// to stay put until the next LoadCase resets it -- only the blur goes back here.
 				Ro().DrawMotionBlur = false;

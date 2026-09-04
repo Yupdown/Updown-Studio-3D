@@ -270,8 +270,8 @@ float SpecularSkyClamp(float roughness)
 //
 // This is a second ray rather than a stochastic choice between a diffuse and a specular lobe.
 // Lobe selection would fire the diffuse ray only with probability pD, degrading the channel that
-// is carefully filtered downstream, and would stack selection variance on top of lobe variance in
-// the channel that has NO spatial filter. A dedicated ray costs 2 rays per sample and keeps both
+// ReSTIR resamples downstream, and would stack selection variance on top of lobe variance in the
+// channel that has no resampling at all. A dedicated ray costs 2 rays per sample and keeps both
 // estimators clean. Specular variance is low exactly where it matters (smooth metal is nearly a
 // mirror) and high only where throughput is ~0.04 anyway (rough dielectrics).
 float3 TraceSpecularBounce(float3 origin, float3 normal, float3 V, float3 baseColor,
@@ -324,7 +324,7 @@ float3 TraceSpecularBounce(float3 origin, float3 normal, float3 V, float3 baseCo
                  + hit.Emission;
     }
 
-    // Clamp the contribution, not just the sky: this channel is never spatially filtered, so one
+    // Clamp the contribution, not just the sky: this channel is never resampled or filtered, so one
     // bright emissive or sunlit surface caught in a near-mirror persists as a visible speck until
     // temporal accumulation grinds it down -- and it never converges at all while the camera moves.
     return min(weight * incoming, gSpecularFireflyClamp.xxx);
@@ -345,8 +345,8 @@ struct RestirCandidate
 
 // Emits the direct term (sun + primary sky + fog in-scatter) and the indirect term (the one
 // diffuse bounce) separately. Indirect carries nearly all of the estimator's variance -- indoors
-// it is a lottery over which bounce rays find a lit patch -- so the spatial filter downstream
-// smooths only that channel and the crisp sun shapes in the direct channel stay sharp.
+// it is a lottery over which bounce rays find a lit patch -- so ReSTIR resamples only that channel
+// and the crisp sun shapes in the direct channel stay sharp.
 void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 indirectOut,
                out RestirCandidate candidate)
 {
@@ -376,8 +376,7 @@ void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 ind
         return;
     }
 
-    // Debug views ride the direct channel with indirect zeroed: the resolve displays their sum,
-    // and a zeroed indirect stays zero through the spatial filter.
+    // Debug views ride the direct channel with indirect zeroed: the resolve displays their sum.
     if (gDebugMode == RT_DEBUG_ALBEDO)
     {
         // Base colour, deliberately NOT the diffuse albedo gAlbedoOut now carries. This view exists
@@ -417,7 +416,7 @@ void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 ind
     // indirect channel instead would divide it by the primary albedo and blow up wherever that is
     // near zero -- exactly the surfaces an emissive material tends to have. The sun's specular lobe
     // rides it for the same reason: it is view-dependent, so demodulating it by a view-independent
-    // albedo would be wrong, and it is sharp where the filtered channel is smooth.
+    // albedo would be wrong, and it is sharp where the resampled channel is smooth.
     float3 direct = DirectSun(position, primary.Normal, primaryV, primary.Albedo, primaryMaterial, rng)
                   + primary.Emission;
 
@@ -483,8 +482,8 @@ void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 ind
     // Debug views stay unfogged so they show the raw quantity being inspected.
     if (gDebugMode == RT_DEBUG_DIRECT)
     {
-        // The specular bounce is deliberately absent: it rides the direct channel for filtering
-        // reasons, but it is indirect light and this view answers "what does the sun do here".
+        // The specular bounce is deliberately absent: it rides the direct channel because it is
+        // view-dependent, but it is indirect light and this view answers "what does the sun do here".
         directOut = direct;
         return;
     }
@@ -523,11 +522,12 @@ void TracePath(RayDesc ray, inout uint rng, out float3 directOut, out float3 ind
     float3 fogColor;
     EvaluateFog(position, fogAmount, fogColor);
     directOut = (direct + specularIndirect) * (1.0f - fogAmount) + fogColor * fogAmount;
-    // DEMODULATED: the primary albedo is deliberately absent. The spatial filter smooths this
-    // channel, and albedo baked into it would smear texture detail along with the noise -- the
-    // resolve re-multiplies the full-resolution albedo AFTER filtering, so texture stays sharp
-    // while irradiance (which really is spatially smooth) takes the blur. The bounce surface's
-    // own albedo stays inside `incoming`: it is genuinely part of the incident light's colour.
+    // DEMODULATED: the primary albedo is deliberately absent. ReSTIR resamples and the
+    // accumulator blends this channel, and albedo baked into it would smear texture detail along
+    // with the noise -- the resolve re-multiplies the full-resolution albedo AFTERWARDS, so texture
+    // stays sharp while irradiance (which really is spatially smooth) is what gets averaged. The
+    // bounce surface's own albedo stays inside `incoming`: it is genuinely part of the incident
+    // light's colour.
     indirectOut = incoming * (1.0f - fogAmount);
 }
 

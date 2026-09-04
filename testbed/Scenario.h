@@ -99,8 +99,6 @@ namespace rttest
 		std::optional<float> RestirSpatialRadius;
 		std::optional<float> RestirTemporalMClamp;
 		std::optional<bool> RestirPermutation;
-		std::optional<unsigned int> AtrousIterations;
-		std::optional<float> AtrousLuminanceSigma;
 		std::optional<float> ShadowRayOffset;
 		std::optional<std::array<float, 3>> FogColor;
 		std::optional<std::array<float, 3>> FogSunColor;
@@ -119,7 +117,6 @@ namespace rttest
 		int ConvergeFrames = -1;     // -1 => MaxSamples + 64
 		unsigned int RenderHeight = 0u;
 		bool Hold = false;
-		bool AtrousToggle = false;
 		bool MotionBlurCoverage = false;
 		bool SkipOnQuick = false;
 		std::vector<std::string> Requires;  // pulled in when --case selects this case
