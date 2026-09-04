@@ -55,6 +55,7 @@ namespace udsdx
 			UINT RestirSpatialSamples = 0;
 			float RestirSpatialRadius = 0.0f;
 			float RestirTemporalMClamp = 0.0f;
+			UINT RestirPermute = 0;
 		};
 
 		static constexpr DXGI_FORMAT HISTORY_FORMAT = DXGI_FORMAT_R32G32B32A32_FLOAT;

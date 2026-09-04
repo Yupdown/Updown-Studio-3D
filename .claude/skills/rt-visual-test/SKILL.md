@@ -1,6 +1,6 @@
 ---
 name: rt-visual-test
-description: Run the raytracing visual-quality testbed (scenario-driven captures with machine-readable checks) and interpret its results. Use after changing the raytracing renderer, denoiser, jitter/reprojection, or shaders to verify no visual artifacts were introduced — and use a custom scenario file whenever you need deterministic target screenshots of any scene/pose/setting without touching C++ or driving the demo by hand.
+description: Run the raytracing visual-quality testbed (scenario-driven captures with machine-readable checks) and interpret its results. Use after changing the raytracing renderer, denoiser, jitter/reprojection, or shaders to verify no visual artifacts were introduced — and use a custom scenario file whenever you need deterministic target screenshots of any scene/pose/setting. Verification goes through the testbed only; the interactive demo is never launched or driven for it.
 ---
 
 # RT visual-quality testbed
@@ -10,6 +10,12 @@ separate from the interactive `demo`. Everything it renders and measures is desc
 **scenario file**; the default is the committed regression suite
 [testbed/scenarios/rt-suite.json](testbed/scenarios/rt-suite.json) — the reference Sponza +
 DamagedHelmet scene from the pinned camera. **Suite cases are edited in that JSON, not in C++.**
+
+**Verify with the testbed only. Never launch or drive `demo.exe` to check a change.** Anything
+the demo can show — a pose, a debug view, a render option, the DLSS Ray Reconstruction path, a
+long-running temporal chain — is expressed as a scenario case and read back as an HDR capture
+plus `stat_*` lines. If something genuinely cannot be reached from a scenario, add the missing
+case-level key or render option to the testbed rather than reaching for the demo window.
 Thresholds and check logic stay calibrated in [testbed/RtTestbed.cpp](testbed/RtTestbed.cpp)
 (`namespace thresholds`); a scenario chooses structure, never calibration.
 
@@ -55,6 +61,8 @@ read the PNGs. No rebuild, no window interaction. Annotated examples:
     "evaluator": "captureOnly",          // default; see the registry below
     "debugMode": "none",                 // none|albedo|normal|directOnly|indirectOnly|motionVector|
                                          // sampleHeatmap|metallicRoughness|emission|specularOnly|brdfFurnace
+    "denoiser": "builtin",               // builtin (default, deterministic) | off (raw per-frame estimate,
+                                         // exactly what a denoiser is fed) | dlssRayReconstruction
     "convergeFrames": -1,                // -1 => MaxSamples + 64
     "renderHeight": 0,                   // 0 = display res; else 32..8192
     "hold": false,                       // + "hold" capture after 16 still frames
@@ -80,9 +88,15 @@ Rules that matter in practice:
 - **Units of pose**: yaw 0 looks toward +Z, positive yaw turns toward +X, positive pitch looks
   down.
 - `renderOptions` is a typed whitelist (`samplesPerPixel`, `maxSamplesMoving`, fog fields,
-  `skyMaxRadiance`, `specularFireflyClamp`, `restirGi`, `atrousIterations`, ...).
-  Harness-owned fields are rejected as unknown keys on purpose: `drawRaytracing`, the denoiser,
-  `maxSamplesStatic` (that's `-MaxSamples`), the motion-blur toggles, bloom.
+  `skyMaxRadiance`, `specularFireflyClamp`, `restirGi`, `restirSpatialSamples`,
+  `restirSpatialRadius`, `restirTemporalMClamp`, `restirPermutation`, `atrousIterations`, ...).
+  Harness-owned fields are rejected as unknown keys on purpose: `drawRaytracing`,
+  `maxSamplesStatic` (that's `-MaxSamples`), the motion-blur toggles, bloom. The denoiser is a
+  case-level `denoiser` key, not a render option: the suite's baseline forces the built-in one,
+  and a case that names `dlssRayReconstruction` or `off` gets it for that case only.
+- The renderer falls back to the built-in denoiser silently (no Streamline, unsupported GPU,
+  fisheye, any debug view), so every captureOnly case reports `stat_denoiser` (0 off, 1 built-in,
+  2 DLSS-RR): read it before trusting a Ray Reconstruction measurement.
 - The `gate` case (DXR actually active) is implicit, always first; the name is reserved.
 - Each case re-runs from a clean state (history invalidated, RNG/jitter counter reset), so
   per-case poses and overrides never contaminate the next case.
@@ -109,7 +123,9 @@ allowed but the thresholds no longer mean what they meant.
 an image) and `nan_inf` — and reports everything else as **informational stats**: summary lines
 like `PASS front/stat_lum_mean value=0.42 thr=null`. `stat_*` + `thr=null` = a measurement, not
 a check. With `hold`/`atrousToggle`/`motionBlurCoverage` it also emits pair-diff stats
-(`stat_temporal_*`, `stat_atrous_*`, `stat_blur_*`).
+(`stat_temporal_*`, `stat_atrous_*`, `stat_blur_*`). `stat_lum_stddev` is a firefly meter, not a
+noise meter; for noise or bias, load the `converged.hdr` files, box-blur them and compare against
+a 64-spp single-frame reference case (`"samplesPerPixel": 64` with `-MaxSamples 1`).
 
 ## Exit codes
 
@@ -220,7 +236,15 @@ the frame is always floor, which the AOV range checks depend on.
 - The suite runs the **raytracer only** — `DrawRaytracing` is forced on and the gate skips
   everything if it is not. Nothing here covers the deferred raster path, and its lighting shader is
   compiled at *runtime* from `resource/shader/color.hlsl`, so a successful build proves nothing
-  about it. Raster changes need the demo, or a temporary local flip of that flag.
+  about it. Raster changes are outside this harness; say so and leave the interactive check to
+  the user rather than launching the demo.
+- `hold` writes only a PNG for its second capture. When two captures must be compared in HDR
+  (a pattern's persistence, a temporal chain's drift), use two cases whose `convergeFrames`
+  differ by the gap: cases restart from the same reset state, so frame N of one case is frame N
+  of the other, and the second case's capture is exactly the later frame of the same chain.
+- ImGui panel positions come from the build folder's `imgui.ini`, camera state from whoever
+  touched the window last, and a foreground window re-reads the real cursor: nothing about a
+  demo capture is reproducible, which is the other reason it is not used for verification.
 - The suite pose is static, so nothing here exercises view-dependent history validation. History
   is validated geometrically; a camera rotating in place passes every geometric test while the
   specular lobe sweeps across the surface. That failure mode needs a rotating-camera check.

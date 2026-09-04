@@ -418,6 +418,7 @@ namespace
 			"depthThreshold", "fisheye", "fisheyeFovDegrees", "sunAngularDiameterDegrees",
 			"rayMaxDistance", "skyMaxRadiance", "specularSkyMaxRadiance", "specularFireflyClamp",
 			"restirGi", "restirSpatialSamples", "restirSpatialRadius", "restirTemporalMClamp",
+			"restirPermutation",
 			"atrousIterations", "atrousLuminanceSigma",
 			"shadowRayOffset", "fogColor", "fogSunColor", "fogDensity", "fogHeightFalloff",
 			"fogDistanceStart" });
@@ -472,6 +473,10 @@ namespace
 		optionalUInt("restirSpatialSamples", overrides.RestirSpatialSamples);
 		optionalFloat("restirSpatialRadius", overrides.RestirSpatialRadius);
 		optionalFloat("restirTemporalMClamp", overrides.RestirTemporalMClamp);
+		if (Find(obj, "restirPermutation") != nullptr)
+		{
+			overrides.RestirPermutation = GetBool(obj, context, "restirPermutation", true);
+		}
 		optionalUInt("atrousIterations", overrides.AtrousIterations);
 		optionalFloat("atrousLuminanceSigma", overrides.AtrousLuminanceSigma);
 		optionalFloat("shadowRayOffset", overrides.ShadowRayOffset);

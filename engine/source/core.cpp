@@ -1497,6 +1497,7 @@ namespace udsdx
 			}
 			ImGui::SliderFloat("Spatial Radius (px)", &options.RaytracingRestirSpatialRadius, 1.0f, 64.0f, "%.0f");
 			ImGui::SliderFloat("Temporal M Clamp", &options.RaytracingRestirTemporalMClamp, 0.0f, 64.0f, "%.0f");
+			ImGui::Checkbox("Temporal Permutation", &options.RaytracingRestirPermutation);
 			ImGui::EndDisabled();
 
 			ImGui::SeparatorText("Denoiser");

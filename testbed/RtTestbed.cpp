@@ -990,6 +990,7 @@ namespace
 		apply(o.RestirSpatialSamples, ro.RaytracingRestirSpatialSamples);
 		apply(o.RestirSpatialRadius, ro.RaytracingRestirSpatialRadius);
 		apply(o.RestirTemporalMClamp, ro.RaytracingRestirTemporalMClamp);
+		apply(o.RestirPermutation, ro.RaytracingRestirPermutation);
 		apply(o.AtrousIterations, ro.RaytracingAtrousIterations);
 		apply(o.AtrousLuminanceSigma, ro.RaytracingAtrousLuminanceSigma);
 		apply(o.ShadowRayOffset, ro.RaytracingShadowRayOffset);

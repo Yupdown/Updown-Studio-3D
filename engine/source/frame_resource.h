@@ -133,7 +133,7 @@ namespace udsdx
 		float RestirSpatialRadius = 30.0f;
 		float RestirTemporalMClamp = 20.0f;
 
-		UINT RestirPad1 = 0;
+		UINT RestirPermute = 1;
 		float RestirNormalThreshold = 0.9f;
 		float RestirDepthThreshold = 0.05f;
 		float RestirPad = 0.0f;

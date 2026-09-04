@@ -141,6 +141,7 @@ namespace udsdx
 		unsigned int RaytracingRestirSpatialSamples = 4u;
 		float RaytracingRestirSpatialRadius = 30.0f;   // pixels
 		float RaytracingRestirTemporalMClamp = 20.0f;
+		bool RaytracingRestirPermutation = true;       // temporal permutation sampling
 		float RaytracingShadowRayOffset = 1e-3f;
 		RaytracingDebugMode RaytracingDebug = RaytracingDebugMode::None;
 	};

@@ -98,6 +98,7 @@ namespace rttest
 		std::optional<unsigned int> RestirSpatialSamples;
 		std::optional<float> RestirSpatialRadius;
 		std::optional<float> RestirTemporalMClamp;
+		std::optional<bool> RestirPermutation;
 		std::optional<unsigned int> AtrousIterations;
 		std::optional<float> AtrousLuminanceSigma;
 		std::optional<float> ShadowRayOffset;

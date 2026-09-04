@@ -1,0 +1,38 @@
+// ReSTIR GI under DLSS Ray Reconstruction on the ground-floor arcade vault: a surface lit by
+// indirect light only, where a raised exposure shows soft blotches with ReSTIR on. Every case
+// names its denoiser: "off" resolves the un-denoised per-frame estimate (exactly what RR is fed),
+// "dlssRayReconstruction" the RR output. convergeFrames pairs 16 frames apart measure how much of
+// a pattern survives between captures.
+//
+//   pwsh scripts/rt-visual-test.ps1 -Scenario testbed/scenarios/restir-rr-ceiling.json -MaxSamples 64 -SkipBuild
+//
+// Read the HDRs at a high exposure (the PNGs use the engine's default and look black here) and
+// compare the ReSTIR-on RR output against the ReSTIR-off one blurred 17x17: with the shipped
+// settings the residual has ~4.5% stddev and a -6% mean over the vault, and the pattern is 99%
+// the same 16 frames later because the reservoirs hold the same samples for far longer than RR
+// averages over. With ReSTIR off the residual is ~1% and uncorrelated between captures.
+// Temporal permutation sampling decorrelates single pixels (RR's per-pixel residual 0.10 -> 0.07)
+// but not the 30-pixel population a spatial radius of 30 averages over, so the blotch amplitude
+// stays ~4.6%; spatial-only reuse (restirTemporalMClamp 0) is the setting that halves it.
+{
+  "schemaVersion": 1,
+  "name": "restir-rr-ceiling",
+  "camera": { "position": [-4.0, 1.2, 4.0], "yaw": 1.5708, "pitch": -0.9 },
+  "cases": [
+    { "name": "rr_on_128",  "denoiser": "dlssRayReconstruction", "convergeFrames": 128, "renderOptions": { "restirGi": true } },
+    { "name": "rr_on_144",  "denoiser": "dlssRayReconstruction", "convergeFrames": 144, "renderOptions": { "restirGi": true } },
+    { "name": "rr_off_128", "denoiser": "dlssRayReconstruction", "convergeFrames": 128, "renderOptions": { "restirGi": false } },
+    { "name": "rr_off_144", "denoiser": "dlssRayReconstruction", "convergeFrames": 144, "renderOptions": { "restirGi": false } },
+    // Temporal permutation sampling off: the history stays put, so a pixel keeps the same estimate
+    // for as long as its sample lives (per-pixel input correlation 0.25 vs 0.04 with it on).
+    { "name": "rr_noperm_128", "denoiser": "dlssRayReconstruction", "convergeFrames": 128, "renderOptions": { "restirGi": true, "restirPermutation": false } },
+    // Spatial reuse only: each frame draws fresh candidates, so the pattern is not carried over.
+    { "name": "rr_t0_128",  "denoiser": "dlssRayReconstruction", "convergeFrames": 128, "renderOptions": { "restirGi": true, "restirTemporalMClamp": 0 } },
+    { "name": "rr_t0_144",  "denoiser": "dlssRayReconstruction", "convergeFrames": 144, "renderOptions": { "restirGi": true, "restirTemporalMClamp": 0 } },
+    // The raw input RR receives, two consecutive frames.
+    { "name": "raw_on_128", "denoiser": "off", "convergeFrames": 128, "renderOptions": { "restirGi": true } },
+    { "name": "raw_on_129", "denoiser": "off", "convergeFrames": 129, "renderOptions": { "restirGi": true } },
+    { "name": "raw_off_128", "denoiser": "off", "convergeFrames": 128, "renderOptions": { "restirGi": false } },
+    { "name": "raw_off_129", "denoiser": "off", "convergeFrames": 129, "renderOptions": { "restirGi": false } }
+  ]
+}

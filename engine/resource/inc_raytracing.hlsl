@@ -121,7 +121,7 @@ cbuffer cbRaytracing : register(b0, space0)
     float    gRestirSpatialRadius;    // pixels
     float    gRestirTemporalMClamp;   // M_prev <= clamp * M_current
 
-    uint     gRestirPad1;             // was an age cap; rejecting a reservoir by its selected sample's age biases the chain
+    uint     gRestirPermute;          // temporal permutation sampling: read history from a per-frame permuted neighbour
     float    gRestirNormalThreshold;
     float    gRestirDepthThreshold;
     float    gRestirPad;

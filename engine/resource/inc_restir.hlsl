@@ -92,7 +92,7 @@ void RestirUpdate(inout GiReservoir r, float weight, float3 pos, float3 nrm, flo
 }
 
 // Solid-angle-to-area Jacobian for reusing a reservoir built at r.VisiblePos from xqNew
-// (ReSTIR GI eq. 11). Returns false when the geometry makes the ratio meaningless or extreme.
+// (ReSTIR GI eq. 11). Returns false only when the geometry makes the ratio meaningless.
 bool RestirJacobian(GiReservoir r, float3 xqNew, out float jacobian)
 {
     jacobian = 1.0f;
@@ -120,8 +120,13 @@ bool RestirJacobian(GiReservoir r, float3 xqNew, out float jacobian)
     {
         return false;
     }
-    jacobian = (cosNew * d2Old) / (cosOld * d2New);
-    return jacobian >= RESTIR_JACOBIAN_MIN && jacobian <= RESTIR_JACOBIAN_MAX;
+    // Clamped rather than rejected. A sample that landed close to the surface it was traced
+    // from gets an extreme ratio at any other point, and dropping those (weight zero, M still
+    // counted) was measured to cost 3% on the sunlit floor once the temporal history started
+    // arriving from permuted neighbours. The clamp keeps the energy and bounds the weight the
+    // same way the rejection did; fireflies (p99.9, max) did not move.
+    jacobian = clamp((cosNew * d2Old) / (cosOld * d2New), RESTIR_JACOBIAN_MIN, RESTIR_JACOBIAN_MAX);
+    return true;
 }
 
 // Merge another reservoir's sample as if it had been generated here. otherM lets the caller
