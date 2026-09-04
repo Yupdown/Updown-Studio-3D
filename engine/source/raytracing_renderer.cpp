@@ -922,6 +922,7 @@ namespace udsdx
 		constants.RestirSpatialRadius = std::max(1.0f, options.RaytracingRestirSpatialRadius);
 		constants.RestirTemporalMClamp = std::max(0.0f, options.RaytracingRestirTemporalMClamp);
 		constants.RestirPermute = options.RaytracingRestirPermutation ? 1u : 0u;
+		constants.RestirBoilingStrength = std::min(1.0f, std::max(0.0f, options.RaytracingRestirBoilingStrength));
 		constants.RestirNormalThreshold = options.RaytracingNormalThreshold;
 		constants.RestirDepthThreshold = options.RaytracingDepthThreshold;
 
@@ -1189,6 +1190,7 @@ namespace udsdx
 		settings.RestirSpatialRadius = param.RenderOptions->RaytracingRestirSpatialRadius;
 		settings.RestirTemporalMClamp = param.RenderOptions->RaytracingRestirTemporalMClamp;
 		settings.RestirPermute = param.RenderOptions->RaytracingRestirPermutation ? 1u : 0u;
+		settings.RestirBoilingStrength = param.RenderOptions->RaytracingRestirBoilingStrength;
 		if (light != nullptr)
 		{
 			settings.SunDirection = light->GetLightDirection();

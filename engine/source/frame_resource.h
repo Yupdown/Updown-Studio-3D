@@ -136,7 +136,7 @@ namespace udsdx
 		UINT RestirPermute = 1;
 		float RestirNormalThreshold = 0.9f;
 		float RestirDepthThreshold = 0.05f;
-		float RestirPad = 0.0f;
+		float RestirBoilingStrength = 0.3f;
 	};
 	static_assert(sizeof(RaytracingConstants) == 608, "RaytracingConstants must mirror cbRaytracing in inc_raytracing.hlsl.");
 

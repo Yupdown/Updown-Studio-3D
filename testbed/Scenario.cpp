@@ -418,7 +418,7 @@ namespace
 			"depthThreshold", "fisheye", "fisheyeFovDegrees", "sunAngularDiameterDegrees",
 			"rayMaxDistance", "skyMaxRadiance", "specularSkyMaxRadiance", "specularFireflyClamp",
 			"restirGi", "restirSpatialSamples", "restirSpatialRadius", "restirTemporalMClamp",
-			"restirPermutation",
+			"restirPermutation", "restirBoilingStrength",
 			"shadowRayOffset", "fogColor", "fogSunColor", "fogDensity", "fogHeightFalloff",
 			"fogDistanceStart" });
 
@@ -476,6 +476,7 @@ namespace
 		{
 			overrides.RestirPermutation = GetBool(obj, context, "restirPermutation", true);
 		}
+		optionalFloat("restirBoilingStrength", overrides.RestirBoilingStrength);
 		optionalFloat("shadowRayOffset", overrides.ShadowRayOffset);
 		optionalColor("fogColor", overrides.FogColor);
 		optionalColor("fogSunColor", overrides.FogSunColor);

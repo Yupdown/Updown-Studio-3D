@@ -20,6 +20,7 @@
 #define RESTIR_RADIANCE_MAX   65000.0f   // fp16 pack ceiling
 #define RESTIR_MAX_M          65535u
 #define RESTIR_MAX_SPATIAL_SAMPLES 16u   // mirrors the host's clamp on gRestirSpatialSamples
+#define RESTIR_BOILING_MIN_AGE 4u        // frames a sample must have been carried before the boiling clamp may touch it
 #define RESTIR_MAX_AGE        255u
 
 struct GiReservoir
@@ -33,6 +34,7 @@ struct GiReservoir
     uint   M;
     uint   Age;
     uint   Flags;
+    float  Reference;     // boiling filter: mean estimate of the neighbourhood this reservoir was built in (0 = unknown)
 };
 
 float RestirLuminance(float3 c)
@@ -52,6 +54,7 @@ GiReservoir RestirEmpty(float3 visiblePos)
     r.M = 0u;
     r.Age = 0u;
     r.Flags = 0u;
+    r.Reference = 0.0f;
     return r;
 }
 
@@ -193,7 +196,7 @@ float3 UnpackOct16(uint packed)
 
 // Three textures per reservoir set:
 //   sample  (RGBA32F) : x_s or direction, W
-//   visible (RGBA32F) : x_q, unused
+//   visible (RGBA32F) : x_q, boiling-filter reference
 //   packed  (RGBA32U) : f16(L.r) | f16(L.g) << 16, f16(L.b) | Age << 16 | Flags << 24, oct16(n_s), M
 // The packed word is an integer texture on purpose: a float UAV store may canonicalise NaN bit
 // patterns, and a pair of packed halves can look exactly like one.
@@ -201,7 +204,7 @@ void RestirPack(GiReservoir r, out float4 sample, out float4 visible, out uint4 
 {
     float3 radiance = min(r.Radiance, RESTIR_RADIANCE_MAX.xxx);
     sample = float4(r.SamplePos, r.W);
-    visible = float4(r.VisiblePos, 0.0f);
+    visible = float4(r.VisiblePos, r.Reference);
     packed.x = f32tof16(radiance.r) | (f32tof16(radiance.g) << 16u);
     packed.y = f32tof16(radiance.b) | (min(r.Age, RESTIR_MAX_AGE) << 16u) | ((r.Flags & 0xFFu) << 24u);
     packed.z = PackOct16(r.SampleNormal);
@@ -214,6 +217,7 @@ GiReservoir RestirUnpack(float4 sample, float4 visible, uint4 packed)
     r.SamplePos = sample.xyz;
     r.W = (isfinite(sample.w) && sample.w > 0.0f) ? sample.w : 0.0f;
     r.VisiblePos = visible.xyz;
+    r.Reference = (isfinite(visible.w) && visible.w > 0.0f) ? visible.w : 0.0f;
     r.Radiance = float3(f16tof32(packed.x & 0xFFFFu), f16tof32(packed.x >> 16u), f16tof32(packed.y & 0xFFFFu));
     r.Age = (packed.y >> 16u) & 0xFFu;
     r.Flags = (packed.y >> 24u) & 0xFFu;

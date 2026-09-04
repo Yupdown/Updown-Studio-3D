@@ -138,6 +138,9 @@ namespace udsdx
 		float RaytracingRestirSpatialRadius = 30.0f;   // pixels
 		float RaytracingRestirTemporalMClamp = 20.0f;
 		bool RaytracingRestirPermutation = true;       // temporal permutation sampling
+		// Boiling filter strength, RTXDI convention: a reservoir is dropped when its estimate
+		// exceeds the neighbourhood mean by 10/strength - 9 (0.3 => ~24x). 0 disables it.
+		float RaytracingRestirBoilingStrength = 0.3f;
 		float RaytracingShadowRayOffset = 1e-3f;
 		RaytracingDebugMode RaytracingDebug = RaytracingDebugMode::None;
 	};

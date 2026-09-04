@@ -99,6 +99,7 @@ namespace rttest
 		std::optional<float> RestirSpatialRadius;
 		std::optional<float> RestirTemporalMClamp;
 		std::optional<bool> RestirPermutation;
+		std::optional<float> RestirBoilingStrength;
 		std::optional<float> ShadowRayOffset;
 		std::optional<std::array<float, 3>> FogColor;
 		std::optional<std::array<float, 3>> FogSunColor;

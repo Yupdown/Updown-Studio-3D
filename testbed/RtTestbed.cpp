@@ -969,6 +969,7 @@ namespace
 		apply(o.RestirSpatialRadius, ro.RaytracingRestirSpatialRadius);
 		apply(o.RestirTemporalMClamp, ro.RaytracingRestirTemporalMClamp);
 		apply(o.RestirPermutation, ro.RaytracingRestirPermutation);
+		apply(o.RestirBoilingStrength, ro.RaytracingRestirBoilingStrength);
 		apply(o.ShadowRayOffset, ro.RaytracingShadowRayOffset);
 		apply(o.FogDensity, ro.FogDensity);
 		apply(o.FogHeightFalloff, ro.FogHeightFalloff);

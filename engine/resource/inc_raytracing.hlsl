@@ -124,7 +124,7 @@ cbuffer cbRaytracing : register(b0, space0)
     uint     gRestirPermute;          // temporal permutation sampling: read history from a per-frame permuted neighbour
     float    gRestirNormalThreshold;
     float    gRestirDepthThreshold;
-    float    gRestirPad;
+    float    gRestirBoilingStrength;  // 0 disables the boiling filter; else cull above (10/s - 9) x the neighbourhood mean
 };
 
 // Per-instance previous object-to-world, indexed by InstanceIndex(). Column-vector 3x4, matching

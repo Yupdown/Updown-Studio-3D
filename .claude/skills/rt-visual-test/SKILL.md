@@ -88,7 +88,7 @@ Rules that matter in practice:
   down.
 - `renderOptions` is a typed whitelist (`samplesPerPixel`, `maxSamplesMoving`, fog fields,
   `skyMaxRadiance`, `specularFireflyClamp`, `restirGi`, `restirSpatialSamples`,
-  `restirSpatialRadius`, `restirTemporalMClamp`, `restirPermutation`, ...).
+  `restirSpatialRadius`, `restirTemporalMClamp`, `restirPermutation`, `restirBoilingStrength`, ...).
   Harness-owned fields are rejected as unknown keys on purpose: `drawRaytracing`,
   `maxSamplesStatic` (that's `-MaxSamples`), the motion-blur toggles, bloom. The denoiser is a
   case-level `denoiser` key, not a render option: the suite's baseline forces the built-in one,

@@ -664,6 +664,10 @@ void RayGenMain()
     if (gRestirEnabled != 0u)
     {
         float3 historyVisiblePos = visiblePos;
+        // Where last frame's reservoirs around this surface live; the boiling filter below reads
+        // its neighbourhood there. Only meaningful once a history exists.
+        int2 historyPixel = int2(pixel);
+        bool historyReadable = false;
         if (guide.HitT >= 0.0f && gHistoryValid != 0u)
         {
             // Temporal reuse: last frame's final reservoir at the pixel this surface came from,
@@ -692,6 +696,8 @@ void RayGenMain()
                 // The permutation can step over the edge; the reprojection test above cannot.
                 bool prevInBounds = all(prevPixel >= int2(0, 0)) && all(prevPixel < int2(dimensions));
                 prevPixel = clamp(prevPixel, int2(0, 0), int2(dimensions) - int2(1, 1));
+                historyPixel = prevPixel;
+                historyReadable = true;
                 Guide prev = UnpackGuide(gPrevGuide.Load(int3(prevPixel, 0)));
                 float expectedPrevDistance = CameraDistance(guide.PrevWorldPos, gPrevEyePosW.xyz);
                 float3 prevNormal = UnpackNormalRoughness(gPrevNormalRoughness.Load(int3(prevPixel, 0))).Normal;
@@ -763,6 +769,76 @@ void RayGenMain()
                 && !RestirSampleVisible(visiblePos, guide.Normal, reservoir))
             {
                 reservoir.Flags |= RESTIR_FLAG_OCCLUDED;
+            }
+        }
+
+        // Boiling filter reference. A rare bright sample found on a dark surface dominates its
+        // reservoir's weight sum, and on a dark surface nothing arrives to outvote it, so it
+        // lives for tens of frames while the spatial pass and the permutation carry it around
+        // the neighbourhood: a speck that wanders for about a second. RTXDI answers this by
+        // emptying any reservoir whose weight exceeds its 16x16 group's mean by 10/strength - 9.
+        // Ray generation shaders have neither groupshared memory nor wave ops, so the
+        // neighbourhood here is last frame's reservoirs in a 7x7 window (stride 2, the pixel
+        // itself excluded -- with sixteen taps a lone outlier would otherwise set its own
+        // reference), read through the SRVs already bound for temporal reuse, and the quantity
+        // is what a pixel would actually show: its estimate's luminance, w_sum / M.
+        //
+        // The reference is only stored here; the clamp happens on the spatial pass's output.
+        // Emptying the chain the way RTXDI does was measured at -9% overall and -32% on the vault
+        // at strength 0.3, and the holes it left made the specks worse (31 -> 497 pixels above
+        // 100x their surroundings): on an indirect-lit surface the rare bright candidates ARE
+        // the light, so retiring the reservoirs that hold them removes the signal, not noise.
+        reservoir.Reference = 0.0f;
+        if (gRestirBoilingStrength > 0.0f && historyReadable)
+        {
+            float sum = 0.0f;
+            float count = 0.0f;
+            // The two largest taps are left out of the mean: a chain holding a firefly candidate
+            // reads at 50x its surroundings for twenty frames, and with sixteen taps one such
+            // chain lifts a plain mean several-fold, so the specks it feeds to its neighbours
+            // slip under any threshold. RTXDI's 256-pixel mean can absorb that; this one cannot.
+            float largest = 0.0f;
+            float secondLargest = 0.0f;
+            [unroll]
+            for (int dy = -3; dy <= 3; dy += 2)
+            {
+                [unroll]
+                for (int dx = -3; dx <= 3; dx += 2)
+                {
+                    int2 tap = clamp(historyPixel + int2(dx, dy), int2(0, 0), int2(dimensions) - int2(1, 1));
+                    GiReservoir other = RestirUnpack(gReservoirInSample.Load(int3(tap, 0)),
+                                                     gReservoirInVisible.Load(int3(tap, 0)),
+                                                     gReservoirInPacked.Load(int3(tap, 0)));
+                    if (other.M == 0u || other.W <= 0.0f)
+                    {
+                        continue;
+                    }
+                    float3 tapNormal = UnpackNormalRoughness(gPrevNormalRoughness.Load(int3(tap, 0))).Normal;
+                    float tapEstimate = RestirLuminance(other.Radiance)
+                        * max(0.0f, dot(tapNormal, RestirDirection(other, other.VisiblePos))) / RT_PI * other.W;
+                    if (tapEstimate > 0.0f)
+                    {
+                        sum += tapEstimate;
+                        count += 1.0f;
+                        if (tapEstimate > largest)
+                        {
+                            secondLargest = largest;
+                            largest = tapEstimate;
+                        }
+                        else if (tapEstimate > secondLargest)
+                        {
+                            secondLargest = tapEstimate;
+                        }
+                    }
+                }
+            }
+            if (count >= 4.0f)
+            {
+                reservoir.Reference = (sum - largest - secondLargest) / (count - 2.0f);
+            }
+            else if (count > 0.0f)
+            {
+                reservoir.Reference = sum / count;
             }
         }
 
@@ -886,6 +962,12 @@ void RayGenRestirSpatial()
     int2 mergedTaps[RESTIR_MAX_SPATIAL_SAMPLES];
     uint mergedCount = 0u;
     int selectedFrom = -1;   // -1: the centre reservoir, else an index into mergedTaps
+    // Fallback reference for the boiling filter where RayGenMain's 7x7 window found no live
+    // chain (a dark patch whose light all arrives through this pass's 30 px reach): the merged
+    // taps' own estimates, largest left out.
+    float tapReferenceSum = 0.0f;
+    float tapReferenceCount = 0.0f;
+    float tapReferenceLargest = 0.0f;
     GiReservoir centre = RestirUnpack(gReservoirInSample[pixel], gReservoirInVisible[pixel], gReservoirInPacked[pixel]);
     if (centre.M > 0u)
     {
@@ -929,6 +1011,17 @@ void RayGenRestirSpatial()
         if (abs(dot(nq, other.VisiblePos - visiblePos)) > gRestirDepthThreshold * guide.Distance)
         {
             continue;
+        }
+        if (other.W > 0.0f)
+        {
+            float tapEstimate = RestirLuminance(other.Radiance)
+                * max(0.0f, dot(tapNormal, RestirDirection(other, other.VisiblePos))) / RT_PI * other.W;
+            if (tapEstimate > 0.0f)
+            {
+                tapReferenceSum += tapEstimate;
+                tapReferenceCount += 1.0f;
+                tapReferenceLargest = max(tapReferenceLargest, tapEstimate);
+            }
         }
         // Rejections below are sample-dependent, so the neighbour's M must stay in the count
         // either way: a candidate that was drawn but cannot be reused here is a candidate with
@@ -995,6 +1088,42 @@ void RayGenRestirSpatial()
     float3 indirect = reservoir.W > 0.0f
         ? reservoir.Radiance * max(0.0f, dot(nq, omega)) / RT_PI * reservoir.W
         : 0.0f.xxx;
+
+    // Boiling filter. A reservoir's own estimate is w_sum / M and stays close to its
+    // neighbours' even when it holds a firefly candidate (M dilutes it). What does spike is this
+    // merged estimate: a sample only the centre can see is normalised by a small reachable
+    // count, and the Jacobian can add another 10x, so one pixel reads 100x its neighbourhood for
+    // one frame and a different pixel does next frame -- the wandering speck. Measured against
+    // the reference RayGenMain stored for this pixel (the mean of sixteen surrounding
+    // reservoirs' own estimates, itself excluded), an estimate above 10/strength - 9 times that
+    // mean is clamped to the threshold rather than zeroed: the pixel keeps the neighbourhood's
+    // brightness instead of a hole, and the loss is bounded by the same factor. Nothing is
+    // stored, so the clamp only ever removes energy from the displayed frame, never from the
+    // chain -- the source keeps resampling normally and retires on its own.
+    //
+    // Only samples that have already been carried for a few frames are eligible. A bright
+    // candidate drawn this frame is one honest sample of a heavy-tailed integrand and the
+    // temporal denoiser is the right place for it; clamping those too was measured at -5% to
+    // -9% on the sunlit floor and drapes, where the rare bright bounces are most of the light.
+    // A sample that is still an outlier after RESTIR_BOILING_MIN_AGE frames of reuse is the one
+    // that wanders, and only its excess is removed. Biased by construction, which is why the
+    // strength is exposed.
+    if (gRestirBoilingStrength > 0.0f && reservoir.Age >= RESTIR_BOILING_MIN_AGE)
+    {
+        float reference = centre.Reference;
+        if (reference <= 0.0f && tapReferenceCount > 0.0f)
+        {
+            reference = tapReferenceCount >= 3.0f
+                ? (tapReferenceSum - tapReferenceLargest) / (tapReferenceCount - 1.0f)
+                : tapReferenceSum / tapReferenceCount;
+        }
+        float estimate = RestirLuminance(indirect);
+        float threshold = (10.0f / clamp(gRestirBoilingStrength, 1e-6f, 1.0f) - 9.0f) * reference;
+        if (reference > 0.0f && estimate > threshold)
+        {
+            indirect *= threshold / estimate;
+        }
+    }
 
     if (gDebugMode == RT_DEBUG_INDIRECT)
     {
