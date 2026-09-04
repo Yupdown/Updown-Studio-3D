@@ -32,11 +32,6 @@
       "pose": { "position": [-6.5, 1.8, 0.0], "yaw": 1.5708 }
     },
     {
-      "name": "deep_transmission",
-      "description": "more transmission bounces than the shipping default",
-      "renderOptions": { "maxTransmissionBounces": 16 }
-    },
-    {
       "name": "material_aov",
       "debugMode": "metallicRoughness",
       "convergeFrames": 8

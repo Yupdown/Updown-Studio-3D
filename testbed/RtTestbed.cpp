@@ -974,7 +974,6 @@ namespace
 		apply(o.SkyMaxRadiance, ro.RaytracingSkyMaxRadiance);
 		apply(o.SpecularSkyMaxRadiance, ro.RaytracingSpecularSkyMaxRadiance);
 		apply(o.SpecularFireflyClamp, ro.RaytracingSpecularFireflyClamp);
-		apply(o.MaxTransmissionBounces, ro.RaytracingMaxTransmissionBounces);
 		apply(o.AtrousIterations, ro.RaytracingAtrousIterations);
 		apply(o.AtrousLuminanceSigma, ro.RaytracingAtrousLuminanceSigma);
 		apply(o.ShadowRayOffset, ro.RaytracingShadowRayOffset);

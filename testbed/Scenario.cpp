@@ -410,7 +410,7 @@ namespace
 			"samplesPerPixel", "maxSamplesMoving", "varianceClipGamma", "normalThreshold",
 			"depthThreshold", "fisheye", "fisheyeFovDegrees", "sunAngularDiameterDegrees",
 			"rayMaxDistance", "skyMaxRadiance", "specularSkyMaxRadiance", "specularFireflyClamp",
-			"maxTransmissionBounces", "atrousIterations", "atrousLuminanceSigma",
+			"atrousIterations", "atrousLuminanceSigma",
 			"shadowRayOffset", "fogColor", "fogSunColor", "fogDensity", "fogHeightFalloff",
 			"fogDistanceStart" });
 
@@ -457,7 +457,6 @@ namespace
 		optionalFloat("skyMaxRadiance", overrides.SkyMaxRadiance);
 		optionalFloat("specularSkyMaxRadiance", overrides.SpecularSkyMaxRadiance);
 		optionalFloat("specularFireflyClamp", overrides.SpecularFireflyClamp);
-		optionalUInt("maxTransmissionBounces", overrides.MaxTransmissionBounces);
 		optionalUInt("atrousIterations", overrides.AtrousIterations);
 		optionalFloat("atrousLuminanceSigma", overrides.AtrousLuminanceSigma);
 		optionalFloat("shadowRayOffset", overrides.ShadowRayOffset);
