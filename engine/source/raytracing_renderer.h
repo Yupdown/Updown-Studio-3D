@@ -101,6 +101,9 @@ namespace udsdx
 		UINT GetRequestedRenderHeight() const { return m_requestedRenderHeight; }
 		UINT GetRenderWidth() const { return m_renderWidth; }
 		UINT GetRenderHeight() const { return m_renderHeight; }
+		// The denoiser that actually ran last frame: the requested one falls back to the built-in
+		// path when Ray Reconstruction cannot run (no runtime, unsupported, fisheye, debug views).
+		RaytracingDenoiserMode GetActiveDenoiser() const { return m_activeDenoiser; }
 
 		// Builds the acceleration structure, dispatches rays, accumulates temporally and resolves
 		// into the HDR target.

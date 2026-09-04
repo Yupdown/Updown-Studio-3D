@@ -249,6 +249,13 @@ namespace
 		{ "brdfFurnace", 10u },
 	};
 
+	// Mirrors RaytracingDenoiserMode. Ray Reconstruction is a nondeterministic black box and is
+	// never what the suite measures; a case opts into it explicitly to reproduce what the
+	// interactive demo shows with it on.
+	constexpr NamedValue kDenoisers[] = {
+		{ "off", 0u }, { "builtin", 1u }, { "dlssRayReconstruction", 2u },
+	};
+
 	constexpr NamedValue kEvaluators[] = {
 		{ "captureOnly", 0u }, { "primary", 1u }, { "determinismRef", 2u }, { "determinism", 3u },
 		{ "aovAlbedo", 4u }, { "aovNormal", 5u }, { "aovMotion", 6u }, { "aovMaterial", 7u },
@@ -489,9 +496,9 @@ namespace
 		context = "case \"" + result.Name + "\"";
 
 		RequireKnownKeys(obj, context,
-			{ "name", "description", "evaluator", "debugMode", "convergeFrames", "renderHeight",
-			  "hold", "atrousToggle", "motionBlurCoverage", "skipOnQuick", "requires", "pose",
-			  "renderOptions" });
+			{ "name", "description", "evaluator", "debugMode", "denoiser", "convergeFrames",
+			  "renderHeight", "hold", "atrousToggle", "motionBlurCoverage", "skipOnQuick",
+			  "requires", "pose", "renderOptions" });
 
 		if (result.Name.empty() || result.Name.size() > 64)
 		{
@@ -515,6 +522,7 @@ namespace
 		result.Evaluator = static_cast<ScenarioEvaluator>(LookupNamed(kEvaluators, obj, context,
 			"evaluator", static_cast<unsigned int>(ScenarioEvaluator::CaptureOnly)));
 		result.DebugMode = LookupNamed(kDebugModes, obj, context, "debugMode", 0u);
+		result.Denoiser = LookupNamed(kDenoisers, obj, context, "denoiser", 1u);
 		result.ConvergeFrames = GetInt(obj, context, "convergeFrames", -1);
 		if (result.ConvergeFrames < -1)
 		{

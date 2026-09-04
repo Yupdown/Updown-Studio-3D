@@ -114,6 +114,7 @@ namespace rttest
 		std::string Description;
 		ScenarioEvaluator Evaluator = ScenarioEvaluator::CaptureOnly;
 		unsigned int DebugMode = 0;  // numeric RaytracingDebugMode, validated at parse
+		unsigned int Denoiser = 1;   // numeric RaytracingDenoiserMode; 1 = built-in (the only deterministic one)
 		int ConvergeFrames = -1;     // -1 => MaxSamples + 64
 		unsigned int RenderHeight = 0u;
 		bool Hold = false;

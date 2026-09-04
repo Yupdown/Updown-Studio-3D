@@ -475,6 +475,10 @@ namespace
 		// convergence and nudge with it on (C). Captures come from the back buffer, because the
 		// HDR target stops at the raytracing resolve and never sees the post-process chain.
 		bool MotionBlurCoverage = false;
+		// Which denoiser the case asks for. The built-in one is the deterministic default; a case
+		// names dlssRayReconstruction only to reproduce what the demo shows with it on, and the
+		// renderer silently falls back when it cannot run -- stat_denoiser reports what ran.
+		RaytracingDenoiserMode Denoiser = RaytracingDenoiserMode::Builtin;
 		// The scenario case this def was built from; null only for the implicit gate case. Points
 		// into g_scenario, which is never mutated after SetScenario.
 		const ScenarioCase* Scenario = nullptr;
@@ -917,6 +921,14 @@ namespace
 			"non-finite texels are never intended, even in a capture-only case");
 
 		const LumStats stats = ComputeLumStats(cs.A);
+		if (RaytracingRenderer* rt = Rt())
+		{
+			// 0 off, 1 built-in, 2 Ray Reconstruction: what actually ran, since the renderer falls
+			// back silently when the requested denoiser cannot.
+			AddCheck(cs, "stat_denoiser", true,
+				static_cast<double>(static_cast<unsigned int>(rt->GetActiveDenoiser())), kStatOnly,
+				"denoiser that ran (0 off, 1 built-in, 2 DLSS-RR)");
+		}
 		AddCheck(cs, "stat_lum_mean", true, stats.Mean, kStatOnly, "mean luminance");
 		AddCheck(cs, "stat_lum_stddev", true, stats.Stddev, kStatOnly, "luminance stddev");
 		AddCheck(cs, "stat_lum_p999", true, stats.P999, kStatOnly, "p99.9 luminance");
@@ -1030,6 +1042,10 @@ namespace
 		&& static_cast<unsigned int>(RaytracingDebugMode::SpecularOnly) == 9u
 		&& static_cast<unsigned int>(RaytracingDebugMode::BrdfFurnace) == 10u,
 		"scenario debug-mode numbering out of sync with RaytracingDebugMode");
+	static_assert(static_cast<unsigned int>(RaytracingDenoiserMode::Off) == 0u
+		&& static_cast<unsigned int>(RaytracingDenoiserMode::Builtin) == 1u
+		&& static_cast<unsigned int>(RaytracingDenoiserMode::DlssRayReconstruction) == 2u,
+		"scenario denoiser numbering out of sync with RaytracingDenoiserMode");
 
 	// ---------------------------------------------------------------------------------------------
 	// Capture plumbing
@@ -1440,6 +1456,7 @@ namespace
 			def.Evaluate = kEvaluatorTable[static_cast<size_t>(sc.Evaluator)];
 			def.RenderHeight = sc.RenderHeight;
 			def.MotionBlurCoverage = sc.MotionBlurCoverage;
+			def.Denoiser = static_cast<RaytracingDenoiserMode>(sc.Denoiser);
 			def.Scenario = &sc;
 			g_cases.push_back(def);
 		}
@@ -1551,8 +1568,9 @@ namespace
 
 		RenderOptions& ro = Ro();
 		ro.DrawRaytracing = true;
-		// Deterministic baseline: the built-in denoiser only. DLSS Ray Reconstruction is a
-		// nondeterministic black box and is deliberately out of scope for these checks.
+		// Deterministic baseline: the built-in denoiser. DLSS Ray Reconstruction is a
+		// nondeterministic black box and stays out of the suite's checks; a scenario case may
+		// still name it ("denoiser") to reproduce an interactive observation.
 		ro.RaytracingDenoiser = RaytracingDenoiserMode::Builtin;
 		ro.DrawMotionBlur = false;
 		ro.RaytracingMaxSamplesStatic = static_cast<float>(g_options.MaxSamples);
@@ -1615,6 +1633,9 @@ namespace
 			// recreates every raytracing buffer at the new size and drops the history. Warmup
 			// waits on IsHistoryValid afterwards, so the case starts from a settled state.
 			ro.RaytracingRenderHeight = g_current.Def->RenderHeight;
+			// Per-case denoiser choice, on top of the forced built-in baseline. Changing it drops
+			// the accumulation history inside the renderer, which LoadCase does anyway.
+			ro.RaytracingDenoiser = g_current.Def->Denoiser;
 			// The blur is off for capture A and for every other case; MotionReconverge turns it on
 			// for capture C and CaptureC puts it back. The shutter speed is left raised afterwards
 			// rather than restored: with the blur itself off everywhere else, it reaches nothing.
